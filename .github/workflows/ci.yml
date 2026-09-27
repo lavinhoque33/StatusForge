@@ -1,0 +1,92 @@
+name: Foundation checks
+
+# Local-only verification mirrored in CI. Nothing here has AWS credentials or
+# contacts AWS; DynamoDB Local runs as a container on the runner's loopback.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt, vet, race tests, build
+        run: make backend-check
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - name: Lint, types, formatting, tests, build
+        run: make web-check
+
+  integration:
+    needs: [backend, web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Start DynamoDB Local (loopback, persistent volume)
+        run: docker compose --env-file .env.example up -d --wait dynamodb
+      - name: Build the API
+        run: cd backend && go build -o ../statusforge ./cmd/statusforge
+      - name: Readiness against real DynamoDB Local, then degraded, then restored
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a; . ./.env.example; set +a
+          ./statusforge & echo $! > api.pid
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/api/health/live >/dev/null && break; sleep 0.5; done
+          curl -sf http://127.0.0.1:8080/api/health/live | grep -q '"status":"ok"'
+          curl -s -o ready.json -w '%{http_code}' http://127.0.0.1:8080/api/health/ready | grep -qx 200
+          grep -q '"dynamodb":{"status":"ready"}' ready.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/nope)" = 404
+          docker compose --env-file .env.example stop dynamodb
+          curl -s -o degraded.json -w '%{http_code}' http://127.0.0.1:8080/api/health/ready | grep -qx 503
+          grep -q '"status":"degraded"' degraded.json
+          docker compose --env-file .env.example up -d --wait dynamodb
+          curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health/ready | grep -qx 200
+          kill "$(cat api.pid)"; wait "$(cat api.pid)" || true
+      - name: Guards reject non-loopback bind and hosted endpoint
+        shell: bash
+        run: |
+          set -uo pipefail
+          STATUSFORGE_HTTP_ADDR=0.0.0.0:8080 STATUSFORGE_DYNAMODB_ENDPOINT=http://127.0.0.1:8000 ./statusforge; test $? -eq 1
+          STATUSFORGE_DYNAMODB_ENDPOINT=https://dynamodb.us-east-1.amazonaws.com ./statusforge; test $? -eq 1
+          env -u STATUSFORGE_DYNAMODB_ENDPOINT ./statusforge; test $? -eq 1
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.example ps -a
+          docker compose --env-file .env.example logs --no-color --tail 100
+          cat ready.json degraded.json 2>/dev/null || true
+      - name: Stop DynamoDB Local
+        if: always()
+        run: docker compose --env-file .env.example down --volumes
