@@ -35,7 +35,9 @@ func New(endpoint, host, region, accessKeyID, secretAccessKey string) *Client {
 	return &Client{client: dynamodb.NewFromConfig(cfg), host: host}
 }
 
-func (c *Client) Name() string { return c.host }
+// DynamoDB exposes the explicitly loopback-configured client to the store adapter.
+func (c *Client) DynamoDB() *dynamodb.Client { return c.client }
+func (c *Client) Name() string               { return c.host }
 
 func (c *Client) Check(ctx context.Context) error { return c.Ping(ctx) }
 

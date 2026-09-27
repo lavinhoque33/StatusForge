@@ -12,9 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lavinhoque33/statusforge/backend/internal/checker"
 	"github.com/lavinhoque33/statusforge/backend/internal/config"
 	"github.com/lavinhoque33/statusforge/backend/internal/httpapi"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
+	"github.com/lavinhoque33/statusforge/backend/internal/store"
+	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
 )
 
 func main() {
@@ -49,12 +52,18 @@ func run() error {
 	u, _ := url.Parse(cfg.DynamoDBEndpoint) // validated by config.Load
 	host := u.Hostname()
 	dependency := localdynamo.New(cfg.DynamoDBEndpoint, host, cfg.DynamoDBRegion, cfg.DynamoDBAccessKeyID, cfg.DynamoDBSecretAccessKey)
+	policy, err := targetpolicy.Parse(cfg.AllowedTargets)
+	if err != nil {
+		return err
+	}
+	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
+	runner := checker.New(policy, time.Now)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(logger, []httpapi.Dependency{dependency}, cfg.ReadinessTimeout, time.Now),
+		Handler:           httpapi.NewMonitorRouter(logger, []httpapi.Dependency{dependency}, cfg.ReadinessTimeout, time.Now, persistence, runner, policy),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      40 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
@@ -70,6 +79,11 @@ func run() error {
 		logger.Info("initial readiness ready", "dynamodb_endpoint_host", host)
 	}
 	cancel()
+	tableCtx, tableCancel := context.WithTimeout(context.Background(), cfg.ReadinessTimeout*5)
+	if err := persistence.Initialize(tableCtx); err != nil {
+		logger.Warn("initial table creation degraded", "reason", "dependency_failure")
+	}
+	tableCancel()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	serveErrors := make(chan error, 1)

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/netguard"
@@ -19,6 +22,8 @@ type Config struct {
 	LogFormat               string
 	ShutdownTimeout         time.Duration
 	ReadinessTimeout        time.Duration
+	AllowedTargets          string
+	DynamoDBTable           string
 }
 
 func Load(lookup func(string) (string, bool)) (Config, error) {
@@ -36,6 +41,14 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		DynamoDBSecretAccessKey: get("STATUSFORGE_DYNAMODB_SECRET_ACCESS_KEY", "local"),
 		LogLevel:                get("STATUSFORGE_LOG_LEVEL", "info"),
 		LogFormat:               get("STATUSFORGE_LOG_FORMAT", "text"),
+		AllowedTargets:          get("STATUSFORGE_ALLOWED_TARGETS", "127.0.0.1:8090"),
+		DynamoDBTable:           get("STATUSFORGE_DYNAMODB_TABLE", "statusforge"),
+	}
+	if err := validateTargets(cfg.AllowedTargets); err != nil {
+		return Config{}, err
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{3,255}$`).MatchString(cfg.DynamoDBTable) {
+		return Config{}, fmt.Errorf("STATUSFORGE_DYNAMODB_TABLE: must be 3–255 characters [A-Za-z0-9_.-]")
 	}
 	if err := ValidateLoopbackAddr("STATUSFORGE_HTTP_ADDR", cfg.HTTPAddr); err != nil {
 		return Config{}, err
@@ -73,6 +86,23 @@ func ValidateLoopbackAddr(variable, addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil || !netguard.IsLoopbackHost(host) {
 		return fmt.Errorf("%s: address must have a loopback-only host and port", variable)
+	}
+	return nil
+}
+
+func validateTargets(raw string) error {
+	if raw == "" {
+		return fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: list must not be empty")
+	}
+	for _, entry := range strings.Split(raw, ",") {
+		host, port, err := net.SplitHostPort(strings.TrimSpace(entry))
+		if err != nil || !netguard.IsLoopbackHost(host) {
+			return fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: each entry must be a loopback host:port")
+		}
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: port must be 1–65535")
+		}
 	}
 	return nil
 }

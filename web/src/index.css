@@ -5,6 +5,9 @@
   --muted: #57606a;
   --border: #d0d7de;
   --surface: #f6f8fa;
+  --ok: #1f883d;
+  --warn: #9a6700;
+  --fail: #cf222e;
   font-family: system-ui, sans-serif;
   line-height: 1.5;
 }
@@ -15,6 +18,9 @@
     --muted: #9aa4af;
     --border: #30363d;
     --surface: #161b22;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --fail: #f85149;
   }
 }
 body {
@@ -22,9 +28,10 @@ body {
   background: var(--bg);
   color: var(--fg);
 }
+/* Wide enough for the observation table at desktop widths, still fluid below. */
 .app-header,
 .app-main {
-  max-width: 60ch;
+  max-width: 1000px;
   margin: 0 auto;
   padding: 1rem;
   overflow-wrap: break-word;
@@ -47,15 +54,15 @@ body {
   font-weight: 600;
 }
 .status--ready .status-badge {
-  color: #1f883d;
+  color: var(--ok);
 }
 .status--degraded .status-badge {
-  color: #9a6700;
+  color: var(--warn);
 }
 .status--unreachable .status-badge,
 .status--invalid .status-badge,
 .status--timeout .status-badge {
-  color: #cf222e;
+  color: var(--fail);
 }
 .check-again {
   min-height: 44px;
@@ -68,9 +75,255 @@ body {
   font: inherit;
   cursor: pointer;
 }
+
+/* Navigation */
+nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+nav a {
+  display: inline-block;
+  padding: 0.4rem 0;
+  font-weight: 600;
+}
+nav a[aria-current='page'] {
+  text-decoration-thickness: 2px;
+}
+
+/* Focus and controls */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
 .check-again:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
+}
+.button {
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* A pending check keeps its focus, so it reports disabled without being one. */
+.button[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.55;
+}
+.actions,
+.confirm-step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* Monitor summaries: text carries the meaning, colour is an accent */
+.lifecycle {
+  display: inline-block;
+  padding: 0.05rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.lifecycle--active {
+  color: var(--ok);
+}
+.lifecycle--paused {
+  color: var(--warn);
+}
+.lifecycle--archived {
+  color: var(--muted);
+}
+.outcome {
+  white-space: nowrap;
+}
+.outcome--healthy {
+  color: var(--ok);
+}
+.outcome--failing {
+  color: var(--fail);
+}
+.outcome--checker_problem {
+  color: var(--warn);
+}
+.monitor-headline {
+  margin: 0.4rem 0 0;
+}
+.monitor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.25rem 0 0;
+}
+.monitor-list {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.monitor-card {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.monitor-card h3 {
+  margin: 0;
+}
+
+/* Detail page */
+.config-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0 0 1rem;
+}
+.config-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.config-list dt {
+  min-width: 10rem;
+  font-weight: 600;
+}
+.config-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.form-field {
+  margin-bottom: 1rem;
+}
+.form-field label {
+  display: block;
+  font-weight: 600;
+}
+.form-hint {
+  margin: 0.15rem 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.form-field input {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 32rem;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+.form-field input[aria-invalid='true'] {
+  border-color: var(--fail);
+  border-width: 2px;
+}
+.field-error {
+  margin: 0.25rem 0 0;
+  color: var(--fail);
+}
+.form-message,
+.notice {
+  margin: 0.75rem 0 0;
+}
+.notice p {
+  margin: 0 0 0.5rem;
+}
+.note {
+  color: var(--muted);
+}
+.drift-note {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--warn);
+  background: var(--bg);
+}
+
+/* Observation table: stacked rows below 600 px, no horizontal page scroll */
+.table-wrapper {
+  overflow-x: auto;
+}
+.observations {
+  width: 100%;
+  border-collapse: collapse;
+}
+.observations caption {
+  padding-bottom: 0.5rem;
+  color: var(--muted);
+  text-align: left;
+}
+.observations th,
+.observations td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  /* Wrap only at word boundaries: no header or short value splits mid-word. */
+  overflow-wrap: normal;
+}
+.observations th {
+  white-space: nowrap;
+}
+.observations td[data-label='Outcome'],
+.observations td[data-label='Status'],
+.observations td[data-label='Duration'],
+.observations td[data-label='Version'],
+.observations td[data-label='Initiated by'] {
+  white-space: nowrap;
+}
+/* Between the stacked layout and a comfortable width the columns are tight, so
+   give the text its padding back. */
+@media (min-width: 601px) and (max-width: 780px) {
+  .observations th,
+  .observations td {
+    padding: 0.4rem 0.35rem;
+  }
+}
+@media (max-width: 600px) {
+  .observations thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .observations,
+  .observations tbody,
+  .observations tr,
+  .observations td {
+    display: block;
+    width: auto;
+  }
+  .observations tr {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .observations td {
+    padding: 0.15rem 0;
+    border: 0;
+  }
+  .observations td::before {
+    content: attr(data-label) ': ';
+    font-weight: 600;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {
