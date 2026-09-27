@@ -77,10 +77,11 @@ jobs:
       - name: Guards reject non-loopback bind and hosted endpoint
         shell: bash
         run: |
-          set -uo pipefail
-          STATUSFORGE_HTTP_ADDR=0.0.0.0:8080 STATUSFORGE_DYNAMODB_ENDPOINT=http://127.0.0.1:8000 ./statusforge; test $? -eq 1
-          STATUSFORGE_DYNAMODB_ENDPOINT=https://dynamodb.us-east-1.amazonaws.com ./statusforge; test $? -eq 1
-          env -u STATUSFORGE_DYNAMODB_ENDPOINT ./statusforge; test $? -eq 1
+          # Each command must exit 1 before listening; `|| rc=$?` keeps bash -e from aborting on the expected failure.
+          expect_exit1() { local rc=0; "$@" || rc=$?; test "$rc" -eq 1 || { echo "expected exit 1, got $rc for: $*"; return 1; }; }
+          expect_exit1 env STATUSFORGE_HTTP_ADDR=0.0.0.0:8080 STATUSFORGE_DYNAMODB_ENDPOINT=http://127.0.0.1:8000 ./statusforge
+          expect_exit1 env STATUSFORGE_DYNAMODB_ENDPOINT=https://dynamodb.us-east-1.amazonaws.com ./statusforge
+          expect_exit1 env -u STATUSFORGE_DYNAMODB_ENDPOINT ./statusforge
       - name: Diagnostics on failure
         if: failure()
         run: |
