@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1b1f23;
+  --muted: #57606a;
+  --border: #d0d7de;
+  --surface: #f6f8fa;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9aa4af;
+    --border: #30363d;
+    --surface: #161b22;
+  }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+.app-header,
+.app-main {
+  max-width: 60ch;
+  margin: 0 auto;
+  padding: 1rem;
+  overflow-wrap: break-word;
+}
+.tagline {
+  color: var(--muted);
+}
+.panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.status-badge {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.status--ready .status-badge {
+  color: #1f883d;
+}
+.status--degraded .status-badge {
+  color: #9a6700;
+}
+.status--unreachable .status-badge,
+.status--invalid .status-badge,
+.status--timeout .status-badge {
+  color: #cf222e;
+}
+.check-again {
+  min-height: 44px;
+  margin-top: 1rem;
+  padding: 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.check-again:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

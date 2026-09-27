@@ -1,0 +1,37 @@
+name: statusforge
+
+# Local development dependencies only. Nothing here talks to AWS.
+# The application itself runs natively (see Makefile: backend-dev, web-dev).
+
+services:
+  # The image runs as uid 1000 and a fresh named volume is created root-owned,
+  # so a one-shot root step hands the data directory to the unprivileged user.
+  dynamodb-init:
+    image: amazon/dynamodb-local:3.3.1
+    user: "0:0"
+    entrypoint: ["chown", "1000:1000", "/home/dynamodblocal/data"]
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.1
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+    # -sharedDb: one database file regardless of the access key/region a client sends.
+    # -dbPath: persist to the named volume instead of the image default (-inMemory).
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    ports:
+      - "127.0.0.1:${STATUSFORGE_DYNAMODB_PORT:-8000}:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    healthcheck:
+      # DynamoDB Local answers an unsigned GET / with HTTP 400 once it is serving.
+      test: ["CMD-SHELL", "test \"$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/)\" = 400"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  dynamodb-data:

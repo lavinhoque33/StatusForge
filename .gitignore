@@ -1,0 +1,31 @@
+# Local secrets and environment (examples are safe to track).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build/test outputs and downloaded dependencies.
+**/node_modules/
+**/dist/
+**/coverage/
+backend/bin/
+*.test
+*.out
+*.log
+
+# Local data that must never be committed.
+.local/
+
+# Editors and tools.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.context-mode/
+.opencode
+.codex
+opencode.*
+.playwright-mcp/
