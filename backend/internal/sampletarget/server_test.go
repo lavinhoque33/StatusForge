@@ -223,18 +223,44 @@ func TestRoutes(t *testing.T) {
 			s.Handler().ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, body))
 
 			if rec.Code != tt.wantStatus {
-				t.Fatalf("%s %s status = %d, want %d (body %q)", tt.method, tt.path, rec.Code, tt.wantStatus, rec.Body.String())
+				t.Fatalf(
+					"%s %s status = %d, want %d (body %q)",
+					tt.method,
+					tt.path,
+					rec.Code,
+					tt.wantStatus,
+					rec.Body.String(),
+				)
 			}
 			if tt.wantBody != "" && rec.Body.String() != tt.wantBody {
-				t.Errorf("%s %s body = %q, want %q", tt.method, tt.path, rec.Body.String(), tt.wantBody)
+				t.Errorf(
+					"%s %s body = %q, want %q",
+					tt.method,
+					tt.path,
+					rec.Body.String(),
+					tt.wantBody,
+				)
 			}
 			for _, want := range tt.wantContains {
 				if !strings.Contains(rec.Body.String(), want) {
-					t.Errorf("%s %s body %q does not contain %q", tt.method, tt.path, rec.Body.String(), want)
+					t.Errorf(
+						"%s %s body %q does not contain %q",
+						tt.method,
+						tt.path,
+						rec.Body.String(),
+						want,
+					)
 				}
 			}
 			if got := rec.Header().Get(FixtureHeader); got != FixtureName {
-				t.Errorf("%s %s %s = %q, want %q", tt.method, tt.path, FixtureHeader, got, FixtureName)
+				t.Errorf(
+					"%s %s %s = %q, want %q",
+					tt.method,
+					tt.path,
+					FixtureHeader,
+					got,
+					FixtureName,
+				)
 			}
 		})
 	}
@@ -264,7 +290,14 @@ func TestFixtureHeaderOnEveryResponse(t *testing.T) {
 		t.Run(req.method+" "+req.path, func(t *testing.T) {
 			resp := doRequest(t, client, req.method, ts.URL+req.path, req.body)
 			if got := resp.header.Get(FixtureHeader); got != FixtureName {
-				t.Errorf("%s %s %s = %q, want %q", req.method, req.path, FixtureHeader, got, FixtureName)
+				t.Errorf(
+					"%s %s %s = %q, want %q",
+					req.method,
+					req.path,
+					FixtureHeader,
+					got,
+					FixtureName,
+				)
 			}
 		})
 	}
@@ -276,25 +309,63 @@ func TestModeTransitionsAffectRoot(t *testing.T) {
 	defer ts.Close()
 	client := ts.Client()
 
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusOK || resp.body != "ok" {
-		t.Fatalf("initial GET / = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, "ok")
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusOK ||
+		resp.body != "ok" {
+		t.Fatalf(
+			"initial GET / = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			"ok",
+		)
 	}
 
 	if resp := doRequest(t, client, http.MethodPut, ts.URL+"/control/mode", `{"mode":"failing"}`); resp.status != http.StatusOK {
-		t.Fatalf("PUT /control/mode failing = (%d, %q), want status %d", resp.status, resp.body, http.StatusOK)
+		t.Fatalf(
+			"PUT /control/mode failing = (%d, %q), want status %d",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+		)
 	}
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusInternalServerError || resp.body != "simulated failure" {
-		t.Fatalf("GET / after controlled failure = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusInternalServerError, "simulated failure")
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusInternalServerError ||
+		resp.body != "simulated failure" {
+		t.Fatalf(
+			"GET / after controlled failure = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusInternalServerError,
+			"simulated failure",
+		)
 	}
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/control/mode", ""); resp.status != http.StatusOK || resp.body != `{"mode":"failing"}` {
-		t.Fatalf("GET /control/mode = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, `{"mode":"failing"}`)
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/control/mode", ""); resp.status != http.StatusOK ||
+		resp.body != `{"mode":"failing"}` {
+		t.Fatalf(
+			"GET /control/mode = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			`{"mode":"failing"}`,
+		)
 	}
 
 	if resp := doRequest(t, client, http.MethodPut, ts.URL+"/control/mode", `{"mode":"healthy"}`); resp.status != http.StatusOK {
-		t.Fatalf("PUT /control/mode healthy = (%d, %q), want status %d", resp.status, resp.body, http.StatusOK)
+		t.Fatalf(
+			"PUT /control/mode healthy = (%d, %q), want status %d",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+		)
 	}
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusOK || resp.body != "ok" {
-		t.Fatalf("GET / after recovery = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, "ok")
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/", ""); resp.status != http.StatusOK ||
+		resp.body != "ok" {
+		t.Fatalf(
+			"GET / after recovery = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			"ok",
+		)
 	}
 }
 
@@ -306,14 +377,25 @@ func TestRootSlowModeWaitsAndIsCancelable(t *testing.T) {
 	client := ts.Client()
 
 	if resp := doRequest(t, client, http.MethodPut, ts.URL+"/control/mode", `{"mode":"slow"}`); resp.status != http.StatusOK {
-		t.Fatalf("PUT /control/mode slow = (%d, %q), want status %d", resp.status, resp.body, http.StatusOK)
+		t.Fatalf(
+			"PUT /control/mode slow = (%d, %q), want status %d",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+		)
 	}
 
 	start := time.Now()
 	resp := doRequest(t, client, http.MethodGet, ts.URL+"/", "")
 	elapsed := time.Since(start)
 	if resp.status != http.StatusOK || resp.body != "ok (slow)" {
-		t.Fatalf("GET / in slow mode = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, "ok (slow)")
+		t.Fatalf(
+			"GET / in slow mode = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			"ok (slow)",
+		)
 	}
 	if elapsed < delay/2 {
 		t.Errorf("GET / in slow mode returned after %s, want at least %s", elapsed, delay/2)
@@ -328,21 +410,46 @@ func TestFixedRoutesIgnoreMode(t *testing.T) {
 	client := ts.Client()
 
 	if resp := doRequest(t, client, http.MethodPut, ts.URL+"/control/mode", `{"mode":"failing"}`); resp.status != http.StatusOK {
-		t.Fatalf("PUT /control/mode failing = (%d, %q), want status %d", resp.status, resp.body, http.StatusOK)
+		t.Fatalf(
+			"PUT /control/mode failing = (%d, %q), want status %d",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+		)
 	}
 
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/healthy", ""); resp.status != http.StatusOK || resp.body != "ok" {
-		t.Errorf("GET /healthy in failing mode = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, "ok")
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/healthy", ""); resp.status != http.StatusOK ||
+		resp.body != "ok" {
+		t.Errorf(
+			"GET /healthy in failing mode = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			"ok",
+		)
 	}
-	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/failing", ""); resp.status != http.StatusInternalServerError || resp.body != "simulated failure" {
-		t.Errorf("GET /failing in failing mode = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusInternalServerError, "simulated failure")
+	if resp := doRequest(t, client, http.MethodGet, ts.URL+"/failing", ""); resp.status != http.StatusInternalServerError ||
+		resp.body != "simulated failure" {
+		t.Errorf(
+			"GET /failing in failing mode = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusInternalServerError,
+			"simulated failure",
+		)
 	}
 
 	start := time.Now()
 	resp := doRequest(t, client, http.MethodGet, ts.URL+"/slow", "")
 	elapsed := time.Since(start)
 	if resp.status != http.StatusOK || resp.body != "ok (slow)" {
-		t.Errorf("GET /slow in failing mode = (%d, %q), want (%d, %q)", resp.status, resp.body, http.StatusOK, "ok (slow)")
+		t.Errorf(
+			"GET /slow in failing mode = (%d, %q), want (%d, %q)",
+			resp.status,
+			resp.body,
+			http.StatusOK,
+			"ok (slow)",
+		)
 	}
 	if elapsed < delay/2 {
 		t.Errorf("GET /slow returned after %s, want at least %s", elapsed, delay/2)
@@ -375,7 +482,11 @@ func TestSlowRoutesHonorCancellation(t *testing.T) {
 				t.Fatalf("GET %s ignored request cancellation; the delay is not cancelable", path)
 			}
 			if rec.Body.Len() != 0 {
-				t.Errorf("GET %s response body = %q after cancellation, want no response written", path, rec.Body.String())
+				t.Errorf(
+					"GET %s response body = %q after cancellation, want no response written",
+					path,
+					rec.Body.String(),
+				)
 			}
 		}
 	})
@@ -398,7 +509,9 @@ func TestSlowRoutesHonorCancellation(t *testing.T) {
 
 		start := time.Now()
 		if _, err := ts.Client().Do(req); err == nil {
-			t.Fatal("GET /slow after client cancellation returned no error, want a cancellation error")
+			t.Fatal(
+				"GET /slow after client cancellation returned no error, want a cancellation error",
+			)
 		}
 		if elapsed := time.Since(start); elapsed > 5*time.Second {
 			t.Errorf("cancelled GET /slow took %s; the 30s delay ignored cancellation", elapsed)
@@ -426,6 +539,10 @@ func TestHTTPServerTimeoutBudget(t *testing.T) {
 		t.Error("IdleTimeout must be bounded")
 	}
 	if srv.WriteTimeout <= MaxSlowDelay {
-		t.Errorf("WriteTimeout = %s, want more than MaxSlowDelay (%s) so a maximum slow response can complete", srv.WriteTimeout, MaxSlowDelay)
+		t.Errorf(
+			"WriteTimeout = %s, want more than MaxSlowDelay (%s) so a maximum slow response can complete",
+			srv.WriteTimeout,
+			MaxSlowDelay,
+		)
 	}
 }

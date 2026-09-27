@@ -22,7 +22,12 @@ func TestLocalRoundTrip(t *testing.T) {
 	}
 	conn.Close()
 	now := time.Now().UTC()
-	s := New(localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"), "statusforge_test_"+rand.Text(), time.Second, time.Now)
+	s := New(
+		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"),
+		"statusforge_test_"+rand.Text(),
+		time.Second,
+		time.Now,
+	)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
@@ -32,7 +37,17 @@ func TestLocalRoundTrip(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	m := monitor.New("sample", monitor.Check{URL: "http://127.0.0.1:8090/healthy", Method: "GET", ExpectedStatus: 200, DeadlineMs: 1000, MaxBodyBytes: monitor.MaxBodyBytes}, now)
+	m := monitor.New(
+		"sample",
+		monitor.Check{
+			URL:            "http://127.0.0.1:8090/healthy",
+			Method:         "GET",
+			ExpectedStatus: 200,
+			DeadlineMs:     1000,
+			MaxBodyBytes:   monitor.MaxBodyBytes,
+		},
+		now,
+	)
 	if err := s.Create(ctx, m); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +63,17 @@ func TestLocalRoundTrip(t *testing.T) {
 	if _, err := s.Lifecycle(ctx, m.ID, "resume", now); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("invalid transition: %v", err)
 	}
-	o := monitor.Observation{ID: rand.Text(), MonitorID: m.ID, ConfigVersion: 2, InitiatedBy: "manual", Request: changed, StartedAt: monitor.Stamp(now), CompletedAt: monitor.Stamp(now), Outcome: "healthy", Reason: "ok"}
+	o := monitor.Observation{
+		ID:            rand.Text(),
+		MonitorID:     m.ID,
+		ConfigVersion: 2,
+		InitiatedBy:   "manual",
+		Request:       changed,
+		StartedAt:     monitor.Stamp(now),
+		CompletedAt:   monitor.Stamp(now),
+		Outcome:       "healthy",
+		Reason:        "ok",
+	}
 	if err := s.PutObservation(ctx, o); err != nil {
 		t.Fatal(err)
 	}

@@ -51,7 +51,13 @@ func run() error {
 	logger := slog.New(handler)
 	u, _ := url.Parse(cfg.DynamoDBEndpoint) // validated by config.Load
 	host := u.Hostname()
-	dependency := localdynamo.New(cfg.DynamoDBEndpoint, host, cfg.DynamoDBRegion, cfg.DynamoDBAccessKeyID, cfg.DynamoDBSecretAccessKey)
+	dependency := localdynamo.New(
+		cfg.DynamoDBEndpoint,
+		host,
+		cfg.DynamoDBRegion,
+		cfg.DynamoDBAccessKeyID,
+		cfg.DynamoDBSecretAccessKey,
+	)
 	policy, err := targetpolicy.Parse(cfg.AllowedTargets)
 	if err != nil {
 		return err
@@ -59,8 +65,16 @@ func run() error {
 	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
 	runner := checker.New(policy, time.Now)
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewMonitorRouter(logger, []httpapi.Dependency{dependency}, cfg.ReadinessTimeout, time.Now, persistence, runner, policy),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewMonitorRouter(
+			logger,
+			[]httpapi.Dependency{dependency},
+			cfg.ReadinessTimeout,
+			time.Now,
+			persistence,
+			runner,
+			policy,
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      40 * time.Second,
@@ -71,7 +85,15 @@ func run() error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	defer listener.Close()
-	logger.Info("starting", "addr", cfg.HTTPAddr, "dynamodb_endpoint_host", host, "level", cfg.LogLevel)
+	logger.Info(
+		"starting",
+		"addr",
+		cfg.HTTPAddr,
+		"dynamodb_endpoint_host",
+		host,
+		"level",
+		cfg.LogLevel,
+	)
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ReadinessTimeout)
 	if err := dependency.Ping(ctx); err != nil {
 		logger.Warn("initial readiness degraded", "dynamodb_endpoint_host", host, "error", err)

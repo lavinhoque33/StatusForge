@@ -15,7 +15,10 @@ import (
 // documents.
 var securityHeaderValues = [...]struct{ name, value string }{
 	{"Cache-Control", "no-store"},
-	{"Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"},
+	{
+		"Content-Security-Policy",
+		"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+	},
 	{"Referrer-Policy", "no-referrer"},
 	{"X-Content-Type-Options", "nosniff"},
 	{"X-Frame-Options", "DENY"},

@@ -70,17 +70,29 @@ func (s *Server) handlePutMode(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxControlBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, controlErrorResponse{Error: invalidModeError, Allowed: modes})
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			controlErrorResponse{Error: invalidModeError, Allowed: modes},
+		)
 		return
 	}
 
 	mode, err := ParseMode(body.Mode)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, controlErrorResponse{Error: invalidModeError, Allowed: modes})
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			controlErrorResponse{Error: invalidModeError, Allowed: modes},
+		)
 		return
 	}
 	if err := s.SetMode(mode); err != nil {
-		writeJSON(w, http.StatusBadRequest, controlErrorResponse{Error: invalidModeError, Allowed: modes})
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			controlErrorResponse{Error: invalidModeError, Allowed: modes},
+		)
 		return
 	}
 	writeJSON(w, http.StatusOK, modeResponse{Mode: string(mode)})
@@ -115,7 +127,11 @@ func writeText(w http.ResponseWriter, status int, body string) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

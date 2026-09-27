@@ -19,10 +19,10 @@ help:
 	  '  backend-dev    Run the API on 127.0.0.1:8080 with root .env configuration' \
 	  '  sample-target  Run the controlled sample target fixture on 127.0.0.1:8090' \
 	  '  web-dev        Run Vite on 127.0.0.1:5173 with the /api proxy' \
-	  '  backend-check  gofmt, go vet, race-enabled tests, build' \
+	  '  backend-check  gofumpt, golines (100 cols), go vet, race-enabled tests, build' \
 	  '  web-check      Lint, types, formatting, tests, production build' \
 	  '  verify         Run both check suites' \
-	  '  format         Apply gofmt and Prettier' \
+	  '  format         Apply golines + gofumpt and Prettier' \
 	  '  down           Remove Compose containers/network; retain the data volume'
 
 .env:
@@ -56,7 +56,8 @@ web-dev: .env
 	@$(LOAD_ENV) npm --prefix web run dev
 
 backend-check:
-	@cd $(BACKEND) && unformatted="$$(gofmt -l .)" && if [ -n "$$unformatted" ]; then printf 'gofmt needed:\n%s\n' "$$unformatted"; exit 1; fi
+	@cd $(BACKEND) && unformatted="$$($(GO) tool gofumpt -l .)" && if [ -n "$$unformatted" ]; then printf 'formatting needed (run make format):\n%s\n' "$$unformatted"; exit 1; fi
+	@cd $(BACKEND) && unformatted="$$($(GO) tool golines -l -m 100 .)" && if [ -n "$$unformatted" ]; then printf 'formatting needed (run make format):\n%s\n' "$$unformatted"; exit 1; fi
 	cd $(BACKEND) && $(GO) vet ./...
 	cd $(BACKEND) && $(GO) test -race -count=1 ./...
 	cd $(BACKEND) && $(GO) build -o /dev/null ./...
@@ -71,7 +72,8 @@ web-check:
 verify: backend-check web-check
 
 format:
-	cd $(BACKEND) && gofmt -w .
+	cd $(BACKEND) && $(GO) tool golines -w -m 100 --base-formatter "$(GO) tool gofumpt" .
+	cd $(BACKEND) && $(GO) tool gofumpt -w .
 	npm --prefix web run format
 
 down:

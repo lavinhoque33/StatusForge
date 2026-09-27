@@ -29,18 +29,25 @@ func (f *fakeMonitorStore) Create(_ context.Context, m monitor.Monitor) error {
 	f.m = m
 	return nil
 }
+
 func (f *fakeMonitorStore) Get(_ context.Context, id string) (monitor.Monitor, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.m, nil
 }
+
 func (f *fakeMonitorStore) PutObservation(_ context.Context, o monitor.Observation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.observations = append(f.observations, o)
 	return nil
 }
-func (f *fakeMonitorStore) Observations(_ context.Context, _ string, _ int) ([]monitor.Observation, error) {
+
+func (f *fakeMonitorStore) Observations(
+	_ context.Context,
+	_ string,
+	_ int,
+) ([]monitor.Observation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]monitor.Observation{}, f.observations...), nil
@@ -56,11 +63,22 @@ func (r *waitingRunner) Run(_ context.Context, m monitor.Monitor) monitor.Observ
 	<-r.release
 	return monitor.Observation{ID: "sample", MonitorID: m.ID, Outcome: "healthy", Reason: "ok"}
 }
+
 func TestMonitorAPIValidationAndSingleFlight(t *testing.T) {
 	p, _ := targetpolicy.Parse("127.0.0.1:8090")
 	f := &fakeMonitorStore{}
 	runner := &waitingRunner{entered: make(chan struct{}), release: make(chan struct{})}
-	server := httptest.NewServer(NewMonitorRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, time.Second, time.Now, f, runner, p))
+	server := httptest.NewServer(
+		NewMonitorRouter(
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
+			time.Second,
+			time.Now,
+			f,
+			runner,
+			p,
+		),
+	)
 	defer server.Close()
 	client := server.Client()
 	request := func(method, path, body string) *http.Response {
@@ -89,11 +107,17 @@ func TestMonitorAPIValidationAndSingleFlight(t *testing.T) {
 		if resp.StatusCode != tc.status {
 			t.Fatalf("%q status=%d", tc.body, resp.StatusCode)
 		}
-		if tc.code != payload.Error && payload.Fields["check.url"].Code != tc.code && payload.Fields["check.unexpected"].Code != tc.code && payload.Fields["extra"].Code != tc.code {
+		if tc.code != payload.Error && payload.Fields["check.url"].Code != tc.code &&
+			payload.Fields["check.unexpected"].Code != tc.code &&
+			payload.Fields["extra"].Code != tc.code {
 			t.Fatalf("%q response=%+v", tc.body, payload)
 		}
 	}
-	resp := request("POST", "/api/monitors", `{"name":"a","check":{"url":"http://127.0.0.1:8090/"}}`)
+	resp := request(
+		"POST",
+		"/api/monitors",
+		`{"name":"a","check":{"url":"http://127.0.0.1:8090/"}}`,
+	)
 	if resp.StatusCode != 201 || !strings.HasPrefix(resp.Header.Get("Location"), "/api/monitors/") {
 		t.Fatalf("create status=%d location=%q", resp.StatusCode, resp.Header.Get("Location"))
 	}

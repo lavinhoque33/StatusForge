@@ -7,7 +7,13 @@ import (
 
 func TestLifecycleAndVersion(t *testing.T) {
 	now := time.Date(2026, 9, 27, 10, 15, 30, 123000000, time.UTC)
-	c := Check{URL: "http://127.0.0.1:8090", Method: "GET", ExpectedStatus: 200, DeadlineMs: 10000, MaxBodyBytes: MaxBodyBytes}
+	c := Check{
+		URL:            "http://127.0.0.1:8090",
+		Method:         "GET",
+		ExpectedStatus: 200,
+		DeadlineMs:     10000,
+		MaxBodyBytes:   MaxBodyBytes,
+	}
 	m := New("test", c, now)
 	name := "renamed"
 	m = m.Patch(&name, nil, now)

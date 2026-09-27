@@ -23,13 +23,36 @@ func New(policy *targetpolicy.Policy, now func() time.Time) *Runner {
 	if now == nil {
 		now = time.Now
 	}
-	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, MaxResponseHeaderBytes: 65536, DisableCompression: true, ForceAttemptHTTP2: false, DialContext: policy.DialContext}
-	return &Runner{client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, Now: now}
+	transport := &http.Transport{
+		Proxy:                  nil,
+		DisableKeepAlives:      true,
+		MaxResponseHeaderBytes: 65536,
+		DisableCompression:     true,
+		ForceAttemptHTTP2:      false,
+		DialContext:            policy.DialContext,
+	}
+	return &Runner{
+		client: &http.Client{
+			Transport:     transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		Now: now,
+	}
 }
+
 func (r *Runner) Run(ctx context.Context, m monitor.Monitor) (o monitor.Observation) {
 	started := r.Now()
 	startMono := time.Now()
-	o = monitor.Observation{ID: rand.Text(), MonitorID: m.ID, ConfigVersion: m.ConfigVersion, InitiatedBy: "manual", Request: m.Check, StartedAt: monitor.Stamp(started), Outcome: "checker_problem", Reason: "internal"}
+	o = monitor.Observation{
+		ID:            rand.Text(),
+		MonitorID:     m.ID,
+		ConfigVersion: m.ConfigVersion,
+		InitiatedBy:   "manual",
+		Request:       m.Check,
+		StartedAt:     monitor.Stamp(started),
+		Outcome:       "checker_problem",
+		Reason:        "internal",
+	}
 	defer func() {
 		if recover() != nil {
 			o.Outcome = "checker_problem"
@@ -73,6 +96,7 @@ func (r *Runner) Run(ctx context.Context, m monitor.Monitor) (o monitor.Observat
 	}
 	return
 }
+
 func classify(o *monitor.Observation, err error, ctx context.Context) {
 	switch {
 	case errors.Is(err, targetpolicy.ErrRefused):
@@ -90,6 +114,7 @@ func classify(o *monitor.Observation, err error, ctx context.Context) {
 		o.Reason = "connection_error"
 	}
 }
+
 func Log(logger *slog.Logger, o monitor.Observation) {
 	level := slog.LevelInfo
 	if o.Outcome == "checker_problem" {

@@ -21,8 +21,12 @@ func New(endpoint, host, region, accessKeyID, secretAccessKey string) *Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	cfg := aws.Config{
-		Region:           region,
-		Credentials:      credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		Region: region,
+		Credentials: credentials.NewStaticCredentialsProvider(
+			accessKeyID,
+			secretAccessKey,
+			"",
+		),
 		BaseEndpoint:     aws.String(endpoint),
 		RetryMaxAttempts: 1,
 		HTTPClient: &http.Client{

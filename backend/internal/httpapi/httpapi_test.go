@@ -147,7 +147,12 @@ func logNumber(t *testing.T, line map[string]any, key string) float64 {
 }
 
 // serve runs one request through handler.
-func serve(handler http.Handler, method, target string, headers http.Header, body io.Reader) *httptest.ResponseRecorder {
+func serve(
+	handler http.Handler,
+	method, target string,
+	headers http.Header,
+	body io.Reader,
+) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, target, body)
 	for name, values := range headers {
 		for _, value := range values {
@@ -533,13 +538,62 @@ func TestSecurityHeaders(t *testing.T) {
 		wantStatus   int
 		wantHardened bool
 	}{
-		{name: "success", handler: api, method: http.MethodGet, target: "/api/health/live", wantStatus: http.StatusOK, wantHardened: true},
-		{name: "readiness failure", handler: api, method: http.MethodGet, target: "/api/health/ready", wantStatus: http.StatusServiceUnavailable, wantHardened: true},
-		{name: "unknown API route", handler: api, method: http.MethodGet, target: "/api/unknown", wantStatus: http.StatusNotFound, wantHardened: true},
-		{name: "API prefix only", handler: api, method: http.MethodGet, target: "/api", wantStatus: http.StatusNotFound, wantHardened: true},
-		{name: "method mismatch", handler: api, method: http.MethodDelete, target: "/api/health/live", wantStatus: http.StatusMethodNotAllowed, wantHardened: true},
-		{name: "recovered panic", handler: panicking, method: http.MethodGet, target: "/api/panic", wantStatus: http.StatusInternalServerError, wantHardened: true},
-		{name: "non-API path stays unhardened", handler: api, method: http.MethodGet, target: "/", wantStatus: http.StatusNotFound, wantHardened: false},
+		{
+			name:         "success",
+			handler:      api,
+			method:       http.MethodGet,
+			target:       "/api/health/live",
+			wantStatus:   http.StatusOK,
+			wantHardened: true,
+		},
+		{
+			name:         "readiness failure",
+			handler:      api,
+			method:       http.MethodGet,
+			target:       "/api/health/ready",
+			wantStatus:   http.StatusServiceUnavailable,
+			wantHardened: true,
+		},
+		{
+			name:         "unknown API route",
+			handler:      api,
+			method:       http.MethodGet,
+			target:       "/api/unknown",
+			wantStatus:   http.StatusNotFound,
+			wantHardened: true,
+		},
+		{
+			name:         "API prefix only",
+			handler:      api,
+			method:       http.MethodGet,
+			target:       "/api",
+			wantStatus:   http.StatusNotFound,
+			wantHardened: true,
+		},
+		{
+			name:         "method mismatch",
+			handler:      api,
+			method:       http.MethodDelete,
+			target:       "/api/health/live",
+			wantStatus:   http.StatusMethodNotAllowed,
+			wantHardened: true,
+		},
+		{
+			name:         "recovered panic",
+			handler:      panicking,
+			method:       http.MethodGet,
+			target:       "/api/panic",
+			wantStatus:   http.StatusInternalServerError,
+			wantHardened: true,
+		},
+		{
+			name:         "non-API path stays unhardened",
+			handler:      api,
+			method:       http.MethodGet,
+			target:       "/",
+			wantStatus:   http.StatusNotFound,
+			wantHardened: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -565,7 +619,10 @@ func TestSecurityHeaders(t *testing.T) {
 
 func TestReadinessFailureLogging(t *testing.T) {
 	failure := refusedError()
-	dependency := stubDependency{name: "127.0.0.1", check: func(context.Context) error { return failure }}
+	dependency := stubDependency{
+		name:  "127.0.0.1",
+		check: func(context.Context) error { return failure },
+	}
 	logs, logger := newLogRecorder()
 	router := NewRouter(logger, []Dependency{dependency}, time.Second, stoppedClock(testNow))
 
@@ -573,7 +630,13 @@ func TestReadinessFailureLogging(t *testing.T) {
 
 	want := `{"status":"degraded","checkedAt":"` + testCheckedAt + `","dependencies":{"dynamodb":{"status":"unavailable","reason":"unreachable"}}}` + "\n"
 	if recorder.Code != http.StatusServiceUnavailable || recorder.Body.String() != want {
-		t.Fatalf("response = %d %q, want %d %q", recorder.Code, recorder.Body.String(), http.StatusServiceUnavailable, want)
+		t.Fatalf(
+			"response = %d %q, want %d %q",
+			recorder.Code,
+			recorder.Body.String(),
+			http.StatusServiceUnavailable,
+			want,
+		)
 	}
 	if strings.Contains(recorder.Body.String(), failure.Error()) {
 		t.Errorf("response body leaked the underlying error: %s", recorder.Body.String())

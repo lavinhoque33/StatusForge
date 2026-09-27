@@ -68,7 +68,12 @@ type Dependency interface {
 //
 // A nil logger falls back to slog.Default, a nil now to time.Now, and a
 // non-positive readinessTimeout to DefaultReadinessTimeout.
-func NewRouter(logger *slog.Logger, deps []Dependency, readinessTimeout time.Duration, now func() time.Time) http.Handler {
+func NewRouter(
+	logger *slog.Logger,
+	deps []Dependency,
+	readinessTimeout time.Duration,
+	now func() time.Time,
+) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -125,7 +130,12 @@ func handleLive(w http.ResponseWriter, _ *http.Request) {
 // handleReady reports the state of every dependency as of now. The body stays
 // coarse — status and reason classes only — while the underlying error is
 // logged for the operator.
-func handleReady(logger *slog.Logger, deps []Dependency, timeout time.Duration, now func() time.Time) http.HandlerFunc {
+func handleReady(
+	logger *slog.Logger,
+	deps []Dependency,
+	timeout time.Duration,
+	now func() time.Time,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		results := checkDependencies(r.Context(), logger, deps, timeout)
 		report := healthResponse{
@@ -137,7 +147,10 @@ func handleReady(logger *slog.Logger, deps []Dependency, timeout time.Duration, 
 			if result.reason != "" {
 				report.Status = statusDegraded
 			}
-			report.Dependencies[dependencyReportKey] = dependencyHealth{Status: result.status, Reason: result.reason}
+			report.Dependencies[dependencyReportKey] = dependencyHealth{
+				Status: result.status,
+				Reason: result.reason,
+			}
 		}
 		if report.Status == statusDegraded {
 			writeJSON(w, http.StatusServiceUnavailable, report)
@@ -162,7 +175,12 @@ type dependencyResult struct {
 // ignores its context delays one readiness answer but never hangs it. A check
 // that panics is contained: it is reported as a failing dependency and the
 // process keeps serving.
-func checkDependencies(ctx context.Context, logger *slog.Logger, deps []Dependency, timeout time.Duration) []dependencyResult {
+func checkDependencies(
+	ctx context.Context,
+	logger *slog.Logger,
+	deps []Dependency,
+	timeout time.Duration,
+) []dependencyResult {
 	results := make([]dependencyResult, len(deps))
 	for i, dep := range deps {
 		results[i] = dependencyResult{name: dependencyName(dep), status: dependencyReady}
@@ -194,7 +212,14 @@ func checkDependencies(ctx context.Context, logger *slog.Logger, deps []Dependen
 	case <-ctx.Done():
 		// The probe deadline passed before every check answered: no dependency
 		// is confirmed reachable, and the abandoned checks are not awaited.
-		logger.WarnContext(ctx, "readiness probe timed out", "timeout", timeout, "dependencies", len(deps))
+		logger.WarnContext(
+			ctx,
+			"readiness probe timed out",
+			"timeout",
+			timeout,
+			"dependencies",
+			len(deps),
+		)
 		for i := range results {
 			results[i].status = dependencyUnavailable
 			results[i].reason = reasonTimeout
@@ -206,7 +231,14 @@ func checkDependencies(ctx context.Context, logger *slog.Logger, deps []Dependen
 		if err == nil {
 			continue
 		}
-		logger.WarnContext(ctx, "dependency check failed", "dependency", results[i].name, "error", err)
+		logger.WarnContext(
+			ctx,
+			"dependency check failed",
+			"dependency",
+			results[i].name,
+			"error",
+			err,
+		)
 		results[i].status = dependencyUnavailable
 		results[i].reason = dependencyReason(err)
 	}

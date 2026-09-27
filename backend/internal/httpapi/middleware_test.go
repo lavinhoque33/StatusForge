@@ -56,9 +56,11 @@ func TestRequestLogger(t *testing.T) {
 			target: "/api/health/ready",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				writeJSON(w, http.StatusServiceUnavailable, healthResponse{
-					Status:       statusDegraded,
-					CheckedAt:    testCheckedAt,
-					Dependencies: map[string]dependencyHealth{dependencyReportKey: {Status: dependencyUnavailable, Reason: reasonTimeout}},
+					Status:    statusDegraded,
+					CheckedAt: testCheckedAt,
+					Dependencies: map[string]dependencyHealth{
+						dependencyReportKey: {Status: dependencyUnavailable, Reason: reasonTimeout},
+					},
 				})
 			},
 			wantStatus: http.StatusServiceUnavailable,
@@ -81,7 +83,13 @@ func TestRequestLogger(t *testing.T) {
 			logs, logger := newLogRecorder()
 			handler := chi.Chain(middlewareChain(logger, testClock(step))...).Handler(test.handler)
 
-			recorder := serve(handler, test.method, test.target, test.headers, strings.NewReader(test.body))
+			recorder := serve(
+				handler,
+				test.method,
+				test.target,
+				test.headers,
+				strings.NewReader(test.body),
+			)
 
 			if recorder.Code != test.wantStatus {
 				t.Errorf("status = %d, want %d", recorder.Code, test.wantStatus)
@@ -113,7 +121,12 @@ func TestRequestLogger(t *testing.T) {
 				t.Error("request_id is empty")
 			}
 			if got := recorder.Header().Get(middleware.RequestIDHeader); got != requestID {
-				t.Errorf("%s = %q, want the logged request_id %q", middleware.RequestIDHeader, got, requestID)
+				t.Errorf(
+					"%s = %q, want the logged request_id %q",
+					middleware.RequestIDHeader,
+					got,
+					requestID,
+				)
 			}
 			for _, forbidden := range test.forbidden {
 				if strings.Contains(logs.String(), forbidden) {
@@ -129,7 +142,10 @@ func TestRecoverPanics(t *testing.T) {
 		logs, logger := newLogRecorder()
 		router := newMux(logger, stoppedClock(testNow))
 		router.Get("/api/health/live", handleLive)
-		router.Get("/api/panic", func(http.ResponseWriter, *http.Request) { panic("handler exploded") })
+		router.Get(
+			"/api/panic",
+			func(http.ResponseWriter, *http.Request) { panic("handler exploded") },
+		)
 
 		recorder := serve(router, http.MethodGet, "/api/panic", nil, nil)
 
@@ -172,14 +188,20 @@ func TestRecoverPanics(t *testing.T) {
 	t.Run("ErrAbortHandler is re-panicked", func(t *testing.T) {
 		logs, logger := newLogRecorder()
 		router := newMux(logger, stoppedClock(testNow))
-		router.Get("/api/abort", func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) })
+		router.Get(
+			"/api/abort",
+			func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) },
+		)
 
 		defer func() {
 			if got := recover(); got != http.ErrAbortHandler {
 				t.Fatalf("recovered %v, want http.ErrAbortHandler", got)
 			}
 			if strings.Contains(logs.String(), "panic recovered") {
-				t.Errorf("http.ErrAbortHandler must not be reported as a recovered panic:\n%s", logs.String())
+				t.Errorf(
+					"http.ErrAbortHandler must not be reported as a recovered panic:\n%s",
+					logs.String(),
+				)
 			}
 		}()
 

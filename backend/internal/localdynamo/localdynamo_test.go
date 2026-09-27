@@ -33,7 +33,8 @@ func TestPingUsesExplicitLocalEndpoint(t *testing.T) {
 	if requestBody != `{"Limit":1}` {
 		t.Errorf("ListTables request = %s", requestBody)
 	}
-	if !strings.Contains(authorization, "Credential=local-key/") || strings.Contains(authorization, "ambient-secret") {
+	if !strings.Contains(authorization, "Credential=local-key/") ||
+		strings.Contains(authorization, "ambient-secret") {
 		t.Errorf("did not use explicit static credentials: %s", authorization)
 	}
 }

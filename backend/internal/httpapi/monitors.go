@@ -42,7 +42,15 @@ type monitorAPI struct {
 	busy   map[string]bool
 }
 
-func NewMonitorRouter(logger *slog.Logger, deps []Dependency, readinessTimeout time.Duration, now func() time.Time, s MonitorStore, r CheckRunner, p *targetpolicy.Policy) http.Handler {
+func NewMonitorRouter(
+	logger *slog.Logger,
+	deps []Dependency,
+	readinessTimeout time.Duration,
+	now func() time.Time,
+	s MonitorStore,
+	r CheckRunner,
+	p *targetpolicy.Policy,
+) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -55,7 +63,14 @@ func NewMonitorRouter(logger *slog.Logger, deps []Dependency, readinessTimeout t
 	mux := newMux(logger, now)
 	mux.Get("/api/health/live", handleLive)
 	mux.Get("/api/health/ready", handleReady(logger, deps, readinessTimeout, now))
-	a := &monitorAPI{store: s, runner: r, policy: p, logger: logger, now: now, busy: map[string]bool{}}
+	a := &monitorAPI{
+		store:  s,
+		runner: r,
+		policy: p,
+		logger: logger,
+		now:    now,
+		busy:   map[string]bool{},
+	}
 	mux.Get("/api/monitors", a.list)
 	mux.Post("/api/monitors", a.create)
 	mux.Get("/api/monitors/{id}", a.get)
@@ -66,12 +81,15 @@ func NewMonitorRouter(logger *slog.Logger, deps []Dependency, readinessTimeout t
 	mux.NotFound(jsonErrorHandler(http.StatusNotFound, errorNotFound))
 	return mux
 }
+
 func apiError(w http.ResponseWriter, status int, code string) {
 	writeJSON(w, status, map[string]string{"error": code})
 }
+
 func fieldsError(w http.ResponseWriter, f monitor.Fields) {
 	writeJSON(w, 400, map[string]any{"error": "validation_failed", "fields": f})
 }
+
 func decode(w http.ResponseWriter, r *http.Request, out any, paths map[string]string) bool {
 	b, err := io.ReadAll(io.LimitReader(r.Body, 65537))
 	if err != nil {
@@ -93,7 +111,10 @@ func decode(w http.ResponseWriter, r *http.Request, out any, paths map[string]st
 			if json.Unmarshal(v, &nested) == nil {
 				for child := range nested {
 					key := "check." + child
-					if !strings.Contains("|url|method|expectedStatus|deadlineMs|maxBodyBytes|", "|"+child+"|") {
+					if !strings.Contains(
+						"|url|method|expectedStatus|deadlineMs|maxBodyBytes|",
+						"|"+child+"|",
+					) {
 						f := monitor.Fields{}
 						f.Add(key, "unknown_field", "unknown field")
 						fieldsError(w, f)
@@ -117,6 +138,7 @@ func decode(w http.ResponseWriter, r *http.Request, out any, paths map[string]st
 	}
 	return true
 }
+
 func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -132,6 +154,7 @@ func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
 		apiError(w, 503, "store_unavailable")
 	}
 }
+
 func (s *monitorAPI) list(w http.ResponseWriter, r *http.Request) {
 	ms, err := s.store.List(r.Context())
 	if err != nil {
@@ -153,6 +176,7 @@ func (s *monitorAPI) list(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"monitors": items})
 }
+
 func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name  *string `json:"name"`
@@ -174,7 +198,12 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fields.Add("name", "required", "name is required")
 	}
-	c := monitor.Check{Method: "GET", ExpectedStatus: 200, DeadlineMs: 10000, MaxBodyBytes: monitor.MaxBodyBytes}
+	c := monitor.Check{
+		Method:         "GET",
+		ExpectedStatus: 200,
+		DeadlineMs:     10000,
+		MaxBodyBytes:   monitor.MaxBodyBytes,
+	}
 	if req.Check == nil {
 		fields.Add("check.url", "required", "URL is required")
 	} else {
@@ -207,12 +236,14 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "/api/monitors/"+m.ID)
 	writeJSON(w, 201, m)
 }
+
 func (s *monitorAPI) validateURL(u string, fields monitor.Fields) {
 	code, msg := s.policy.Validate(u)
 	if code != "" {
 		fields.Add("check.url", code, msg)
 	}
 }
+
 func (s *monitorAPI) get(w http.ResponseWriter, r *http.Request) {
 	m, err := s.store.Get(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
@@ -221,6 +252,7 @@ func (s *monitorAPI) get(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, m)
 }
+
 func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Expected *int    `json:"expectedConfigVersion"`
@@ -233,7 +265,12 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 			MaxBodyBytes   *int    `json:"maxBodyBytes"`
 		} `json:"check"`
 	}
-	if !decode(w, r, &req, map[string]string{"expectedConfigVersion": "", "name": "", "check": ""}) {
+	if !decode(
+		w,
+		r,
+		&req,
+		map[string]string{"expectedConfigVersion": "", "name": "", "check": ""},
+	) {
 		return
 	}
 	fields := monitor.Fields{}
@@ -281,6 +318,7 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, m)
 }
+
 func (s *monitorAPI) lifecycle(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action *string `json:"action"`
@@ -307,6 +345,7 @@ func (s *monitorAPI) lifecycle(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, m)
 }
+
 func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
 	limit := 50
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -331,6 +370,7 @@ func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"observations": obs})
 }
+
 func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	m, err := s.store.Get(r.Context(), id)
@@ -357,7 +397,10 @@ func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
 	done := make(chan result, 1)
 	go func() {
 		defer func() { s.mu.Lock(); delete(s.busy, id); s.mu.Unlock() }()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.Check.DeadlineMs)*time.Millisecond+5*time.Second)
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			time.Duration(m.Check.DeadlineMs)*time.Millisecond+5*time.Second,
+		)
 		defer cancel()
 		o := s.runner.Run(ctx, m)
 		checker.Log(s.logger, o)

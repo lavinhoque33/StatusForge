@@ -143,17 +143,33 @@ func (c Config) Validate() error {
 func ValidateAddr(addr string) error {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("sample target address %q: want host:port such as %q: %w", addr, DefaultAddr, err)
+		return fmt.Errorf(
+			"sample target address %q: want host:port such as %q: %w",
+			addr,
+			DefaultAddr,
+			err,
+		)
 	}
 	if host == "" {
-		return fmt.Errorf("sample target address %q: missing host; the fixture has no authentication and must never listen on every interface", addr)
+		return fmt.Errorf(
+			"sample target address %q: missing host; the fixture has no authentication and must never listen on every interface",
+			addr,
+		)
 	}
 	if !netguard.IsLoopbackHost(host) {
-		return fmt.Errorf("sample target address %q: host %q is not loopback; the fixture has no authentication and must never be exposed", addr, host)
+		return fmt.Errorf(
+			"sample target address %q: host %q is not loopback; the fixture has no authentication and must never be exposed",
+			addr,
+			host,
+		)
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
-		return fmt.Errorf("sample target address %q: port %q must be a number between 1 and 65535", addr, port)
+		return fmt.Errorf(
+			"sample target address %q: port %q must be a number between 1 and 65535",
+			addr,
+			port,
+		)
 	}
 	return nil
 }

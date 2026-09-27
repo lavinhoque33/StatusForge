@@ -46,12 +46,23 @@ func TestOutcomeAgainstLoopback(t *testing.T) {
 		truncated             bool
 	}{{"/", "healthy", "ok", 200, false}, {"/status", "failing", "wrong_status", 500, false}, {"/redirect", "failing", "wrong_status", 302, false}, {"/large", "healthy", "ok", 200, true}, {"/headers", "failing", "timeout", 0, false}, {"/body", "failing", "timeout", 200, false}} {
 		t.Run(tc.path, func(t *testing.T) {
-			m := monitor.Monitor{ID: "m", ConfigVersion: 1, Check: monitor.Check{URL: server.URL + tc.path, Method: "GET", ExpectedStatus: 200, DeadlineMs: 1000, MaxBodyBytes: 65536}}
+			m := monitor.Monitor{
+				ID:            "m",
+				ConfigVersion: 1,
+				Check: monitor.Check{
+					URL:            server.URL + tc.path,
+					Method:         "GET",
+					ExpectedStatus: 200,
+					DeadlineMs:     1000,
+					MaxBodyBytes:   65536,
+				},
+			}
 			o := runner.Run(t.Context(), m)
 			if o.Outcome != tc.outcome || o.Reason != tc.reason || o.BodyTruncated != tc.truncated {
 				t.Fatalf("outcome=%+v", o)
 			}
-			if tc.status == 0 && o.ObservedStatus != nil || tc.status != 0 && (o.ObservedStatus == nil || *o.ObservedStatus != tc.status) {
+			if tc.status == 0 && o.ObservedStatus != nil ||
+				tc.status != 0 && (o.ObservedStatus == nil || *o.ObservedStatus != tc.status) {
 				t.Fatalf("status=%v, expected %d", o.ObservedStatus, tc.status)
 			}
 		})
@@ -63,7 +74,10 @@ func TestOutcomeAgainstLoopback(t *testing.T) {
 	addr := listener.Addr().String()
 	listener.Close()
 	p, _ = targetpolicy.Parse(addr)
-	o := New(p, time.Now).Run(t.Context(), monitor.Monitor{Check: monitor.Check{URL: "http://" + addr, Method: "GET", ExpectedStatus: 200, DeadlineMs: 1000, MaxBodyBytes: 65536}})
+	o := New(
+		p,
+		time.Now,
+	).Run(t.Context(), monitor.Monitor{Check: monitor.Check{URL: "http://" + addr, Method: "GET", ExpectedStatus: 200, DeadlineMs: 1000, MaxBodyBytes: 65536}})
 	if o.Reason != "connection_refused" {
 		t.Fatalf("refusal: %+v", o)
 	}

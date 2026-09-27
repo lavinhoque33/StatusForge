@@ -22,12 +22,18 @@ type Policy struct {
 }
 
 func Parse(value string) (*Policy, error) {
-	p := &Policy{allowed: map[string]bool{}, resolver: net.DefaultResolver.LookupIPAddr, dial: (&net.Dialer{}).DialContext}
+	p := &Policy{
+		allowed:  map[string]bool{},
+		resolver: net.DefaultResolver.LookupIPAddr,
+		dial:     (&net.Dialer{}).DialContext,
+	}
 	for _, entry := range strings.Split(value, ",") {
 		entry = strings.TrimSpace(entry)
 		host, port, err := net.SplitHostPort(entry)
 		if err != nil || !netguard.IsLoopbackHost(host) {
-			return nil, fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: each entry must be a loopback host:port")
+			return nil, fmt.Errorf(
+				"STATUSFORGE_ALLOWED_TARGETS: each entry must be a loopback host:port",
+			)
 		}
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65535 {
@@ -40,6 +46,7 @@ func Parse(value string) (*Policy, error) {
 	}
 	return p, nil
 }
+
 func (p *Policy) Validate(raw string) (string, string) {
 	if len(raw) > 2048 || raw == "" {
 		return "url_invalid", "URL must be absolute and at most 2048 bytes"
@@ -71,10 +78,14 @@ func (p *Policy) Validate(raw string) (string, string) {
 	}
 	key := net.JoinHostPort(host, strconv.Itoa(n))
 	if !p.allowed[key] {
-		return "target_not_allowed", fmt.Sprintf("host:port %s is not in STATUSFORGE_ALLOWED_TARGETS", key)
+		return "target_not_allowed", fmt.Sprintf(
+			"host:port %s is not in STATUSFORGE_ALLOWED_TARGETS",
+			key,
+		)
 	}
 	return "", ""
 }
+
 func (p *Policy) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {

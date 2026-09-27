@@ -48,17 +48,28 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, err
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{3,255}$`).MatchString(cfg.DynamoDBTable) {
-		return Config{}, fmt.Errorf("STATUSFORGE_DYNAMODB_TABLE: must be 3–255 characters [A-Za-z0-9_.-]")
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_DYNAMODB_TABLE: must be 3–255 characters [A-Za-z0-9_.-]",
+		)
 	}
 	if err := ValidateLoopbackAddr("STATUSFORGE_HTTP_ADDR", cfg.HTTPAddr); err != nil {
 		return Config{}, err
 	}
 	if cfg.DynamoDBEndpoint == "" {
-		return Config{}, fmt.Errorf("STATUSFORGE_DYNAMODB_ENDPOINT: set the local endpoint (e.g. http://127.0.0.1:8000); there is no hosted fallback")
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_DYNAMODB_ENDPOINT: set the local endpoint (e.g. http://127.0.0.1:8000); there is no hosted fallback",
+		)
 	}
 	u, err := url.Parse(cfg.DynamoDBEndpoint)
-	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || !netguard.IsLoopbackHost(u.Hostname()) || u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" {
-		return Config{}, fmt.Errorf("STATUSFORGE_DYNAMODB_ENDPOINT: must be an http(s) URL with a loopback-only host")
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") ||
+		!netguard.IsLoopbackHost(u.Hostname()) ||
+		u.User != nil ||
+		u.Opaque != "" ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_DYNAMODB_ENDPOINT: must be an http(s) URL with a loopback-only host",
+		)
 	}
 	switch cfg.LogLevel {
 	case "debug", "info", "warn", "error":
@@ -97,7 +108,9 @@ func validateTargets(raw string) error {
 	for _, entry := range strings.Split(raw, ",") {
 		host, port, err := net.SplitHostPort(strings.TrimSpace(entry))
 		if err != nil || !netguard.IsLoopbackHost(host) {
-			return fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: each entry must be a loopback host:port")
+			return fmt.Errorf(
+				"STATUSFORGE_ALLOWED_TARGETS: each entry must be a loopback host:port",
+			)
 		}
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65535 {

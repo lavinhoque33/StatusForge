@@ -19,9 +19,13 @@ func TestURLValidationOrder(t *testing.T) {
 		}
 	}
 }
+
 func TestDialRefusesNonAllowedAndNonLoopback(t *testing.T) {
 	p, _ := Parse("localhost:80")
-	if _, err := p.DialContext(context.Background(), "tcp", "127.0.0.1:80"); !errors.Is(err, ErrRefused) {
+	if _, err := p.DialContext(context.Background(), "tcp", "127.0.0.1:80"); !errors.Is(
+		err,
+		ErrRefused,
+	) {
 		t.Fatalf("unlisted: %v", err)
 	}
 	p.resolver = func(context.Context, string) ([]net.IPAddr, error) {
@@ -31,7 +35,10 @@ func TestDialRefusesNonAllowedAndNonLoopback(t *testing.T) {
 		t.Fatal("attempted dial despite unsafe resolution")
 		return nil, nil
 	}
-	if _, err := p.DialContext(context.Background(), "tcp", "localhost:80"); !errors.Is(err, ErrRefused) {
+	if _, err := p.DialContext(context.Background(), "tcp", "localhost:80"); !errors.Is(
+		err,
+		ErrRefused,
+	) {
 		t.Fatalf("unsafe resolution: %v", err)
 	}
 }
