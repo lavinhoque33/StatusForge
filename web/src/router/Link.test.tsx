@@ -71,4 +71,11 @@ describe('Link', () => {
     expect(event.defaultPrevented).toBe(false);
     expect(window.location.pathname).toBe('/');
   });
+  it('leaves fragment navigation to the browser for native scroll and focus', () => {
+    render(<Link to="/#notifications-attention">Failed notifications</Link>);
+    const link = screen.getByRole('link', { name: 'Failed notifications' });
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
 });

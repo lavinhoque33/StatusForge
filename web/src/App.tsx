@@ -1,3 +1,6 @@
+import { AttentionBanner } from './components/AttentionBanner';
+import { IncidentDetailPage } from './pages/IncidentDetailPage';
+import { IncidentsPage } from './pages/IncidentsPage';
 import { BackendStatus } from './components/BackendStatus';
 import { MonitorCreatePage } from './pages/MonitorCreatePage';
 import { MonitorDetailPage } from './pages/MonitorDetailPage';
@@ -26,15 +29,20 @@ export default function App() {
             </li>
             <li>
               <Link
-                to="/monitors/new"
-                aria-current={route.name === 'create-monitor' ? 'page' : undefined}
+                to="/incidents"
+                aria-current={
+                  route.name === 'incidents' || route.name === 'incident-detail'
+                    ? 'page'
+                    : undefined
+                }
               >
-                New monitor
+                Incidents
               </Link>
             </li>
           </ul>
         </nav>
         <BackendStatus />
+        <AttentionBanner />
       </header>
 
       <main className="app-main">
@@ -42,6 +50,14 @@ export default function App() {
         {route.name === 'create-monitor' ? <MonitorCreatePage /> : null}
         {route.name === 'monitor-detail' ? (
           <MonitorDetailPage key={route.monitorId} monitorId={route.monitorId} />
+        ) : null}
+        {route.name === 'incidents' ? <IncidentsPage /> : null}
+        {route.name === 'incident-detail' ? (
+          <IncidentDetailPage
+            key={`${route.monitorId}:${route.incidentId}`}
+            monitorId={route.monitorId}
+            incidentId={route.incidentId}
+          />
         ) : null}
         {route.name === 'not-found' ? (
           <section aria-labelledby="page-not-found-heading">

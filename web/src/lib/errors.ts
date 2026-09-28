@@ -41,6 +41,12 @@ export function describeApiError(error: unknown): string {
         return 'The backend store is unavailable. Try again.';
       case 'monitor_not_found':
         return 'This monitor no longer exists.';
+      case 'incident_not_found':
+        return 'This incident no longer exists.';
+      case 'notification_not_found':
+        return 'This notification no longer exists.';
+      case 'not_failed':
+        return 'This notification is no longer failed. Reload to see its current state.';
       case 'version_conflict':
         return 'This monitor changed; review and try again.';
       case 'archived':

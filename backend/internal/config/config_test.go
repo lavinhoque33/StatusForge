@@ -103,3 +103,31 @@ func TestLoadInvalidSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestDeliverySettingsRejectUnsafeOrUnboundedValues(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"STATUSFORGE_NOTIFY_URL", "https://127.0.0.1:8091/notify"},
+		{"STATUSFORGE_NOTIFY_URL", "http://example.com:8091/notify"},
+		{"STATUSFORGE_NOTIFY_URL", "http://user@127.0.0.1:8091/notify"},
+		{"STATUSFORGE_NOTIFY_URL", "http://127.0.0.1:8091/notify#fragment"},
+		{"STATUSFORGE_DELIVERY_WORKERS", "5"},
+		{"STATUSFORGE_DELIVERY_RETRY_SCHEDULE", "0s,2s"},
+		{"STATUSFORGE_DELIVERY_RETRY_SCHEDULE", "2h"},
+		{"STATUSFORGE_REMINDER_INTERVAL_SECONDS", "59"},
+		{"STATUSFORGE_REMINDER_INTERVAL_SECONDS", "86401"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			_, err := Load(
+				env(
+					map[string]string{
+						"STATUSFORGE_DYNAMODB_ENDPOINT": "http://127.0.0.1:8000",
+						tc.key:                          tc.value,
+					},
+				),
+			)
+			if err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Fatalf("unsafe setting accepted or mislabelled: %v", err)
+			}
+		})
+	}
+}

@@ -7,7 +7,7 @@ BACKEND := backend
 # Native applications do not read Compose's environment file themselves.
 LOAD_ENV = set -a; if [ -f .env ]; then . ./.env; fi; set +a;
 
-.PHONY: help setup doctor db-up db-down db-reset backend-dev sample-target web-dev backend-check web-check verify format down
+.PHONY: help setup doctor db-up db-down db-reset backend-dev sample-target notification-receiver web-dev backend-check web-check verify format down
 
 help:
 	@printf '%s\n' \
@@ -18,6 +18,7 @@ help:
 	  '  db-reset       DESTRUCTIVE: remove DynamoDB Local containers and data volume (CONFIRM=yes)' \
 	  '  backend-dev    Run the API on 127.0.0.1:8080 with root .env configuration' \
 	  '  sample-target  Run the controlled sample target fixture on 127.0.0.1:8090' \
+	  '  notification-receiver  Run the local notification receiver on 127.0.0.1:8091' \
 	  '  web-dev        Run Vite on 127.0.0.1:5173 with the /api proxy' \
 	  '  backend-check  gofumpt, golines (100 cols), go vet, race-enabled tests, build' \
 	  '  web-check      Lint, types, formatting, tests, production build' \
@@ -51,6 +52,9 @@ backend-dev: .env
 
 sample-target: .env
 	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/sample-target
+
+notification-receiver: .env
+	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/notification-receiver
 
 web-dev: .env
 	@$(LOAD_ENV) npm --prefix web run dev

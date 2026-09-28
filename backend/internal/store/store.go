@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 )
@@ -37,6 +39,7 @@ type Store struct {
 	timeout            time.Duration
 	lastSuccessfulTick map[string]time.Time
 	needsRecovery      map[string]bool
+	reminderInterval   time.Duration
 }
 
 func New(
@@ -54,6 +57,7 @@ func New(
 		timeout:            timeout * 5,
 		now:                now,
 		lastSuccessfulTick: make(map[string]time.Time),
+		reminderInterval:   6 * time.Hour,
 		needsRecovery:      make(map[string]bool),
 	}
 }
@@ -178,6 +182,7 @@ func (s *Store) Get(ctx context.Context, id string) (monitor.Monitor, error) {
 	if attributevalue.UnmarshalMap(out.Item, &m) != nil {
 		return monitor.Monitor{}, ErrUnavailable
 	}
+	m.IncidentPolicy = m.IncidentPolicy.Defaults()
 	m, err = s.initializeLegacyCursor(ctx, m)
 	if err != nil {
 		return monitor.Monitor{}, err
@@ -213,6 +218,7 @@ func (s *Store) List(ctx context.Context) ([]monitor.Monitor, error) {
 			if attributevalue.UnmarshalMap(item, &m) != nil {
 				return nil, ErrUnavailable
 			}
+			m.IncidentPolicy = m.IncidentPolicy.Defaults()
 			m, err = s.initializeLegacyCursor(ctx, m)
 			if err != nil {
 				return nil, err
@@ -236,6 +242,7 @@ func (s *Store) List(ctx context.Context) ([]monitor.Monitor, error) {
 func (s *Store) save(
 	ctx context.Context,
 	m monitor.Monitor,
+	previous monitor.Monitor,
 	condition string,
 	values map[string]types.AttributeValue,
 	trigger string,
@@ -248,7 +255,8 @@ func (s *Store) save(
 	values[":nextLifecycle"] = &types.AttributeValueMemberS{Value: m.Lifecycle}
 	values[":interval"] = &types.AttributeValueMemberN{Value: fmt.Sprint(m.IntervalSeconds)}
 	values[":through"] = &types.AttributeValueMemberS{Value: m.ScheduledThrough}
-	expr := "SET #name = :name, #check = :check, configVersion = :nextVersion, updatedAt = :nextUpdated, lifecycle = :nextLifecycle, intervalSeconds = :interval, scheduledThrough = :through"
+	values[":policy"] = mustAV(m.IncidentPolicy.Defaults())
+	expr := "SET #name = :name, #check = :check, incidentPolicy = :policy, configVersion = :nextVersion, updatedAt = :nextUpdated, lifecycle = :nextLifecycle, intervalSeconds = :interval, scheduledThrough = :through"
 	if m.Lifecycle == "paused" {
 		values[":paused"] = &types.AttributeValueMemberS{Value: m.PausedAt}
 		expr += ", pausedAt = :paused"
@@ -260,6 +268,44 @@ func (s *Store) save(
 	if m.Lifecycle != "paused" {
 		expr += " REMOVE pausedAt"
 	}
+	condition += " AND "
+	if previous.OpenIncident == nil {
+		condition += "attribute_not_exists(openIncident)"
+	} else {
+		condition += "openIncident.id = :openID"
+		values[":openID"] = mustAV(previous.OpenIncident.ID)
+	}
+	changesRun := trigger == "config_change" || trigger == "resume"
+	if changesRun {
+		values[":evaluation"] = mustAV(incident.Clear(previous.Evaluation))
+		expr = strings.Replace(expr, " REMOVE ", ", evaluation = :evaluation REMOVE ", 1)
+		if !strings.Contains(expr, " REMOVE ") {
+			expr += ", evaluation = :evaluation"
+		}
+		values[":revision"] = mustAV(previous.Evaluation.Revision)
+		if previous.Evaluation.Revision == 0 {
+			condition += " AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
+		} else {
+			condition += " AND evaluation.revision = :revision"
+		}
+	}
+	if trigger == "resume" && previous.OpenIncident != nil {
+		opened, _ := time.Parse(time.RFC3339Nano, previous.OpenIncident.OpenedAt)
+		op := *previous.OpenIncident
+		op.NextReminderAt = monitor.Stamp(incident.NextSlot(opened, s.reminderInterval, now))
+		values[":open"] = mustAV(op)
+		expr = strings.Replace(expr, " REMOVE ", ", openIncident = :open REMOVE ", 1)
+		if !strings.Contains(expr, "openIncident = :open") {
+			expr += ", openIncident = :open"
+		}
+	}
+	if m.Lifecycle == "archived" && previous.OpenIncident != nil {
+		if strings.Contains(expr, " REMOVE ") {
+			expr += ", openIncident"
+		} else {
+			expr += " REMOVE openIncident"
+		}
+	}
 	input := &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(s.table),
 		Key:                       key("MONITORS", "MON#"+m.ID),
@@ -268,16 +314,88 @@ func (s *Store) save(
 		ExpressionAttributeValues: values,
 		ExpressionAttributeNames:  map[string]string{"#name": "name", "#check": "check"},
 	}
-	var err error
-	if trigger == "" {
-		_, err = s.db.UpdateItem(ctx, input)
-	} else {
-		work, _ := workItem(Work{MonitorID: m.ID, DueAt: workStamp(now), Trigger: trigger, ConfigVersion: m.ConfigVersion, State: "pending"})
-		_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: []types.TransactWriteItem{
-			{Update: &types.Update{TableName: input.TableName, Key: input.Key, ConditionExpression: input.ConditionExpression, UpdateExpression: input.UpdateExpression, ExpressionAttributeValues: input.ExpressionAttributeValues, ExpressionAttributeNames: input.ExpressionAttributeNames}},
-			{Put: &types.Put{TableName: aws.String(s.table), Item: work, ConditionExpression: aws.String("attribute_not_exists(PK)")}},
-		}})
+	tx := []types.TransactWriteItem{
+		{
+			Update: &types.Update{
+				TableName:                 input.TableName,
+				Key:                       input.Key,
+				ConditionExpression:       input.ConditionExpression,
+				UpdateExpression:          input.UpdateExpression,
+				ExpressionAttributeValues: input.ExpressionAttributeValues,
+				ExpressionAttributeNames:  input.ExpressionAttributeNames,
+			},
+		},
 	}
+	if trigger != "" {
+		work, _ := workItem(
+			Work{
+				MonitorID:     m.ID,
+				DueAt:         workStamp(now),
+				Trigger:       trigger,
+				ConfigVersion: m.ConfigVersion,
+				State:         "pending",
+			},
+		)
+		tx = append(tx, putItem(s.table, work))
+	}
+	if previous.OpenIncident != nil {
+		kind := ""
+		details := map[string]any{}
+		switch {
+		case m.Lifecycle == "archived":
+			kind = "resolved"
+			details["resolution"] = "archived"
+		case m.Lifecycle == "paused" && previous.Lifecycle == "active":
+			kind = "paused"
+		case m.Lifecycle == "active" && previous.Lifecycle == "paused":
+			kind = "resumed"
+		case trigger == "config_change":
+			kind = "config_changed"
+			details["fromVersion"] = previous.ConfigVersion
+			details["toVersion"] = m.ConfigVersion
+		}
+		if kind != "" {
+			tx = append(tx, s.event(m.ID, previous.OpenIncident.ID, kind, now, details))
+		}
+		if m.Lifecycle == "archived" {
+			in, readErr := s.incident(ctx, m.ID, previous.OpenIncident.ID)
+			if readErr != nil {
+				return readErr
+			}
+			at := monitor.Stamp(now)
+			resolution := "archived"
+			in.ResolvedAt = &at
+			in.Resolution = &resolution
+			in.State = "resolved"
+			tx = append(
+				tx,
+				types.TransactWriteItem{
+					Update: &types.Update{
+						TableName:           aws.String(s.table),
+						Key:                 key(incidentPK(m.ID), "INC#"+in.ID),
+						ConditionExpression: aws.String("#state = :open"),
+						UpdateExpression: aws.String(
+							"SET #state = :resolved, resolution = :resolution, resolvedAt = :now, recoveryEvidence = :empty",
+						),
+						ExpressionAttributeNames: map[string]string{"#state": "state"},
+						ExpressionAttributeValues: map[string]types.AttributeValue{
+							":open":       mustAV("open"),
+							":resolved":   mustAV("resolved"),
+							":resolution": mustAV(resolution),
+							":now":        mustAV(at),
+							":empty":      mustAV([]incident.Evidence{}),
+						},
+					},
+				},
+			)
+			notes, noteErr := s.intent(previous, in, "resolved", "resolved", nil, nil, now)
+			if noteErr != nil {
+				return noteErr
+			}
+			tx = append(tx, notes...)
+		}
+	}
+	_, err := s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
 	if err != nil {
 		var conflict *types.ConditionalCheckFailedException
 		if errors.As(err, &conflict) || cancelled(err, 0) {
@@ -308,6 +426,19 @@ func (s *Store) PatchInterval(
 	interval *int,
 	now time.Time,
 ) (monitor.Monitor, error) {
+	return s.PatchIntervalPolicy(ctx, id, expected, name, check, interval, nil, now)
+}
+
+func (s *Store) PatchIntervalPolicy(
+	ctx context.Context,
+	id string,
+	expected int,
+	name *string,
+	check *monitor.Check,
+	interval *int,
+	policy *incident.Policy,
+	now time.Time,
+) (monitor.Monitor, error) {
 	m, err := s.Get(ctx, id)
 	if err != nil {
 		return m, err
@@ -319,6 +450,9 @@ func (s *Store) PatchInterval(
 		return m, ErrVersionConflict
 	}
 	next := m.Patch(name, check, now)
+	if policy != nil {
+		next.IncidentPolicy = *policy
+	}
 	trigger := ""
 	if next.ConfigVersion != m.ConfigVersion {
 		trigger = "config_change"
@@ -330,6 +464,7 @@ func (s *Store) PatchInterval(
 	err = s.save(
 		ctx,
 		next,
+		m,
 		"attribute_exists(PK) AND configVersion = :version AND lifecycle <> :archived AND updatedAt = :updated AND #name = :previousName AND scheduledThrough = :previousCursor",
 		map[string]types.AttributeValue{
 			":version":        &types.AttributeValueMemberN{Value: fmt.Sprint(expected)},
@@ -371,9 +506,19 @@ func (s *Store) Lifecycle(
 		next.ScheduledThrough = slotStamp(id, next.IntervalSeconds, now)
 		trigger = "resume"
 	}
+	if action == "archive" {
+		next.OpenIncident = nil
+	}
+	if action == "resume" && m.OpenIncident != nil {
+		op := *m.OpenIncident
+		opened, _ := time.Parse(time.RFC3339Nano, op.OpenedAt)
+		op.NextReminderAt = monitor.Stamp(incident.NextSlot(opened, s.reminderInterval, now))
+		next.OpenIncident = &op
+	}
 	err = s.save(
 		ctx,
 		next,
+		m,
 		"attribute_exists(PK) AND lifecycle = :from AND updatedAt = :updated AND #name = :previousName AND scheduledThrough = :previousCursor",
 		map[string]types.AttributeValue{
 			":from":           &types.AttributeValueMemberS{Value: m.Lifecycle},
@@ -391,6 +536,9 @@ func (s *Store) Lifecycle(
 		} else {
 			err = ErrInvalidTransition
 		}
+	}
+	if err == nil && action == "archive" && m.OpenIncident != nil {
+		s.cancelResolvedReminders(ctx, m.ID, m.OpenIncident.ID)
 	}
 	return next, err
 }

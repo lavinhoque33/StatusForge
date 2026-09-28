@@ -7,17 +7,21 @@ import {
   monitorRecordFixture,
   monitorStatusFixture,
   observationFixture,
-  stubApi,
+  stubApi as stubFetch,
 } from '../test/fixtures';
 import { MonitorDetailPage } from './MonitorDetailPage';
 
 const MONITOR_GET = 'GET /api/monitors/monitor-1';
 const OBSERVATIONS_GET = 'GET /api/monitors/monitor-1/observations?limit=50';
 const GAPS_GET = 'GET /api/monitors/monitor-1/gaps?limit=50';
+const INCIDENTS_GET = 'GET /api/monitors/monitor-1/incidents?limit=5';
 const INTERVALS_GET = 'GET /api/intervals';
 const CHECKS_POST = 'POST /api/monitors/monitor-1/checks';
 const MONITOR_PATCH = 'PATCH /api/monitors/monitor-1';
 const LIFECYCLE_POST = 'POST /api/monitors/monitor-1/lifecycle';
+function stubApi(handlers: Parameters<typeof stubFetch>[0]) {
+  return stubFetch({ [INCIDENTS_GET]: () => jsonResponse({ incidents: [] }), ...handlers });
+}
 
 type MonitorRecordFixture = ReturnType<typeof monitorRecordFixture>;
 
@@ -335,6 +339,7 @@ describe('MonitorDetailPage', () => {
       expectedConfigVersion: 1,
       name: 'Renamed',
       check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 10000 },
+      incidentPolicy: { openAfter: 2, recoverAfter: 2 },
     });
   });
 

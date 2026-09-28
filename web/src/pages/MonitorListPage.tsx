@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { incidentLink } from '../api/incidents';
 import { isAbortError } from '../api/http';
 import { listMonitors, type MonitorRecord } from '../api/monitors';
 import { LifecycleBadge } from '../components/LifecycleBadge';
@@ -6,6 +7,7 @@ import { MonitorHeadline } from '../components/MonitorHeadline';
 import { describeApiError } from '../lib/errors';
 import { notUpdatedText, updatedText } from '../lib/refresh';
 import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
+import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
 
@@ -139,6 +141,17 @@ export function MonitorListPage() {
                   intervalSeconds={monitor.intervalSeconds}
                   now={now}
                 />
+                {monitor.openIncident === null ? null : (
+                  <p className="incident-alert">
+                    <Link to={incidentLink(monitor.id, monitor.openIncident.id)}>
+                      Open incident
+                    </Link>{' '}
+                    since{' '}
+                    <time dateTime={monitor.openIncident.openedAt}>
+                      {formatLocalWithOffset(new Date(monitor.openIncident.openedAt))}
+                    </time>
+                  </p>
+                )}
               </li>
             ))}
           </ul>

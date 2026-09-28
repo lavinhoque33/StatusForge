@@ -15,6 +15,7 @@ import {
   type MonitorRecord,
   type Observation,
 } from '../api/monitors';
+import { incidentLink, listMonitorIncidents, type Incident } from '../api/incidents';
 import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
@@ -23,6 +24,7 @@ import { describeApiError } from '../lib/errors';
 import {
   MONITOR_FIELD_PATHS,
   checkInputFromFields,
+  incidentPolicyFromFields,
   monitorFormFields,
   splitFieldErrors,
   type MonitorFormFields,
@@ -37,7 +39,13 @@ import { Link } from '../router/Link';
 
 type LoadState =
   | { name: 'loading' }
-  | { name: 'ready'; monitor: MonitorRecord; observations: Observation[]; gaps: Gap[] }
+  | {
+      name: 'ready';
+      monitor: MonitorRecord;
+      observations: Observation[];
+      gaps: Gap[];
+      incidents: Incident[];
+    }
   | { name: 'not-found' }
   | { name: 'error'; message: string };
 
@@ -59,7 +67,9 @@ function fieldsEqual(fields: MonitorFormFields, stored: MonitorFormFields): bool
     fields.name === stored.name &&
     fields.url === stored.url &&
     fields.expectedStatus === stored.expectedStatus &&
-    fields.deadlineSeconds === stored.deadlineSeconds
+    fields.deadlineSeconds === stored.deadlineSeconds &&
+    fields.openAfter === stored.openAfter &&
+    fields.recoverAfter === stored.recoverAfter
   );
 }
 
@@ -149,10 +159,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const fetchData = useCallback(
     async (signal: AbortSignal, options: { silent: boolean }) => {
       try {
-        const [monitor, observations, gaps] = await Promise.all([
+        const [monitor, observations, gaps, incidents] = await Promise.all([
           getMonitor(monitorId, signal),
           listObservations(monitorId, OBSERVATION_LIMIT, signal),
           listGaps(monitorId, OBSERVATION_LIMIT, signal),
+          listMonitorIncidents(monitorId, 5, signal),
         ]);
         if (signal.aborted) return;
         // A silent poll never touches the form; while the form holds unsaved
@@ -167,7 +178,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         if (!options.silent && !dirtyNow) {
           setFields((existing) => existing ?? monitorFormFields(monitor));
         }
-        setLoad({ name: 'ready', monitor, observations, gaps });
+        setLoad({ name: 'ready', monitor, observations, gaps, incidents });
         setFreshness({ name: 'updated', at: Date.now() });
       } catch (error: unknown) {
         if (signal.aborted || isAbortError(error)) return;
@@ -299,6 +310,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       name: fields.name,
       check: checkInputFromFields(fields),
       intervalSeconds: selectedIntervalForMonitor(choice.current),
+      incidentPolicy: incidentPolicyFromFields(fields),
     })
       .then((updated) => {
         setSavePending(false);
@@ -390,7 +402,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     );
   }
 
-  const { monitor, observations, gaps } = load;
+  const { monitor, observations, gaps, incidents } = load;
   const archived = monitor.lifecycle === 'archived';
   const newestObservation = observations.length === 0 ? null : observations[0];
   const driftNote =
@@ -410,6 +422,15 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         intervalSeconds={monitor.intervalSeconds}
         now={now}
       />
+      {monitor.openIncident === null ? null : (
+        <p className="panel incident-alert">
+          Open incident since{' '}
+          <time dateTime={monitor.openIncident.openedAt}>
+            {formatLocalWithOffset(new Date(monitor.openIncident.openedAt))}
+          </time>{' '}
+          <Link to={incidentLink(monitor.id, monitor.openIncident.id)}>View incident</Link>
+        </p>
+      )}
       <p className="updated-at" role="status">
         {freshness.name === 'failed'
           ? notUpdatedText(freshness.reason)
@@ -446,6 +467,14 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           <div>
             <dt>Interval</dt>
             <dd>{intervalLabel(monitor.intervalSeconds)}</dd>
+          </div>
+          <div>
+            <dt>Open after</dt>
+            <dd>{monitor.incidentPolicy.openAfter} failed checks</dd>
+          </div>
+          <div>
+            <dt>Resolve after</dt>
+            <dd>{monitor.incidentPolicy.recoverAfter} healthy checks</dd>
           </div>
           <div>
             <dt>Body limit</dt>
@@ -621,6 +650,26 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         ) : null}
       </section>
 
+      <section className="panel" aria-labelledby="monitor-incidents-heading">
+        <h3 id="monitor-incidents-heading">Recent incidents</h3>
+        {incidents.length === 0 ? (
+          <p>No incidents recorded for this monitor.</p>
+        ) : (
+          <ul>
+            {incidents.map((incident) => (
+              <li key={incident.id}>
+                <Link to={incidentLink(monitor.id, incident.id)}>
+                  {incident.state === 'open' ? 'Open' : 'Resolved'} incident
+                </Link>{' '}
+                since{' '}
+                <time dateTime={incident.openedAt}>
+                  {formatLocalWithOffset(new Date(incident.openedAt))}
+                </time>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="panel" aria-labelledby="monitor-timeline-heading">
         <h3 id="monitor-timeline-heading">Checks and gaps</h3>
         {driftNote === null ? null : <p className="drift-note">{driftNote}</p>}

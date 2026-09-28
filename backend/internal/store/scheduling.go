@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 )
 
@@ -164,13 +165,24 @@ func (s *Store) Tick(ctx context.Context, now time.Time) (int, int, int, error) 
 					cond = "scheduledThrough = :previous AND lifecycle = :active"
 					vals[":previous"] = mustAV(m.ScheduledThrough)
 				}
+				updateExpr := "SET scheduledThrough = :latest"
+				if count > 0 {
+					updateExpr += ", evaluation = :evaluation"
+					vals[":evaluation"] = mustAV(incident.Clear(m.Evaluation))
+					vals[":revision"] = mustAV(m.Evaluation.Revision)
+					if m.Evaluation.Revision == 0 {
+						cond += " AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
+					} else {
+						cond += " AND evaluation.revision = :revision"
+					}
+				}
 				tx = append(
 					tx,
 					types.TransactWriteItem{
 						Update: &types.Update{
 							TableName:                 aws.String(s.table),
 							Key:                       key("MONITORS", "MON#"+m.ID),
-							UpdateExpression:          aws.String("SET scheduledThrough = :latest"),
+							UpdateExpression:          aws.String(updateExpr),
 							ConditionExpression:       aws.String(cond),
 							ExpressionAttributeValues: vals,
 						},
@@ -472,6 +484,31 @@ func (s *Store) closeWork(ctx context.Context, w Work, reason string, now time.T
 			},
 		)
 	}
+	if reason == "overdue" || reason == "lease_expired" {
+		m, e := s.Get(ctx, w.MonitorID)
+		if e != nil {
+			return e
+		}
+		cond := "evaluation.revision = :revision"
+		if m.Evaluation.Revision == 0 {
+			cond = "attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision"
+		}
+		tx = append(
+			tx,
+			types.TransactWriteItem{
+				Update: &types.Update{
+					TableName:           aws.String(s.table),
+					Key:                 key("MONITORS", "MON#"+w.MonitorID),
+					UpdateExpression:    aws.String("SET evaluation = :next"),
+					ConditionExpression: aws.String(cond),
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":next":     mustAV(incident.Clear(m.Evaluation)),
+						":revision": mustAV(m.Evaluation.Revision),
+					},
+				},
+			},
+		)
+	}
 	_, err := s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
 	if err != nil {
 		if cancelled(err, 0) {
@@ -687,45 +724,80 @@ func (s *Store) RecordResult(
 			},
 		}
 	}
-	tx := []types.TransactWriteItem{
-		{
-			Update: &types.Update{
-				TableName:        aws.String(s.table),
-				Key:              monitorKey,
-				UpdateExpression: aws.String("SET #status = :evidence REMOVE lease"),
-				ConditionExpression: aws.String(
-					"lease.#token = :token AND lease.#until >= :now AND lifecycle = :active AND configVersion = :version AND (attribute_not_exists(#status) OR #status.startedAt < :started)",
-				),
+	var workLost bool
+	revisionRace := false
+	for range 3 {
+		next, open, effects, evalErr := s.evaluationItems(ctx, m, o, s.now())
+		if evalErr != nil {
+			return o, evalErr
+		}
+		values := map[string]types.AttributeValue{
+			":evidence": mustAV(evidence), ":token": mustAV(token),
+			":now": mustAV(workStamp(s.now())), ":active": mustAV("active"),
+			":version": mustAV(o.ConfigVersion), ":started": mustAV(o.StartedAt),
+			":evaluation": mustAV(next), ":revision": mustAV(m.Evaluation.Revision),
+		}
+		condition := "lease.#token = :token AND lease.#until >= :now AND lifecycle = :active AND configVersion = :version AND (attribute_not_exists(#status) OR #status.startedAt < :started) AND evaluation.revision = :revision"
+		if m.Evaluation.Revision == 0 {
+			condition = "lease.#token = :token AND lease.#until >= :now AND lifecycle = :active AND configVersion = :version AND (attribute_not_exists(#status) OR #status.startedAt < :started) AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
+		}
+		expr := "SET #status = :evidence, evaluation = :evaluation REMOVE lease"
+		if open == nil {
+			expr += ", openIncident"
+		} else {
+			expr = "SET #status = :evidence, evaluation = :evaluation, openIncident = :open REMOVE lease"
+			values[":open"] = mustAV(open)
+		}
+		tx := []types.TransactWriteItem{
+			{Update: &types.Update{
+				TableName: aws.String(s.table), Key: monitorKey,
+				UpdateExpression: aws.String(expr), ConditionExpression: aws.String(condition),
 				ExpressionAttributeNames: map[string]string{
 					"#status": "status",
 					"#token":  "token",
 					"#until":  "until",
 				},
-				ExpressionAttributeValues: map[string]types.AttributeValue{
-					":evidence": mustAV(evidence),
-					":token":    mustAV(token),
-					":now":      mustAV(workStamp(s.now())),
-					":active":   mustAV("active"),
-					":version":  mustAV(o.ConfigVersion),
-					":started":  mustAV(o.StartedAt),
+				ExpressionAttributeValues: values,
+			}},
+			{
+				Put: &types.Put{
+					TableName:           aws.String(s.table),
+					Item:                item,
+					ConditionExpression: aws.String("attribute_not_exists(PK)"),
 				},
 			},
-		},
-		{
-			Put: &types.Put{
-				TableName:           aws.String(s.table),
-				Item:                item,
-				ConditionExpression: aws.String("attribute_not_exists(PK)"),
-			},
-		},
+		}
+		tx = append(tx, workUpdates()...)
+		tx = append(tx, effects...)
+		_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
+		if err == nil {
+			if m.OpenIncident != nil && open == nil {
+				s.cancelResolvedReminders(ctx, m.ID, m.OpenIncident.ID)
+			}
+			return o, nil
+		}
+		workLost = o.DueAt != nil && cancelled(err, 2)
+		if !cancelled(err, 0) && !workLost {
+			return o, ErrUnavailable
+		}
+		current, readErr := s.Get(ctx, o.MonitorID)
+		if readErr != nil {
+			return o, readErr
+		}
+		if current.Evaluation.Revision != m.Evaluation.Revision &&
+			current.Lease != nil && current.Lease.Token == token &&
+			current.Lifecycle == "active" && current.ConfigVersion == o.ConfigVersion &&
+			(current.Evidence == nil || current.Evidence.StartedAt < o.StartedAt) &&
+			!workLost {
+			revisionRace = true
+			m = current
+			continue
+		}
+		revisionRace = false
+		m = current
+		break
 	}
-	tx = append(tx, workUpdates()...)
-	_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
-	if err == nil {
-		return o, nil
-	}
-	workLost := o.DueAt != nil && cancelled(err, 2)
-	if !cancelled(err, 0) && !workLost {
+	if revisionRace {
 		return o, ErrUnavailable
 	}
 	m, err = s.Get(ctx, o.MonitorID)
@@ -746,7 +818,7 @@ func (s *Store) RecordResult(
 	o.Counted = false
 	o.NotCountedReason = &reason
 	item, _ = observationItem(o)
-	tx = []types.TransactWriteItem{}
+	tx := []types.TransactWriteItem{}
 	if reason != monitor.NotCountedLeaseLost {
 		tx = append(
 			tx,

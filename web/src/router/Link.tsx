@@ -18,6 +18,9 @@ export function Link({ to, children, onClick, target, ...rest }: LinkProps) {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (target !== undefined && target !== '_self') return;
+    // Native fragment navigation scrolls and focuses the destination. A
+    // pushState-only route transition cannot do that when the section mounts.
+    if (to.includes('#')) return;
     event.preventDefault();
     navigate(to);
   };

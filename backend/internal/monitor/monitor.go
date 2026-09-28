@@ -6,6 +6,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 )
 
 const MaxBodyBytes = 65536
@@ -18,22 +20,25 @@ type Check struct {
 	MaxBodyBytes   int    `json:"maxBodyBytes"   dynamodbav:"maxBodyBytes"`
 }
 type Monitor struct {
-	ID               string    `json:"id"                   dynamodbav:"monitorId"`
-	Name             string    `json:"name"                 dynamodbav:"name"`
-	Lifecycle        string    `json:"lifecycle"            dynamodbav:"lifecycle"`
-	ConfigVersion    int       `json:"configVersion"        dynamodbav:"configVersion"`
-	IntervalSeconds  int       `json:"intervalSeconds"      dynamodbav:"intervalSeconds"`
-	ScheduledThrough string    `json:"-"                    dynamodbav:"scheduledThrough,omitempty"`
-	LegacyCursor     bool      `json:"-"                    dynamodbav:"-"`
-	Lease            *Lease    `json:"-"                    dynamodbav:"lease,omitempty"`
-	LastClaimAt      string    `json:"-"                    dynamodbav:"lastClaimAt,omitempty"`
-	Evidence         *Evidence `json:"-"                    dynamodbav:"status,omitempty"`
-	Status           Status    `json:"status"               dynamodbav:"-"`
-	Check            Check     `json:"check"                dynamodbav:"check"`
-	CreatedAt        string    `json:"createdAt"            dynamodbav:"createdAt"`
-	UpdatedAt        string    `json:"updatedAt"            dynamodbav:"updatedAt"`
-	PausedAt         string    `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
-	ArchivedAt       string    `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
+	ID               string              `json:"id"                   dynamodbav:"monitorId"`
+	Name             string              `json:"name"                 dynamodbav:"name"`
+	Lifecycle        string              `json:"lifecycle"            dynamodbav:"lifecycle"`
+	ConfigVersion    int                 `json:"configVersion"        dynamodbav:"configVersion"`
+	IntervalSeconds  int                 `json:"intervalSeconds"      dynamodbav:"intervalSeconds"`
+	IncidentPolicy   incident.Policy     `json:"incidentPolicy"       dynamodbav:"incidentPolicy"`
+	Evaluation       incident.Evaluation `json:"-"                    dynamodbav:"evaluation"`
+	OpenIncident     *incident.Open      `json:"openIncident"         dynamodbav:"openIncident,omitempty"`
+	ScheduledThrough string              `json:"-"                    dynamodbav:"scheduledThrough,omitempty"`
+	LegacyCursor     bool                `json:"-"                    dynamodbav:"-"`
+	Lease            *Lease              `json:"-"                    dynamodbav:"lease,omitempty"`
+	LastClaimAt      string              `json:"-"                    dynamodbav:"lastClaimAt,omitempty"`
+	Evidence         *Evidence           `json:"-"                    dynamodbav:"status,omitempty"`
+	Status           Status              `json:"status"               dynamodbav:"-"`
+	Check            Check               `json:"check"                dynamodbav:"check"`
+	CreatedAt        string              `json:"createdAt"            dynamodbav:"createdAt"`
+	UpdatedAt        string              `json:"updatedAt"            dynamodbav:"updatedAt"`
+	PausedAt         string              `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
+	ArchivedAt       string              `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
 }
 type Observation struct {
 	ID               string  `json:"id"                       dynamodbav:"observationId"`
@@ -105,6 +110,7 @@ func New(name string, c Check, now time.Time) Monitor {
 		ID:              rand.Text(),
 		Name:            name,
 		Lifecycle:       "active",
+		IncidentPolicy:  incident.Policy{OpenAfter: 2, RecoverAfter: 2},
 		ConfigVersion:   1,
 		Check:           c,
 		CreatedAt:       stamp,

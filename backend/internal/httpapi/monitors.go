@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
+	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
@@ -93,6 +94,11 @@ func NewMonitorRouter(
 	mux.Post("/api/monitors/{id}/checks", a.check)
 	mux.Get("/api/monitors/{id}/observations", a.observations)
 	mux.Get("/api/monitors/{id}/gaps", a.gaps)
+	mux.Get("/api/incidents", a.incidents)
+	mux.Get("/api/notifications/attention", a.attention)
+	mux.Get("/api/monitors/{id}/incidents", a.monitorIncidents)
+	mux.Get("/api/monitors/{id}/incidents/{incidentId}", a.incidentDetail)
+	mux.Post("/api/monitors/{id}/incidents/{incidentId}/notifications/{noteKey}/retry", a.retry)
 	mux.NotFound(jsonErrorHandler(http.StatusNotFound, errorNotFound))
 	return mux
 }
@@ -187,8 +193,9 @@ func (s *monitorAPI) list(w http.ResponseWriter, r *http.Request) {
 
 func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name            *string `json:"name"`
-		IntervalSeconds *int    `json:"intervalSeconds"`
+		Name            *string          `json:"name"`
+		IntervalSeconds *int             `json:"intervalSeconds"`
+		IncidentPolicy  *incident.Policy `json:"incidentPolicy"`
 		Check           *struct {
 			URL            *string `json:"url"`
 			Method         *string `json:"method"`
@@ -197,7 +204,12 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 			MaxBodyBytes   *int    `json:"maxBodyBytes"`
 		} `json:"check"`
 	}
-	if !decode(w, r, &req, map[string]string{"name": "", "check": "", "intervalSeconds": ""}) {
+	if !decode(
+		w,
+		r,
+		&req,
+		map[string]string{"name": "", "check": "", "intervalSeconds": "", "incidentPolicy": ""},
+	) {
 		return
 	}
 	fields := monitor.Fields{}
@@ -238,11 +250,17 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 		interval = *req.IntervalSeconds
 	}
 	monitor.ValidateInterval(interval, s.minInterval, fields)
+	policy := incident.Policy{OpenAfter: 2, RecoverAfter: 2}
+	if req.IncidentPolicy != nil {
+		policy = *req.IncidentPolicy
+	}
+	validateIncidentPolicy(policy, fields)
 	if len(fields) > 0 {
 		fieldsError(w, fields)
 		return
 	}
 	m := monitor.New(name, c, s.now())
+	m.IncidentPolicy = policy
 	m.IntervalSeconds = interval
 	if err := s.store.Create(r.Context(), m); err != nil {
 		s.failure(w, err)
@@ -270,9 +288,10 @@ func (s *monitorAPI) get(w http.ResponseWriter, r *http.Request) {
 
 func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Expected        *int    `json:"expectedConfigVersion"`
-		Name            *string `json:"name"`
-		IntervalSeconds *int    `json:"intervalSeconds"`
+		Expected        *int             `json:"expectedConfigVersion"`
+		Name            *string          `json:"name"`
+		IntervalSeconds *int             `json:"intervalSeconds"`
+		IncidentPolicy  *incident.Policy `json:"incidentPolicy"`
 		Check           *struct {
 			URL            *string `json:"url"`
 			Method         *string `json:"method"`
@@ -290,6 +309,7 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 			"name":                  "",
 			"check":                 "",
 			"intervalSeconds":       "",
+			"incidentPolicy":        "",
 		},
 	) {
 		return
@@ -331,19 +351,36 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	if req.IntervalSeconds != nil {
 		monitor.ValidateInterval(*req.IntervalSeconds, s.minInterval, fields)
 	}
+	if req.IncidentPolicy != nil {
+		validateIncidentPolicy(*req.IncidentPolicy, fields)
+	}
 	if len(fields) > 0 {
 		fieldsError(w, fields)
 		return
 	}
-	m, err := s.store.PatchInterval(
-		r.Context(),
-		chi.URLParam(r, "id"),
-		*req.Expected,
-		req.Name,
-		c,
-		req.IntervalSeconds,
-		s.now(),
-	)
+	var m monitor.Monitor
+	var err error
+	if req.IncidentPolicy != nil {
+		if policyStore, ok := s.store.(interface {
+			PatchIntervalPolicy(context.Context, string, int, *string, *monitor.Check, *int, *incident.Policy, time.Time) (monitor.Monitor, error)
+		}); ok {
+			m, err = policyStore.PatchIntervalPolicy(
+				r.Context(),
+				chi.URLParam(r, "id"),
+				*req.Expected,
+				req.Name,
+				c,
+				req.IntervalSeconds,
+				req.IncidentPolicy,
+				s.now(),
+			)
+		} else {
+			apiError(w, 503, "store_unavailable")
+			return
+		}
+	} else {
+		m, err = s.store.PatchInterval(r.Context(), chi.URLParam(r, "id"), *req.Expected, req.Name, c, req.IntervalSeconds, s.now())
+	}
 	if err != nil {
 		s.failure(w, err)
 		return

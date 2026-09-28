@@ -8,6 +8,7 @@ import {
   DEFAULT_MONITOR_FIELDS,
   MONITOR_FIELD_PATHS,
   checkInputFromFields,
+  incidentPolicyFromFields,
   splitFieldErrors,
   type MonitorFormFields,
 } from '../lib/monitorForm';
@@ -48,6 +49,7 @@ export function MonitorCreatePage() {
       name: fields.name,
       check: checkInputFromFields(fields),
       intervalSeconds: choice.current.current ?? intervals?.defaultIntervalSeconds,
+      incidentPolicy: incidentPolicyFromFields(fields),
     })
       .then((monitor) => {
         setPending(false);

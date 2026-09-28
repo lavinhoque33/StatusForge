@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe('App', () => {
-  it('keeps the backend status visible and navigates between the two top-level entries', async () => {
+  it('navigates between Monitors and Incidents while keeping backend status visible', async () => {
     stubApi({
       [READINESS_GET]: () =>
         jsonResponse({
@@ -21,6 +21,8 @@ describe('App', () => {
           dependencies: { dynamodb: { status: 'ready' } },
         }),
       [MONITORS_GET]: () => jsonResponse({ monitors: [] }),
+      'GET /api/notifications/attention?limit=200': () => jsonResponse({ notifications: [] }),
+      'GET /api/incidents?state=all&limit=50': () => jsonResponse({ incidents: [] }),
     });
 
     render(<App />);
@@ -31,9 +33,9 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByRole('navigation')).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('link', { name: 'New monitor' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Incidents' }));
 
-    expect(await screen.findByRole('heading', { name: 'New monitor' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Open incidents' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Backend status' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Monitors' })).toHaveAttribute('href', '/');
   });

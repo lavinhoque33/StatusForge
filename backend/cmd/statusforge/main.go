@@ -16,6 +16,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/config"
 	"github.com/lavinhoque33/statusforge/backend/internal/httpapi"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
+	"github.com/lavinhoque33/statusforge/backend/internal/notify"
 	"github.com/lavinhoque33/statusforge/backend/internal/scheduler"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
@@ -64,6 +65,11 @@ func run() error {
 		return err
 	}
 	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
+	persistence.SetReminderInterval(time.Duration(cfg.ReminderIntervalSeconds) * time.Second)
+	notifyPolicy, err := notify.PolicyForURL(cfg.NotifyURL)
+	if err != nil {
+		return err
+	}
 	runner := checker.New(policy, time.Now)
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
@@ -115,7 +121,7 @@ func run() error {
 	if cfg.SchedulerEnabled {
 		go func() {
 			defer close(schedulerDone)
-			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger}).Run(
+			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger, ReminderInterval: time.Duration(cfg.ReminderIntervalSeconds) * time.Second}).Run(
 				schedulerCtx,
 			)
 		}()
@@ -124,6 +130,15 @@ func run() error {
 	}
 	defer func() { stopScheduler(); <-schedulerDone }()
 	serveErrors := make(chan error, 1)
+	deliveryCtx, stopDelivery := context.WithCancel(context.Background())
+	deliveryDone := make(chan struct{})
+	go func() {
+		defer close(deliveryDone)
+		(&notify.Worker{Store: persistence, URL: cfg.NotifyURL, Policy: notifyPolicy, Workers: cfg.DeliveryWorkers, Schedule: cfg.DeliveryRetrySchedule, Logger: logger}).Run(
+			deliveryCtx,
+		)
+	}()
+	defer func() { stopDelivery(); <-deliveryDone }()
 	go func() { serveErrors <- server.Serve(listener) }()
 	select {
 	case err := <-serveErrors:

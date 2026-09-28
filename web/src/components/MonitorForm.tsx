@@ -159,6 +159,34 @@ export function MonitorForm({
         error={fieldErrors['check.deadlineMs']}
         disabled={disabled}
       />
+      <TextField
+        id="monitor-open-after"
+        name="openAfter"
+        label="Open after failed checks"
+        hint="1 to 5 consecutive counted failed checks"
+        type="number"
+        min={1}
+        max={5}
+        step={1}
+        value={fields.openAfter}
+        onChange={(openAfter) => onFieldsChange({ ...fields, openAfter })}
+        error={fieldErrors['incidentPolicy.openAfter']}
+        disabled={disabled}
+      />
+      <TextField
+        id="monitor-recover-after"
+        name="recoverAfter"
+        label="Resolve after healthy checks"
+        hint="1 to 5 consecutive counted healthy checks"
+        type="number"
+        min={1}
+        max={5}
+        step={1}
+        value={fields.recoverAfter}
+        onChange={(recoverAfter) => onFieldsChange({ ...fields, recoverAfter })}
+        error={fieldErrors['incidentPolicy.recoverAfter']}
+        disabled={disabled}
+      />
       <IntervalField
         id="monitor-interval"
         intervals={intervals}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/netguard"
+	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
 )
 
 type Config struct {
@@ -27,6 +28,10 @@ type Config struct {
 	Workers                 int
 	MinIntervalSeconds      int
 	SchedulerEnabled        bool
+	NotifyURL               string
+	DeliveryWorkers         int
+	DeliveryRetrySchedule   []time.Duration
+	ReminderIntervalSeconds int
 }
 
 func Load(lookup func(string) (string, bool)) (Config, error) {
@@ -49,6 +54,50 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		Workers:                 4,
 		MinIntervalSeconds:      60,
 		SchedulerEnabled:        true,
+	}
+	cfg.NotifyURL = get("STATUSFORGE_NOTIFY_URL", "http://127.0.0.1:8091/notify")
+	uNotify, err := url.Parse(cfg.NotifyURL)
+	if err != nil || uNotify == nil {
+		return Config{}, fmt.Errorf("STATUSFORGE_NOTIFY_URL: invalid URL")
+	}
+	allow := net.JoinHostPort(uNotify.Hostname(), uNotify.Port())
+	if uNotify.Port() == "" {
+		allow = net.JoinHostPort(uNotify.Hostname(), "80")
+	}
+	policy, err := targetpolicy.Parse(allow)
+	if err != nil {
+		return Config{}, fmt.Errorf("STATUSFORGE_NOTIFY_URL: %w", err)
+	}
+	if code, _ := policy.Validate(cfg.NotifyURL); code != "" {
+		return Config{}, fmt.Errorf("STATUSFORGE_NOTIFY_URL: %s", code)
+	}
+	cfg.DeliveryWorkers, err = strconv.Atoi(get("STATUSFORGE_DELIVERY_WORKERS", "1"))
+	if err != nil || cfg.DeliveryWorkers < 1 || cfg.DeliveryWorkers > 4 {
+		return Config{}, fmt.Errorf("STATUSFORGE_DELIVERY_WORKERS: must be an integer 1–4")
+	}
+	delays := strings.Split(
+		get("STATUSFORGE_DELIVERY_RETRY_SCHEDULE", "10s,30s,90s,5m,15m,30m"),
+		",",
+	)
+	if len(delays) < 1 || len(delays) > 10 {
+		return Config{}, fmt.Errorf("STATUSFORGE_DELIVERY_RETRY_SCHEDULE: must contain 1–10 delays")
+	}
+	for _, raw := range delays {
+		d, parseErr := time.ParseDuration(raw)
+		if parseErr != nil || d < time.Second || d > time.Hour {
+			return Config{}, fmt.Errorf(
+				"STATUSFORGE_DELIVERY_RETRY_SCHEDULE: each delay must be 1s–1h",
+			)
+		}
+		cfg.DeliveryRetrySchedule = append(cfg.DeliveryRetrySchedule, d)
+	}
+	cfg.ReminderIntervalSeconds, err = strconv.Atoi(
+		get("STATUSFORGE_REMINDER_INTERVAL_SECONDS", "21600"),
+	)
+	if err != nil || cfg.ReminderIntervalSeconds < 60 || cfg.ReminderIntervalSeconds > 86400 {
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_REMINDER_INTERVAL_SECONDS: must be an integer 60–86400",
+		)
 	}
 	if err := validateTargets(cfg.AllowedTargets); err != nil {
 		return Config{}, err

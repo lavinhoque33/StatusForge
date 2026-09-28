@@ -351,6 +351,36 @@ input:focus-visible {
     font-weight: 600;
   }
 }
+.attention-banner,
+.incident-alert {
+  border-left: 0.3rem solid var(--fail);
+  padding: 0.75rem;
+  background: var(--panel);
+}
+.incident-list {
+  list-style: none;
+  padding: 0;
+}
+.incident-list > li {
+  margin: 0.75rem 0;
+  overflow-wrap: anywhere;
+}
+.notification-card {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+}
+.incident-timeline li {
+  padding: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .incident-list > li,
+  .notification-card,
+  .incident-timeline li {
+    display: block;
+    width: auto;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

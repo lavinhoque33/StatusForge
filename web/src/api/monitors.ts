@@ -52,6 +52,7 @@ export type CheckConfig = {
   deadlineMs: number;
   maxBodyBytes: number;
 };
+export type IncidentPolicy = { openAfter: number; recoverAfter: number };
 
 export type Monitor = {
   id: string;
@@ -61,6 +62,8 @@ export type Monitor = {
   /** Seconds between scheduled checks. */
   intervalSeconds: number;
   check: CheckConfig;
+  incidentPolicy: IncidentPolicy;
+  openIncident: { id: string; openedAt: string } | null;
   createdAt: string;
   updatedAt: string;
   pausedAt?: string;
@@ -123,6 +126,7 @@ export type CreateMonitorInput = {
   name: string;
   check: CheckInput;
   intervalSeconds?: number;
+  incidentPolicy?: IncidentPolicy;
 };
 
 export type UpdateMonitorInput = {
@@ -130,6 +134,7 @@ export type UpdateMonitorInput = {
   name: string;
   check: CheckInput;
   intervalSeconds?: number;
+  incidentPolicy?: IncidentPolicy;
 };
 
 export type LifecycleAction = 'pause' | 'resume' | 'archive';
@@ -217,6 +222,35 @@ export function parseMonitor(value: unknown): Monitor {
   if (!('check' in value)) invalid();
   if (!('createdAt' in value) || !isTimestamp(value.createdAt)) invalid();
   if (!('updatedAt' in value) || !isTimestamp(value.updatedAt)) invalid();
+  if (
+    !('incidentPolicy' in value) ||
+    typeof value.incidentPolicy !== 'object' ||
+    value.incidentPolicy === null
+  )
+    invalid();
+  const policy = value.incidentPolicy;
+  if (
+    !('openAfter' in policy) ||
+    !isInteger(policy.openAfter) ||
+    policy.openAfter < 1 ||
+    policy.openAfter > 5 ||
+    !('recoverAfter' in policy) ||
+    !isInteger(policy.recoverAfter) ||
+    policy.recoverAfter < 1 ||
+    policy.recoverAfter > 5
+  )
+    invalid();
+  if (!('openIncident' in value)) invalid();
+  const openIncident = value.openIncident;
+  if (
+    openIncident !== null &&
+    (typeof openIncident !== 'object' ||
+      !('id' in openIncident) ||
+      !isNonEmptyString(openIncident.id) ||
+      !('openedAt' in openIncident) ||
+      !isTimestamp(openIncident.openedAt))
+  )
+    invalid();
 
   const monitor: Monitor = {
     id: value.id,
@@ -225,6 +259,11 @@ export function parseMonitor(value: unknown): Monitor {
     configVersion: value.configVersion,
     intervalSeconds: value.intervalSeconds,
     check: parseCheckConfig(value.check),
+    incidentPolicy: { openAfter: policy.openAfter, recoverAfter: policy.recoverAfter },
+    openIncident:
+      openIncident === null
+        ? null
+        : { id: String(openIncident.id), openedAt: String(openIncident.openedAt) },
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   };

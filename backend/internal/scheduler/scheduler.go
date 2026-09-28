@@ -38,11 +38,12 @@ type (
 		Run(context.Context, monitor.Monitor) monitor.Observation
 	}
 	Scheduler struct {
-		Store   Persistence
-		Runner  Runner
-		Clock   Clock
-		Workers int
-		Logger  *slog.Logger
+		Store            Persistence
+		Runner           Runner
+		Clock            Clock
+		Workers          int
+		ReminderInterval time.Duration
+		Logger           *slog.Logger
 	}
 )
 
@@ -158,6 +159,18 @@ func (s *Scheduler) Run(ctx context.Context) {
 		}
 		candidates := make([]candidate, 0, len(ms))
 		for _, m := range ms {
+			if reminderStore, ok := s.Store.(interface {
+				Reminder(context.Context, monitor.Monitor, time.Time, time.Duration) error
+			}); ok && m.OpenIncident != nil && m.Lifecycle == "active" {
+				interval := s.ReminderInterval
+				if interval <= 0 {
+					interval = 6 * time.Hour
+				}
+				if e := reminderStore.Reminder(tickCtx, m, now, interval); e != nil &&
+					!errors.Is(e, store.ErrNotEligible) {
+					logger.Warn("scheduler reminder failed", "reason", "dependency_failure")
+				}
+			}
 			ws, e := s.Store.Works(tickCtx, m, now)
 			if e != nil {
 				logger.Warn("scheduler dispatch failed", "reason", "dependency_failure")

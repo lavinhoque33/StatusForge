@@ -7,7 +7,7 @@
  * proxy (or the backend itself in a production bundle) serves them.
  */
 
-/** Error codes the M1 monitor contract defines for `{"error":"<code>"}`. */
+/** Error codes defined by the monitor and incident contracts. */
 export type ApiErrorCode =
   | 'not_found'
   | 'method_not_allowed'
@@ -19,6 +19,9 @@ export type ApiErrorCode =
   | 'archived'
   | 'invalid_transition'
   | 'check_in_progress'
+  | 'incident_not_found'
+  | 'notification_not_found'
+  | 'not_failed'
   | 'store_unavailable';
 
 /** One field problem inside a `validation_failed` response. */

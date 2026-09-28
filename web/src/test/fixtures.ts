@@ -35,6 +35,8 @@ export function monitorFixture(overrides: Partial<Monitor> = {}): Monitor {
     configVersion: 1,
     intervalSeconds: 300,
     check: checkFixture(),
+    incidentPolicy: { openAfter: 2, recoverAfter: 2 },
+    openIncident: null,
     createdAt: '2026-09-27T10:00:00.000Z',
     updatedAt: '2026-09-27T10:00:00.000Z',
     ...overrides,

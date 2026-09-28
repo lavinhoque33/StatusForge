@@ -60,6 +60,7 @@ describe('MonitorCreatePage', () => {
       name: 'Local health',
       check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 1500 },
       intervalSeconds: 60,
+      incidentPolicy: { openAfter: 2, recoverAfter: 2 },
     });
   });
 
@@ -77,6 +78,7 @@ describe('MonitorCreatePage', () => {
     expect(JSON.parse(String(callsTo(fetchMock, 'POST', '/api/monitors')[0]?.[1]?.body))).toEqual({
       name: 'Local health',
       check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 10_000 },
+      incidentPolicy: { openAfter: 2, recoverAfter: 2 },
     });
   });
 
@@ -92,6 +94,14 @@ describe('MonitorCreatePage', () => {
               'check.url': {
                 code: 'target_not_allowed',
                 message: 'host:port 127.0.0.1:8080 is not in STATUSFORGE_ALLOWED_TARGETS',
+              },
+              'incidentPolicy.openAfter': {
+                code: 'out_of_range',
+                message: 'openAfter must be 1–5',
+              },
+              'incidentPolicy.recoverAfter': {
+                code: 'out_of_range',
+                message: 'recoverAfter must be 1–5',
               },
             },
           },
@@ -113,6 +123,22 @@ describe('MonitorCreatePage', () => {
     expect(nameInput.getAttribute('aria-describedby')).toContain('monitor-name-error');
     expect(urlError).toHaveAttribute('id', 'monitor-url-error');
     expect(urlInput.getAttribute('aria-describedby')).toContain('monitor-url-error');
+    expect(await screen.findByText('openAfter must be 1–5')).toHaveAttribute(
+      'id',
+      'monitor-open-after-error',
+    );
+    expect(screen.getByLabelText('Open after failed checks')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+    expect(screen.getByText('recoverAfter must be 1–5')).toHaveAttribute(
+      'id',
+      'monitor-recover-after-error',
+    );
+    expect(screen.getByLabelText('Resolve after healthy checks')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
   });
 
   it('shows validation errors that belong to no input as a form message', async () => {
