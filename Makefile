@@ -7,7 +7,7 @@ BACKEND := backend
 # Native applications do not read Compose's environment file themselves.
 LOAD_ENV = set -a; if [ -f .env ]; then . ./.env; fi; set +a;
 
-.PHONY: help setup doctor db-up db-down db-reset db-export db-import backend-dev sample-target notification-receiver sample-job web-dev backend-check web-check verify format down
+.PHONY: help setup doctor db-up db-down db-reset db-export db-import backend-dev sample-target notification-receiver sample-job web-dev backend-check web-check verify format down build run security-check demo
 
 help:
 	@printf '%s\n' \
@@ -18,11 +18,14 @@ help:
 	  '  db-reset       DESTRUCTIVE: remove DynamoDB Local containers and data volume (CONFIRM=yes)' \
 	  '  db-export      Export private DynamoDB JSONL data (TABLE= optional, FILE= optional)' \
 	  '  db-import      Import validated JSONL into empty table (FILE= and TABLE= required)' \
+	  '  build/run      Build embedded web and versioned binary; run on loopback with DynamoDB Local' \
 	  '  backend-dev    Run the API on 127.0.0.1:8080 with root .env configuration' \
 	  '  sample-target  Run the controlled sample target fixture on 127.0.0.1:8090' \
 	  '  notification-receiver  Run the local notification receiver on 127.0.0.1:8091' \
 	  '  sample-job     Run the sample heartbeat job fixture on 127.0.0.1:8092' \
 	  '  web-dev        Run Vite on 127.0.0.1:5173 with the /api proxy' \
+	  '  security-check  Run pinned local security checks (separate from verify)' \
+	  '  demo           Seed and run the isolated demonstration table (DEMO_RESET=yes to reset)' \
 	  '  backend-check  gofumpt, golines (100 cols), go vet, race-enabled tests, build' \
 	  '  web-check      Lint, types, formatting, tests, production build' \
 	  '  verify         Run both check suites' \
@@ -56,6 +59,28 @@ db-export: .env
 db-import: .env
 	@if [ -z "$(FILE)" ] || [ -z "$(TABLE)" ]; then printf '%s\n' 'Specify FILE= and TABLE='; exit 2; fi
 	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/statusforge import --in $(abspath $(FILE)) --table $(TABLE)
+
+build:
+	npm --prefix web run build
+	rm -rf backend/internal/webui/dist
+	mkdir -p backend/internal/webui/dist backend/bin
+	cp -R web/dist/. backend/internal/webui/dist/
+	@version="$$(git describe --tags --always --dirty 2>/dev/null || printf dev)"; cd $(BACKEND) && $(GO) build -tags release -ldflags "-X github.com/lavinhoque33/statusforge/backend/internal/buildinfo.Version=$$version" -o bin/statusforge ./cmd/statusforge
+
+run: db-up build
+	@$(LOAD_ENV) $(if $(TABLE),STATUSFORGE_DYNAMODB_TABLE=$(TABLE)) ./backend/bin/statusforge
+
+security-check:
+	sh infrastructure/scripts/security-check.sh
+
+demo: .env build db-up
+	@$(LOAD_ENV) \
+	  $(if $(STATUSFORGE_HTTP_ADDR),STATUSFORGE_HTTP_ADDR='$(STATUSFORGE_HTTP_ADDR)') \
+	  $(if $(STATUSFORGE_SAMPLE_TARGET_ADDR),STATUSFORGE_SAMPLE_TARGET_ADDR='$(STATUSFORGE_SAMPLE_TARGET_ADDR)') \
+	  $(if $(STATUSFORGE_RECEIVER_ADDR),STATUSFORGE_RECEIVER_ADDR='$(STATUSFORGE_RECEIVER_ADDR)') \
+	  $(if $(STATUSFORGE_SAMPLE_JOB_ADDR),STATUSFORGE_SAMPLE_JOB_ADDR='$(STATUSFORGE_SAMPLE_JOB_ADDR)') \
+	  $(if $(STATUSFORGE_DYNAMODB_ENDPOINT),STATUSFORGE_DYNAMODB_ENDPOINT='$(STATUSFORGE_DYNAMODB_ENDPOINT)') \
+	  STATUSFORGE_DYNAMODB_TABLE=$(or $(DEMO_TABLE),statusforge_demo) sh infrastructure/scripts/demo.sh
 
 backend-dev: .env
 	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/statusforge

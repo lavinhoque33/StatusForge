@@ -22,7 +22,7 @@ export function coverageSentence(summary: MonitorSummary): string {
   const label = summary.window === '24h' ? 'Last 24 hours' : 'Last 7 days';
   return `${label}: ${c.recorded} of ${c.expected} expected checks recorded (${ratio}); ${c.notObserved} not observed. Of ${counted} counted: ${c.outcomes.healthy} healthy, ${c.outcomes.failing} failing, ${c.outcomes.checkerProblem} checker problem. Paused ${duration(c.pausedSeconds)}; maintenance ${c.maintenance} checks; ${c.notCounted} not counted. Manual checks ${c.manualChecks} (excluded from expected checks).`;
 }
-function latencyValue(ms: number): string {
+export function latencyValue(ms: number): string {
   return ms >= 1000 ? `${Number((ms / 1000).toFixed(1))} s` : `${ms} ms`;
 }
 export function latencySentence(summary: HttpSummary): string {

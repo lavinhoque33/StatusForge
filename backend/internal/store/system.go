@@ -121,6 +121,6 @@ func (s *Store) System(ctx context.Context) (SystemStatus, error) {
 		},
 		Housekeeping: HousekeepingStatus{s.housekeepingInterval, run, retain, deletes},
 		Limits:       s.systemLimits,
-		Demo:         false,
+		Demo:         f.Demo,
 	}, nil
 }

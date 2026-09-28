@@ -130,6 +130,9 @@ func TestMonitorAPIValidationAndSingleFlight(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
 		resp, err := client.Do(r)
 		if err != nil {
 			t.Fatal(err)

@@ -18,6 +18,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
+	"github.com/lavinhoque33/statusforge/backend/internal/webui"
 )
 
 type MonitorStore interface {
@@ -152,7 +153,15 @@ func NewMonitorRouter(
 	mux.Get("/api/monitors/{id}/incidents", a.monitorIncidents)
 	mux.Get("/api/monitors/{id}/incidents/{incidentId}", a.incidentDetail)
 	mux.Post("/api/monitors/{id}/incidents/{incidentId}/notifications/{noteKey}/retry", a.retry)
-	mux.NotFound(jsonErrorHandler(http.StatusNotFound, errorNotFound))
+	web := webui.Handler()
+	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) || r.URL.Path == "/ingest" ||
+			strings.HasPrefix(r.URL.Path, "/ingest/") {
+			jsonErrorHandler(http.StatusNotFound, errorNotFound)(w, r)
+			return
+		}
+		web.ServeHTTP(w, r)
+	})
 	return mux
 }
 

@@ -29,12 +29,24 @@ body {
   color: var(--fg);
 }
 /* Wide enough for the observation table at desktop widths, still fluid below. */
+.app-footer,
 .app-header,
 .app-main {
   max-width: 1000px;
   margin: 0 auto;
   padding: 1rem;
   overflow-wrap: break-word;
+}
+/* The banner is a label, not a replacement for the current health state. */
+.demo-banner {
+  border: 2px solid var(--warn);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  font-weight: 700;
+}
+.app-footer {
+  color: var(--muted);
+  border-top: 1px solid var(--border);
 }
 .tagline {
   color: var(--muted);

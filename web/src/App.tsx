@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { getSystem, type SystemInfo } from './api/system';
 import { AttentionBanner } from './components/AttentionBanner';
 import { IncidentDetailPage } from './pages/IncidentDetailPage';
 import { IncidentsPage } from './pages/IncidentsPage';
@@ -16,6 +18,14 @@ import { matchRoute } from './router/routes';
 export default function App() {
   const pathname = usePathname();
   const route = matchRoute(pathname);
+  const [identity, setIdentity] = useState<Pick<SystemInfo, 'version' | 'demo'> | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void getSystem(controller.signal)
+      .then(setIdentity)
+      .catch(() => setIdentity(null));
+    return () => controller.abort();
+  }, []);
 
   return (
     <>
@@ -75,6 +85,11 @@ export default function App() {
             </li>
           </ul>
         </nav>
+        {identity?.demo ? (
+          <p className="demo-banner" role="status">
+            Demo data
+          </p>
+        ) : null}
         <BackendStatus />
         <AttentionBanner />
       </header>
@@ -107,6 +122,9 @@ export default function App() {
           </section>
         ) : null}
       </main>
+      <footer className="app-footer">
+        <small>{identity ? <>Version {identity.version}</> : 'Version unavailable'}</small>
+      </footer>
     </>
   );
 }

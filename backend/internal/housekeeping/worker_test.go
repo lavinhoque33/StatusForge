@@ -38,8 +38,10 @@ func TestFailedPendingCheckWaitsForConfiguredInterval(t *testing.T) {
 		Interval: 3 * time.Second,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Now: func() time.Time {
+			// Read before signalling: the test advances the clock once it sees the event.
+			now := time.Unix(0, current.Load())
 			events <- "now"
-			return time.Unix(0, current.Load())
+			return now
 		},
 		ticks: ticks,
 	}

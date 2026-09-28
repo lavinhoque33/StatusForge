@@ -68,6 +68,7 @@ func TestIncidentRouteStatuses(t *testing.T) {
 	}{{"GET", "/api/incidents?state=all", 200}, {"GET", "/api/incidents?limit=201", 400}, {"GET", "/api/incidents?state=invalid", 400}, {"GET", "/api/monitors/m/incidents/i", 404}, {"GET", "/api/notifications/attention", 200}, {"POST", "/api/monitors/m/incidents/i/notifications/opened/retry", 409}, {"POST", "/api/monitors/m/incidents/i/notifications/reminder-0001/retry", 409}, {"POST", "/api/monitors/m/incidents/i/notifications/reminder#0001/retry", 404}} {
 		t.Run(tc.path, func(t *testing.T) {
 			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(""))
+			request.Host = "localhost:8080"
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 			if recorder.Code != tc.code {

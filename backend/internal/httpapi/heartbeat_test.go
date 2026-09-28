@@ -51,6 +51,7 @@ func TestHeartbeatIngestHTTP(t *testing.T) {
 	)
 	call := func(method, path, token, body string) (int, string, http.Header) {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "localhost:8080"
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}

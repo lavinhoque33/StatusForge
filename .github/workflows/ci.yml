@@ -43,6 +43,28 @@ jobs:
       - name: Lint, types, formatting, tests, build
         run: make web-check
 
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            tools/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - name: Vulnerabilities, production licences, working-tree and history secrets
+        run: make security-check
+
   integration:
     needs: [backend, web]
     runs-on: ubuntu-24.04

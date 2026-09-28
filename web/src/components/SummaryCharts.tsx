@@ -19,6 +19,7 @@ import {
   heartbeatChartRows,
   latencyAxisMaximum,
   latencyPlotRows,
+  latencyValue,
   shadedSpans,
   statusBucketLabel,
 } from '../lib/summaryPresentation';
@@ -349,8 +350,9 @@ function LatencyChart({
                 interval="preserveStartEnd"
               />
               <YAxis
+                width={68}
                 domain={[0, latencyAxisMaximum(summary, deadlineMs)]}
-                tickFormatter={(value: number) => `${value}\u00a0ms`}
+                tickFormatter={(value: number) => latencyValue(value).replace(' ', '\u00a0')}
               />
               <Tooltip labelFormatter={(value) => formatLocalWithOffset(new Date(Number(value)))} />
               <Legend />

@@ -29,6 +29,10 @@ func TestSchedulingRoutes(t *testing.T) {
 	)
 	send := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Host = "localhost:8080"
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		return w

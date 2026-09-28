@@ -36,6 +36,7 @@ type formatRecord struct {
 	UpdatedAt      string   `dynamodbav:"updatedAt"`
 	UpgradedFrom   *string  `dynamodbav:"upgradedFrom,omitempty"`
 	Backfill       Backfill `dynamodbav:"backfill"`
+	Demo           bool     `dynamodbav:"demo,omitempty"`
 }
 
 func (s *Store) ttl(ctx context.Context) (string, string, error) {

@@ -68,7 +68,9 @@ func TestDailyAPIValidationAndErrors(t *testing.T) {
 	call := func(path string) (int, map[string]any) {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "localhost:8080"
+		h.ServeHTTP(rec, req)
 		var body map[string]any
 		if e := json.Unmarshal(rec.Body.Bytes(), &body); e != nil {
 			t.Fatal(e)

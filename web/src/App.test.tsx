@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { jsonResponse, stubApi } from './test/fixtures';
+import { jsonResponse, stubApi, systemFixture } from './test/fixtures';
 
 const READINESS_GET = 'GET /api/health/ready';
 const MONITORS_GET = 'GET /api/monitors';
@@ -83,5 +83,27 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
+  });
+
+  it.each([
+    { demo: true, version: 'v0.6.0', banner: true },
+    { demo: false, version: 'v0.6.0', banner: false },
+  ])('renders release identity with demo=$demo', async ({ demo, version, banner }) => {
+    window.history.pushState(null, '', '/nope');
+    stubApi({
+      'GET /api/system': () => jsonResponse(systemFixture({ demo, version })),
+    });
+    render(<App />);
+    expect(await screen.findByText(`Version ${version}`)).toBeInTheDocument();
+    expect(screen.queryByText('Demo data') !== null).toBe(banner);
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('does not imply demo data or invent a version when system is unavailable', async () => {
+    window.history.pushState(null, '', '/nope');
+    stubApi({ 'GET /api/system': () => jsonResponse({ error: 'store_unavailable' }, 503) });
+    render(<App />);
+    expect(await screen.findByText('Version unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Demo data')).not.toBeInTheDocument();
   });
 });

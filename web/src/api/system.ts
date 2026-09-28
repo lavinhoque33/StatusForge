@@ -43,7 +43,7 @@ export type SystemInfo = {
     summaryGapLimit: number;
     summaryWindows: number[];
   };
-  demo: false;
+  demo: boolean;
 };
 
 const invalid = (): never => {
@@ -74,7 +74,7 @@ export function parseSystem(value: unknown): SystemInfo {
   if (backfill.state !== 'running' && backfill.state !== 'done') invalid();
   if (
     !['ENABLED', 'ENABLING', 'DISABLED', 'DISABLING', 'unknown'].includes(String(ttl.status)) ||
-    root.demo !== false
+    typeof root.demo !== 'boolean'
   )
     invalid();
   const retention: unknown[] = Array.isArray(root.retention) ? root.retention : invalid();
@@ -124,7 +124,7 @@ export function parseSystem(value: unknown): SystemInfo {
       summaryGapLimit: count(limits.summaryGapLimit),
       summaryWindows: numberList(limits.summaryWindows),
     },
-    demo: false,
+    demo: root.demo as boolean,
   };
 }
 export const getSystem = (signal?: AbortSignal): Promise<SystemInfo> =>

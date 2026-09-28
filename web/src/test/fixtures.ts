@@ -8,12 +8,69 @@ import type {
   MonitorStatus,
   Observation,
 } from '../api/monitors';
+import type { SystemInfo } from '../api/system';
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/** A valid `/api/system` body. */
+export function systemFixture(overrides: Partial<SystemInfo> = {}): SystemInfo {
+  return {
+    version: 'v0.6.0',
+    table: 'statusforge_local',
+    dataFormat: 6,
+    dataFormatWrittenBy: 'v0.6.0',
+    upgradedFrom: 'unmarked',
+    backfill: {
+      state: 'running',
+      stamped: 42,
+      startedAt: '2026-09-28T10:00:00.000Z',
+      finishedAt: null,
+    },
+    ttl: { status: 'ENABLING', attribute: 'expiresAt' },
+    retention: [
+      {
+        record: 'observations',
+        label: 'Checks',
+        days: 90,
+        startsFrom: 'Check start',
+        protectedWhile: 'Never',
+      },
+      {
+        record: 'incidents',
+        label: 'Incidents',
+        days: 365,
+        startsFrom: 'Resolution',
+        protectedWhile: 'Open or pending notifications',
+      },
+    ],
+    housekeeping: {
+      intervalSeconds: 60,
+      lastRunAt: null,
+      pendingRetentionJobs: 2,
+      pendingDeletions: 1,
+    },
+    limits: {
+      workers: 4,
+      minIntervalSeconds: 60,
+      deliveryWorkers: 2,
+      deliveryRetrySchedule: ['10s', '30s'],
+      reminderIntervalSeconds: 21600,
+      livenessIntervalSeconds: 10,
+      allowedTargets: '127.0.0.1:8090',
+      notifyUrl: 'http://127.0.0.1:8092/accept',
+      historyScanBound: 1000,
+      summaryObservationLimit: 2000,
+      summaryGapLimit: 500,
+      summaryWindows: [86400, 604800],
+    },
+    demo: false,
+    ...overrides,
+  };
 }
 
 export function checkFixture(overrides: Partial<CheckConfig> = {}): CheckConfig {

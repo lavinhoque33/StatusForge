@@ -114,6 +114,7 @@ func middlewareChain(logger *slog.Logger, now func() time.Time) []func(http.Hand
 		middleware.RequestID,
 		requestIDHeader,
 		securityHeaders,
+		localProtection,
 		requestLogger(logger, now),
 		recoverPanics(logger),
 		jsonErrorBodies,

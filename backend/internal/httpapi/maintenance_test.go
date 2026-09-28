@@ -136,10 +136,12 @@ func TestMaintenanceAPIValidation(t *testing.T) {
 			s.createErr = tc.createErr
 			s.cancelErr = tc.cancelErr
 			rec := httptest.NewRecorder()
-			handler.ServeHTTP(
-				rec,
-				httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)),
-			)
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Host = "localhost:8080"
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			handler.ServeHTTP(rec, req)
 			if rec.Code != tc.status {
 				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 			}

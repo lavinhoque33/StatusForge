@@ -154,6 +154,7 @@ func serve(
 	body io.Reader,
 ) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, target, body)
+	request.Host = "localhost:8080"
 	for name, values := range headers {
 		for _, value := range values {
 			request.Header.Add(name, value)

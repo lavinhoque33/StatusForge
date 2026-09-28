@@ -1,0 +1,20 @@
+title = "StatusForge local secret scan"
+
+[extend]
+useDefault = true
+
+# Generated installs and private local outputs are not project source. Local .env is
+# deliberately NOT excluded: an accidental secret in it must be reported.
+[[allowlists]]
+description = "Generated dependency/build outputs, git metadata and local scratch output (not committed source)"
+paths = ['''(^|/)(node_modules|dist|\.git|\.local)/''']
+
+[[allowlists]]
+description = ".env.example has public, documented placeholder credentials for DynamoDB Local only"
+paths = ['''(^|/)\.env\.example$''']
+
+[[allowlists]]
+description = "One inert UI test token in a curl example; no real credential is issued"
+condition = "AND"
+paths = ['''(^|/)web/src/pages/MonitorCreatePage\.test\.tsx$''']
+regexes = ['''sfh_secret-once''']
