@@ -1,26 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError, ApiValidationError, isAbortError, type FieldIssue } from '../api/http';
 import {
-  OBSERVATION_LIMIT,
   changeLifecycle,
   getMonitor,
-  listGaps,
   listIntervals,
-  listObservations,
   runCheck,
   updateMonitor,
-  type Gap,
   type Intervals,
   type LifecycleAction,
   type MonitorRecord,
-  type Observation,
 } from '../api/monitors';
 import { listMaintenance, type Window } from '../api/maintenance';
 import { incidentLink, listMonitorIncidents, type Incident } from '../api/incidents';
 import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
-import { TimelineTable } from '../components/TimelineTable';
+import { MonitorHistory } from '../components/MonitorHistory';
 import { HeartbeatTokenSection } from '../components/HeartbeatTokenSection';
 import { MonitorApplicationSection } from '../components/MonitorApplicationSection';
 import { MaintenanceSection } from '../components/MaintenanceSection';
@@ -48,8 +43,6 @@ type LoadState =
   | {
       name: 'ready';
       monitor: MonitorRecord;
-      observations: Observation[];
-      gaps: Gap[];
       incidents: Incident[];
       windows: Window[];
     }
@@ -97,6 +90,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const [load, setLoad] = useState<LoadState>({ name: 'loading' });
   const [freshness, setFreshness] = useState<Freshness>({ name: 'none' });
   const [reloadToken, setReloadToken] = useState(0);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [fields, setFields] = useState<MonitorFormFields | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, FieldIssue>>({});
   const [editNotice, setEditNotice] = useState<EditNotice | null>(null);
@@ -162,10 +156,8 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const fetchData = useCallback(
     async (signal: AbortSignal, options: { silent: boolean }) => {
       try {
-        const [monitor, observations, gaps, incidents, windows] = await Promise.all([
+        const [monitor, incidents, windows] = await Promise.all([
           getMonitor(monitorId, signal),
-          listObservations(monitorId, OBSERVATION_LIMIT, signal),
-          listGaps(monitorId, OBSERVATION_LIMIT, signal),
           listMonitorIncidents(monitorId, 5, signal),
           listMaintenance(monitorId, signal),
         ]);
@@ -182,7 +174,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         if (!options.silent && !dirtyNow) {
           setFields((existing) => existing ?? monitorFormFields(monitor));
         }
-        setLoad({ name: 'ready', monitor, observations, gaps, incidents, windows });
+        setLoad({ name: 'ready', monitor, incidents, windows });
         setFreshness({ name: 'updated', at: Date.now() });
       } catch (error: unknown) {
         if (signal.aborted || isAbortError(error)) return;
@@ -253,18 +245,14 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     setRunState({ name: 'running' });
 
     runCheck(monitor.id, controller.signal)
-      .then((observation) => {
+      .then(() => {
         if (checkController.current !== controller) return;
         checkController.current = null;
         setRunState({ name: 'idle' });
-        setLoad((current) =>
-          current.name === 'ready'
-            ? { ...current, observations: [observation, ...current.observations] }
-            : current,
-        );
         // The headline follows the presented status, which only a poll
         // recomputes; refresh immediately instead of waiting up to 15 s.
         void fetchData(new AbortController().signal, { silent: true });
+        setHistoryRefresh((value) => value + 1);
       })
       .catch((error: unknown) => {
         if (checkController.current !== controller || isAbortError(error)) return;
@@ -419,13 +407,8 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     );
   }
 
-  const { monitor, observations, gaps, incidents, windows } = load;
+  const { monitor, incidents, windows } = load;
   const archived = monitor.lifecycle === 'archived';
-  const newestObservation = observations.length === 0 ? null : observations[0];
-  const driftNote =
-    newestObservation !== null && monitor.configVersion > newestObservation.configVersion
-      ? `Configuration changed since the last check (v${newestObservation.configVersion} → v${monitor.configVersion}).`
-      : null;
 
   return (
     <article className="monitor-detail" aria-labelledby="monitor-detail-heading">
@@ -607,13 +590,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         )}
       </section>
 
-      {monitor.kind === 'http' && monitor.check !== null ? (
-        <HttpSummaryPanel
-          monitorId={monitor.id}
-          createdAt={monitor.createdAt}
-          deadlineMs={monitor.check.deadlineMs}
-        />
-      ) : null}
+      <HttpSummaryPanel
+        monitorId={monitor.id}
+        createdAt={monitor.createdAt}
+        deadlineMs={monitor.kind === 'http' ? monitor.check!.deadlineMs : undefined}
+      />
 
       {monitor.heartbeat ? (
         <>
@@ -774,18 +755,13 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           </ul>
         )}
       </section>
-      <section className="panel" aria-labelledby="monitor-timeline-heading">
-        <h3 id="monitor-timeline-heading">
-          {monitor.kind === 'heartbeat' ? 'Reports and gaps' : 'Checks and gaps'}
-        </h3>
-        {driftNote === null ? null : <p className="drift-note">{driftNote}</p>}
-        <TimelineTable
-          observations={observations}
-          gaps={gaps}
-          windows={windows}
-          monitorKind={monitor.kind}
-        />
-      </section>
+      <MonitorHistory
+        monitorId={monitor.id}
+        monitorKind={monitor.kind}
+        windows={windows}
+        configVersion={monitor.configVersion}
+        refreshToken={historyRefresh}
+      />
     </article>
   );
 }

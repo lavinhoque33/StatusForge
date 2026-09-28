@@ -1,17 +1,17 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { getHttpSummary } from '../api/dailyUse';
+import { getMonitorSummary } from '../api/dailyUse';
 import { summaryFixture } from '../test/summaryFixture';
 import { HttpSummaryPanel } from './HttpSummaryPanel';
 
-vi.mock('../api/dailyUse', () => ({ getHttpSummary: vi.fn() }));
+vi.mock('../api/dailyUse', () => ({ getMonitorSummary: vi.fn() }));
 vi.mock('./SummaryCharts', () => ({ default: () => <div>Charts loaded</div> }));
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
 it('refreshes HTTP summary on toggle and at 60 s, not at 15 s', async () => {
-  vi.mocked(getHttpSummary).mockImplementation(async (_id, window) => ({
+  vi.mocked(getMonitorSummary).mockImplementation(async (_id, window) => ({
     ...summaryFixture,
     window,
   }));
@@ -27,24 +27,24 @@ it('refreshes HTTP summary on toggle and at 60 s, not at 15 s', async () => {
     await Promise.resolve();
   });
   expect(screen.getByText(/280 of 288 expected checks recorded/)).toBeInTheDocument();
-  expect(getHttpSummary).toHaveBeenCalledTimes(1);
+  expect(getMonitorSummary).toHaveBeenCalledTimes(1);
   await act(async () => {
     vi.advanceTimersByTime(15_000);
   });
-  expect(getHttpSummary).toHaveBeenCalledTimes(1);
+  expect(getMonitorSummary).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('radio', { name: '7 d' }));
   await act(async () => {
     await Promise.resolve();
   });
-  expect(getHttpSummary).toHaveBeenLastCalledWith('monitor-1', '7d', expect.any(AbortSignal));
+  expect(getMonitorSummary).toHaveBeenLastCalledWith('monitor-1', '7d', expect.any(AbortSignal));
   await act(async () => {
     vi.advanceTimersByTime(60_000);
   });
-  expect(getHttpSummary).toHaveBeenCalledTimes(3);
+  expect(getMonitorSummary).toHaveBeenCalledTimes(3);
 });
 
 it('labels retained 24 h data when the 7 d request fails', async () => {
-  vi.mocked(getHttpSummary)
+  vi.mocked(getMonitorSummary)
     .mockResolvedValueOnce(summaryFixture)
     .mockRejectedValueOnce(new Error('Temporary network error'));
   render(

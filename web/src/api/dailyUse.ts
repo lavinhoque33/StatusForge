@@ -9,16 +9,21 @@ import { parseMonitorStatus, type MonitorKind, type MonitorStatus } from './moni
 
 export type Span = { from: string; to: string | null };
 export type SummaryWindow = '24h' | '7d';
-export type SummaryCounts = {
+export type CommonCounts = {
   expected: number;
   recorded: number;
   notObserved: number;
   maintenance: number;
   notCounted: number;
   notCountedReasons: Record<string, number>;
+  pausedSeconds: number;
+};
+export type SummaryCounts = CommonCounts & {
   outcomes: { healthy: number; failing: number; checkerProblem: number };
   manualChecks: number;
-  pausedSeconds: number;
+};
+export type HeartbeatCounts = CommonCounts & {
+  outcomes: { onTime: number; late: number; missed: number; failureReports: number };
 };
 export type Latency = {
   samples: number;
@@ -28,7 +33,7 @@ export type Latency = {
   noResponse: number;
   checkerProblems: number;
 };
-export type SummaryBucket = {
+type CommonBucket = {
   from: string;
   to: string;
   expected: number;
@@ -36,15 +41,22 @@ export type SummaryBucket = {
   notObserved: number;
   maintenance: number;
   notCounted: number;
+  pausedSeconds: number;
+};
+export type SummaryBucket = CommonBucket & {
   healthy: number;
   failing: number;
   checkerProblem: number;
-  pausedSeconds: number;
   latency: Pick<Latency, 'samples' | 'medianMs' | 'p95Ms' | 'maxMs'>;
 };
-export type HttpSummary = {
+export type HeartbeatBucket = CommonBucket & {
+  onTime: number;
+  late: number;
+  missed: number;
+  failureReports: number;
+};
+type SummaryBase = {
   monitorId: string;
-  kind: 'http';
   window: SummaryWindow;
   from: string;
   to: string;
@@ -54,12 +66,22 @@ export type HttpSummary = {
   bucketSeconds: number;
   lifecycleHistoryFrom: string | null;
   pendingSince: string | null;
-  coverage: SummaryCounts;
-  latency: Latency;
   outages: Span[];
   maintenanceWindows: (Span & { id: string })[];
+};
+export type HttpSummary = SummaryBase & {
+  kind: 'http';
+  coverage: SummaryCounts;
+  latency: Latency;
   buckets: SummaryBucket[];
 };
+export type HeartbeatSummary = SummaryBase & {
+  kind: 'heartbeat';
+  coverage: HeartbeatCounts;
+  latency: null;
+  buckets: HeartbeatBucket[];
+};
+export type MonitorSummary = HttpSummary | HeartbeatSummary;
 export type MonitorRef = {
   id: string;
   name: string;
@@ -73,7 +95,13 @@ export type Overview = {
   openIncidents: { monitor: MonitorRef; incident: Incident }[];
   failingWithoutIncident: { monitor: MonitorRef; status: MonitorStatus }[];
   coverageProblems: { monitor: MonitorRef; status: MonitorStatus }[];
-  notifications: { count: number; items: AttentionNotification[] };
+  notifications: {
+    count: number;
+    items: (AttentionNotification & {
+      applicationId: string | null;
+      applicationName: string | null;
+    })[];
+  };
   recentRecoveries: { monitor: MonitorRef; incident: Incident }[];
   counts: {
     active: number;
@@ -216,6 +244,72 @@ export function parseHttpSummary(value: unknown): HttpSummary {
     buckets: list(v.buckets, bucket),
   };
 }
+
+export function parseMonitorSummary(value: unknown): MonitorSummary {
+  const v = obj(value);
+  if (v.kind === 'http') return parseHttpSummary(value);
+  if (v.kind !== 'heartbeat' || (v.window !== '24h' && v.window !== '7d') || v.latency !== null)
+    invalid();
+  const c = obj(v.coverage);
+  const o = obj(c.outcomes);
+  const reasons = obj(c.notCountedReasons);
+  const common = {
+    monitorId: text(v.monitorId),
+    window: v.window as SummaryWindow,
+    from: time(v.from),
+    to: time(v.to),
+    evaluatedAt: time(v.evaluatedAt),
+    truncated: flag(v.truncated),
+    coveredFrom: time(v.coveredFrom),
+    bucketSeconds: count(v.bucketSeconds),
+    lifecycleHistoryFrom: nullableTime(v.lifecycleHistoryFrom),
+    pendingSince: nullableTime(v.pendingSince),
+    outages: list(v.outages, span),
+    maintenanceWindows: list(v.maintenanceWindows, (item) => ({
+      ...span(item),
+      id: text(obj(item).id),
+    })),
+  };
+  return {
+    ...common,
+    kind: 'heartbeat',
+    latency: null,
+    coverage: {
+      expected: count(c.expected),
+      recorded: count(c.recorded),
+      notObserved: count(c.notObserved),
+      maintenance: count(c.maintenance),
+      notCounted: count(c.notCounted),
+      notCountedReasons: Object.fromEntries(
+        Object.entries(reasons).map(([key, reason]) => [key, count(reason)]),
+      ),
+      pausedSeconds: count(c.pausedSeconds),
+      outcomes: {
+        onTime: count(o.onTime),
+        late: count(o.late),
+        missed: count(o.missed),
+        failureReports: count(o.failureReports),
+      },
+    },
+    buckets: list(v.buckets, (item): HeartbeatBucket => {
+      const b = obj(item);
+      return {
+        from: time(b.from),
+        to: time(b.to),
+        expected: count(b.expected),
+        recorded: count(b.recorded),
+        notObserved: count(b.notObserved),
+        maintenance: count(b.maintenance),
+        notCounted: count(b.notCounted),
+        pausedSeconds: count(b.pausedSeconds),
+        onTime: count(b.onTime),
+        late: count(b.late),
+        missed: count(b.missed),
+        failureReports: count(b.failureReports),
+      };
+    }),
+  };
+}
 function monitorRef(value: unknown): MonitorRef {
   const v = obj(value);
   if (v.kind !== 'http' && v.kind !== 'heartbeat') invalid();
@@ -235,13 +329,17 @@ function statusRow(value: unknown) {
   const v = obj(value);
   return { monitor: monitorRef(v.monitor), status: parseMonitorStatus(v.status) };
 }
-function attention(value: unknown): AttentionNotification {
+function attention(
+  value: unknown,
+): AttentionNotification & { applicationId: string | null; applicationName: string | null } {
   const v = obj(value);
   return {
     ...parseNotification(v),
     monitorId: text(v.monitorId),
     monitorName: text(v.monitorName),
     incidentId: text(v.incidentId),
+    applicationId: nullableText(v.applicationId),
+    applicationName: nullableText(v.applicationName),
   };
 }
 export function parseOverview(value: unknown): Overview {
@@ -282,14 +380,15 @@ export function parseOverview(value: unknown): Overview {
 export function getOverview(signal?: AbortSignal): Promise<Overview> {
   return requestJson('/api/overview', parseOverview, { signal });
 }
-export function getHttpSummary(
+
+export function getMonitorSummary(
   id: string,
   window: SummaryWindow,
   signal?: AbortSignal,
-): Promise<HttpSummary> {
+): Promise<MonitorSummary> {
   return requestJson(
     `/api/monitors/${encodeURIComponent(id)}/summary?window=${window}`,
-    parseHttpSummary,
+    parseMonitorSummary,
     { signal },
   );
 }

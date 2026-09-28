@@ -82,6 +82,20 @@ func (f *fakeMonitorStore) Gaps(context.Context, string, int) ([]monitor.Gap, er
 	return []monitor.Gap{}, nil
 }
 
+func (f *fakeMonitorStore) HistoryObservations(
+	ctx context.Context, id string, limit int, _ store.HistoryFilter,
+) (store.HistoryPage[monitor.Observation], error) {
+	items, err := f.Observations(ctx, id, limit)
+	return store.HistoryPage[monitor.Observation]{Items: items}, err
+}
+
+func (f *fakeMonitorStore) HistoryGaps(
+	ctx context.Context, id string, limit int, _ string,
+) (store.HistoryPage[monitor.Gap], error) {
+	items, err := f.Gaps(ctx, id, limit)
+	return store.HistoryPage[monitor.Gap]{Items: items}, err
+}
+
 type waitingRunner struct {
 	entered chan struct{}
 	release chan struct{}

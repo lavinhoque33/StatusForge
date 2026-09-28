@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getOverview, type Overview } from '../api/dailyUse';
 import { incidentLink } from '../api/incidents';
 import { isAbortError } from '../api/http';
+import { groupByApplication } from '../lib/applicationGroups';
 import { describeApiError } from '../lib/errors';
 import { durationWords } from '../lib/incidentPresentation';
 import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
@@ -93,60 +94,80 @@ export function OverviewPage() {
           {data.openIncidents.length > 0 ? (
             <section aria-labelledby="overview-incidents-heading">
               <h3 id="overview-incidents-heading">Open incidents</h3>
-              <ul className="overview-list">
-                {data.openIncidents.map(({ monitor, incident }) => (
-                  <li className="panel" key={incident.id}>
-                    <Link to={incidentLink(monitor.id, incident.id)}>
-                      {monitor.name} — {monitor.kind === 'heartbeat' ? 'heartbeat' : 'HTTP check'}{' '}
-                      incident
-                    </Link>
-                    . Opened <When at={incident.openedAt} />; duration{' '}
-                    {durationWords(incident, now)}.{' '}
-                    {incident.lastFailure.reason.replaceAll('_', ' ')}.
-                  </li>
-                ))}
-              </ul>
+              {groupByApplication(data.openIncidents).map((group) => (
+                <section key={group.name}>
+                  <h4>{group.name}</h4>
+                  <ul className="overview-list">
+                    {group.items.map(({ monitor, incident }) => (
+                      <li className="panel" key={incident.id}>
+                        <Link to={incidentLink(monitor.id, incident.id)}>
+                          {monitor.name} —{' '}
+                          {monitor.kind === 'heartbeat' ? 'heartbeat' : 'HTTP check'} incident
+                        </Link>
+                        . Opened <When at={incident.openedAt} />; duration{' '}
+                        {durationWords(incident, now)}.{' '}
+                        {incident.lastFailure.reason.replaceAll('_', ' ')}.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </section>
           ) : null}
           {data.failingWithoutIncident.length > 0 ? (
             <section aria-labelledby="failing-heading">
               <h3 id="failing-heading">Failing — incident not open yet</h3>
-              <ul className="overview-list">
-                {data.failingWithoutIncident.map(({ monitor }) => (
-                  <li className="panel monitor-state--failing" key={monitor.id}>
-                    <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —
-                    Failing; policy threshold not reached yet.
-                  </li>
-                ))}
-              </ul>
+              {groupByApplication(data.failingWithoutIncident).map((group) => (
+                <section key={group.name}>
+                  <h4>{group.name}</h4>
+                  <ul className="overview-list">
+                    {group.items.map(({ monitor }) => (
+                      <li className="panel monitor-state--failing" key={monitor.id}>
+                        <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>
+                          {monitor.name}
+                        </Link>{' '}
+                        — Failing; policy threshold not reached yet.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </section>
           ) : null}
           {data.coverageProblems.length > 0 ? (
             <section aria-labelledby="coverage-problems-heading">
               <h3 id="coverage-problems-heading">Coverage problems</h3>
-              <ul className="overview-list">
-                {data.coverageProblems.map(({ monitor, status }) => (
-                  <li className={`panel monitor-state--${status.state}`} key={monitor.id}>
-                    <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —{' '}
-                    {status.state === 'stale' ? (
-                      <>
-                        Stale — not checked since{' '}
-                        {status.observation === null ? (
-                          'the last recorded check'
+              {groupByApplication(data.coverageProblems).map((group) => (
+                <section key={group.name}>
+                  <h4>{group.name}</h4>
+                  <ul className="overview-list">
+                    {group.items.map(({ monitor, status }) => (
+                      <li className={`panel monitor-state--${status.state}`} key={monitor.id}>
+                        <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>
+                          {monitor.name}
+                        </Link>{' '}
+                        —{' '}
+                        {status.state === 'stale' ? (
+                          <>
+                            Stale — not checked since{' '}
+                            {status.observation === null ? (
+                              'the last recorded check'
+                            ) : (
+                              <When at={status.observation.completedAt} />
+                            )}
+                          </>
+                        ) : status.state === 'checker_problem' ? (
+                          'Checker problem — StatusForge could not complete the check — not a target failure'
+                        ) : status.state === 'late' ? (
+                          'Late — expected report not yet received'
                         ) : (
-                          <When at={status.observation.completedAt} />
+                          'Unknown — no current result'
                         )}
-                      </>
-                    ) : status.state === 'checker_problem' ? (
-                      'Checker problem — StatusForge could not complete the check — not a target failure'
-                    ) : status.state === 'late' ? (
-                      'Late — expected report not yet received'
-                    ) : (
-                      'Unknown — no current result'
-                    )}
-                  </li>
-                ))}
-              </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </section>
           ) : null}
           {data.notifications.count > 0 ? (
@@ -157,44 +178,54 @@ export function OverviewPage() {
                 {data.notifications.count === 1 ? '' : 's'} (newest {data.limits.notifications}{' '}
                 shown).
               </p>
-              <ul className="overview-list">
-                {data.notifications.items.map((note) => (
-                  <li className="panel" key={note.id}>
-                    <Link to={incidentLink(note.monitorId, note.incidentId)}>
-                      {note.monitorName} — {note.kind} notification
-                    </Link>{' '}
-                    failed
-                    {note.failedAt === null ? null : (
-                      <>
-                        {' '}
-                        at <When at={note.failedAt} />
-                      </>
-                    )}
-                    .
-                  </li>
-                ))}
-              </ul>
+              {groupByApplication(data.notifications.items).map((group) => (
+                <section key={group.name}>
+                  <h4>{group.name}</h4>
+                  <ul className="overview-list">
+                    {group.items.map((note) => (
+                      <li className="panel" key={note.id}>
+                        <Link to={incidentLink(note.monitorId, note.incidentId)}>
+                          {note.monitorName} — {note.kind} notification
+                        </Link>{' '}
+                        failed
+                        {note.failedAt === null ? null : (
+                          <>
+                            {' '}
+                            at <When at={note.failedAt} />
+                          </>
+                        )}
+                        .
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </section>
           ) : null}
           {data.recentRecoveries.length > 0 ? (
             <section aria-labelledby="recoveries-heading">
               <h3 id="recoveries-heading">Recovered in the last 24 hours</h3>
-              <ul className="overview-list">
-                {data.recentRecoveries.map(({ monitor, incident }) => (
-                  <li className="panel" key={incident.id}>
-                    <Link to={incidentLink(monitor.id, incident.id)}>
-                      {monitor.name} — Recovered
-                    </Link>{' '}
-                    at{' '}
-                    {incident.resolvedAt === null ? (
-                      'unknown time'
-                    ) : (
-                      <When at={incident.resolvedAt} />
-                    )}
-                    ; incident duration {durationWords(incident, now)}.
-                  </li>
-                ))}
-              </ul>
+              {groupByApplication(data.recentRecoveries).map((group) => (
+                <section key={group.name}>
+                  <h4>{group.name}</h4>
+                  <ul className="overview-list">
+                    {group.items.map(({ monitor, incident }) => (
+                      <li className="panel" key={incident.id}>
+                        <Link to={incidentLink(monitor.id, incident.id)}>
+                          {monitor.name} — Recovered
+                        </Link>{' '}
+                        at{' '}
+                        {incident.resolvedAt === null ? (
+                          'unknown time'
+                        ) : (
+                          <When at={incident.resolvedAt} />
+                        )}
+                        ; incident duration {durationWords(incident, now)}.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </section>
           ) : null}
           <p className="note">

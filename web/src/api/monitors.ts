@@ -577,6 +577,38 @@ function parseObservationList(body: unknown): Observation[] {
   return body.observations.map(parseObservation);
 }
 
+export type HistoryPage<T> = {
+  items: T[];
+  nextCursor: string | null;
+  searchedThrough: string | null;
+};
+
+export type ObservationFilters = {
+  outcome?: string;
+  counted?: boolean;
+  maintenance?: boolean;
+  from?: string;
+  to?: string;
+};
+
+function pageFields(body: object): Pick<HistoryPage<never>, 'nextCursor' | 'searchedThrough'> {
+  const cursor = prop(body, 'nextCursor');
+  const searched = prop(body, 'searchedThrough');
+  if (cursor !== null && !isNonEmptyString(cursor)) invalid();
+  if (searched !== null && !isTimestamp(searched)) invalid();
+  return { nextCursor: cursor as string | null, searchedThrough: searched as string | null };
+}
+
+export function parseObservationPage(body: unknown): HistoryPage<Observation> {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) invalid();
+  return { items: parseObservationList(body), ...pageFields(body) };
+}
+
+export function parseGapPage(body: unknown): HistoryPage<Gap> {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) invalid();
+  return { items: parseGapList(body), ...pageFields(body) };
+}
+
 function parseGap(value: unknown): Gap {
   if (typeof value !== 'object' || value === null) invalid();
   if (!('id' in value) || !isNonEmptyString(value.id)) invalid();
@@ -735,6 +767,40 @@ export function listGaps(id: string, limit = GAP_LIMIT, signal?: AbortSignal): P
     parseGapList,
     { signal },
   );
+}
+
+export function getObservationPage(
+  id: string,
+  limit: number,
+  filters: ObservationFilters,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<HistoryPage<Observation>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  if (filters.outcome) params.set('outcome', filters.outcome);
+  if (filters.counted !== undefined) params.set('counted', String(filters.counted));
+  if (filters.maintenance !== undefined) params.set('maintenance', String(filters.maintenance));
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  return requestJson(
+    `${MONITORS_PATH}/${encodeURIComponent(id)}/observations?${params}`,
+    parseObservationPage,
+    { signal },
+  );
+}
+
+export function getGapPage(
+  id: string,
+  limit: number,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<HistoryPage<Gap>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}/gaps?${params}`, parseGapPage, {
+    signal,
+  });
 }
 
 /** `GET /api/intervals` — the intervals this process offers, ascending. */

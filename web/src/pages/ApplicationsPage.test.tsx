@@ -14,6 +14,120 @@ const app = {
   archivedAt: null,
 };
 afterEach(() => vi.unstubAllGlobals());
+it('shows member state, incident count, and latest deployment age from bounded existing reads', async () => {
+  const marker = {
+    id: 'd1',
+    applicationId: 'app-1',
+    version: '2.4',
+    description: null,
+    link: null,
+    deployedAt: at,
+    deploymentId: null,
+    source: 'manual',
+    reportedAt: at,
+  };
+  stubApi({
+    'GET /api/applications': () => jsonResponse({ applications: [app] }),
+    'GET /api/monitors': () =>
+      jsonResponse({
+        monitors: [
+          monitorRecordFixture(
+            { name: 'Checkout', applicationId: 'app-1', openIncident: { id: 'i1', openedAt: at } },
+            { state: 'failing', reason: null },
+          ),
+          monitorRecordFixture(
+            { id: 'stale', name: 'Worker', applicationId: 'app-1' },
+            { state: 'healthy', reason: null, freshUntil: '2026-01-01T00:00:00.000Z' },
+          ),
+          monitorRecordFixture({ id: 'other', name: 'Other', applicationId: null }),
+        ],
+      }),
+    'GET /api/applications/app-1/deployments?limit=50': () =>
+      jsonResponse({ deployments: [marker] }),
+  });
+  render(<ApplicationsPage />);
+  const summary = (await screen.findByRole('heading', { name: 'Current summary' })).closest(
+    'section',
+  )!;
+  expect(within(summary).getByText(/2 member monitors; 1 open incident/)).toBeInTheDocument();
+  expect(
+    within(summary)
+      .getByText(/Checkout/)
+      .closest('li'),
+  ).toHaveTextContent('failing');
+  expect(
+    within(summary)
+      .getByText(/Worker/)
+      .closest('li'),
+  ).toHaveTextContent('stale');
+  await waitFor(() => expect(summary).toHaveTextContent('Last deployment: 2.4'));
+  expect(
+    within(summary).getByText(
+      (_, element) =>
+        element?.tagName === 'P' && element.textContent?.includes('Last deployment: 2.4') === true,
+    ),
+  ).toHaveTextContent('ago');
+  expect(within(summary).queryByText('Other')).not.toBeInTheDocument();
+});
+
+it('refreshes member state and latest deployment on a visible poll without losing last data on failure', async () => {
+  let state: 'healthy' | 'failing' = 'healthy';
+  let version = '1.0';
+  let unavailable = false;
+  const fetchMock = stubApi({
+    'GET /api/applications': () => jsonResponse({ applications: [app] }),
+    'GET /api/monitors': () =>
+      unavailable
+        ? jsonResponse({ error: 'store_unavailable' }, 503)
+        : jsonResponse({
+            monitors: [
+              monitorRecordFixture(
+                { name: 'Checkout', applicationId: app.id },
+                { state, reason: null, freshUntil: new Date(Date.now() + 60_000).toISOString() },
+              ),
+            ],
+          }),
+    'GET /api/applications/app-1/deployments?limit=50': () =>
+      jsonResponse({
+        deployments: [
+          {
+            id: 'deployment',
+            applicationId: app.id,
+            version,
+            description: null,
+            link: null,
+            deployedAt: at,
+            deploymentId: null,
+            source: 'manual',
+            reportedAt: at,
+          },
+        ],
+      }),
+  });
+  render(<ApplicationsPage />);
+  await screen.findByText(/Checkout/);
+  await waitFor(() =>
+    expect(screen.getByRole('article', { name: 'Payments' })).toHaveTextContent(
+      'Last deployment: 1.0',
+    ),
+  );
+  state = 'failing';
+  version = '2.0';
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() =>
+    expect(screen.getByText(/Checkout/).closest('li')).toHaveTextContent('failing'),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('article', { name: 'Payments' })).toHaveTextContent(
+      'Last deployment: 2.0',
+    ),
+  );
+  expect(fetchMock.mock.calls.filter(([path]) => path === '/api/monitors')).toHaveLength(2);
+  unavailable = true;
+  fireEvent(document, new Event('visibilitychange'));
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  expect(screen.getByText(/Checkout/).closest('li')).toHaveTextContent('failing');
+});
 
 it('shows a new application token exactly once and lets a monitor join', async () => {
   let created = false;

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -97,5 +98,60 @@ func TestOverviewMembershipOrdering(t *testing.T) {
 	if r.Counts.Active != 5 || r.Counts.ByState["stale"] != 1 ||
 		r.Counts.ByState["checker_problem"] != 1 {
 		t.Fatalf("counts: %+v", r.Counts)
+	}
+}
+
+func TestOverviewNotificationApplicationContext(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	s := dailyTestStore(t, now)
+	app, _, err := s.CreateApplication(t.Context(), "Named application", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monitors := []monitor.Monitor{dailyMonitor(now), dailyMonitor(now)}
+	monitors[0].ApplicationID = app.ID
+	for i := range monitors {
+		if err := s.Create(t.Context(), monitors[i]); err != nil {
+			t.Fatal(err)
+		}
+		n := Notification{
+			ID: "inc:opened", MonitorID: monitors[i].ID, IncidentID: "inc",
+			NoteKey: "opened", Kind: "opened", State: "failed", CreatedAt: monitor.Stamp(now),
+		}
+		item, err := attributevalue.MarshalMap(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		item["PK"], item["SK"] = mustAV("MON#"+monitors[i].ID), mustAV(noteSK("inc", "opened"))
+		if _, err := s.db.PutItem(t.Context(), &dynamodb.PutItemInput{TableName: aws.String(s.table), Item: item}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.PutItem(t.Context(), &dynamodb.PutItemInput{TableName: aws.String(s.table), Item: pointer("ATTENTION#" + monitors[i].ID + "#inc#opened")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	overview, err := s.Overview(t.Context(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Notifications.Items) != 2 {
+		t.Fatalf("notifications: %+v", overview.Notifications)
+	}
+	for _, note := range overview.Notifications.Items {
+		raw, err := json.Marshal(note)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if note.MonitorID == monitors[0].ID {
+			if fields["applicationId"] != app.ID || fields["applicationName"] != app.Name {
+				t.Fatalf("named application: %s", raw)
+			}
+		} else if fields["applicationId"] != nil || fields["applicationName"] != nil {
+			t.Fatalf("no application must carry nulls: %s", raw)
+		}
 	}
 }

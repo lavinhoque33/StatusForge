@@ -25,11 +25,13 @@ export function AttentionBanner() {
   usePolling({ refresh: () => load(new AbortController().signal) });
   if (count === 0) return null;
   return (
-    <aside className="attention-banner" aria-label="Notifications need attention" role="status">
-      <Link to="/incidents#notifications-attention">
-        {count === ATTENTION_LIMIT ? `${ATTENTION_LIMIT}+` : count} notification
-        {count === 1 ? '' : 's'} could not be delivered
-      </Link>
+    <aside className="attention-banner" aria-label="Notifications need attention">
+      <span role="status">
+        <Link to="/incidents#notifications-attention">
+          {count === ATTENTION_LIMIT ? `${ATTENTION_LIMIT}+` : count} notification
+          {count === 1 ? '' : 's'} could not be delivered
+        </Link>
+      </span>
     </aside>
   );
 }

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { jsonResponse, stubApi } from '../test/fixtures';
 import { AttentionBanner } from './AttentionBanner';
@@ -47,6 +47,7 @@ it('appears and disappears with visible polls, without hidden-tab requests', asy
   expect(
     screen.getByRole('link', { name: '1 notification could not be delivered' }),
   ).toHaveAttribute('href', '/incidents#notifications-attention');
+  expect(within(screen.getByRole('status')).getByRole('link')).toHaveTextContent('1 notification');
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(15_000);

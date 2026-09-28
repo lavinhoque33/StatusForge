@@ -13,16 +13,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { HttpSummary, Span } from '../api/dailyUse';
+import type { HttpSummary, MonitorSummary, Span } from '../api/dailyUse';
 import {
   chartRows,
+  heartbeatChartRows,
   latencyAxisMaximum,
   latencyPlotRows,
   shadedSpans,
+  statusBucketLabel,
 } from '../lib/summaryPresentation';
 import { formatLocalWithOffset } from '../lib/time';
 
-const series = [
+const httpSeries = [
   { key: 'healthy', label: 'Healthy', color: '#217949' },
   { key: 'failing', label: 'Failing', color: '#b43535' },
   { key: 'checkerProblem', label: 'Checker problem', color: '#985c09' },
@@ -30,6 +32,34 @@ const series = [
   { key: 'maintenance', label: 'Maintenance', color: '#6560a2' },
   { key: 'notCounted', label: 'Not counted', color: '#537e94' },
 ] as const;
+const heartbeatSeries = [
+  { key: 'onTime', label: 'On time', color: '#217949' },
+  { key: 'late', label: 'Late', color: '#985c09' },
+  { key: 'missed', label: 'Missed', color: '#b43535' },
+  { key: 'notObserved', label: 'Not observed', color: '#555b69' },
+  { key: 'maintenance', label: 'Maintenance', color: '#6560a2' },
+  { key: 'notCounted', label: 'Not counted', color: '#537e94' },
+] as const;
+const statusRows = (summary: MonitorSummary) =>
+  summary.kind === 'http'
+    ? chartRows(summary).map((row) => ({
+        ...row,
+        onTime: 0,
+        late: 0,
+        missed: 0,
+        failureReports: 0,
+      }))
+    : heartbeatChartRows(summary).map((row) => ({
+        ...row,
+        healthy: 0,
+        failing: 0,
+        checkerProblem: 0,
+        samples: 0,
+        medianMs: null as number | null,
+        maxMs: null as number | null,
+      }));
+const statusSeries = (summary: MonitorSummary) =>
+  summary.kind === 'http' ? httpSeries : heartbeatSeries;
 
 function timeTick(value: number) {
   return new Date(value).toLocaleDateString(undefined, {
@@ -43,7 +73,7 @@ function ChartTable({
   latency,
   deadlineMs,
 }: {
-  summary: HttpSummary;
+  summary: MonitorSummary;
   latency: boolean;
   deadlineMs?: number;
 }) {
@@ -60,7 +90,9 @@ function ChartTable({
           ) : (
             <>
               Status history by bucket — {summary.window}, {summary.bucketSeconds / 3600} h buckets.
-              Denominator: expected scheduled checks; paused time excluded.{' '}
+              Denominator: expected{' '}
+              {summary.kind === 'http' ? 'scheduled checks' : 'heartbeat deadlines'}; paused time
+              excluded.{' '}
             </>
           )}
           {summary.truncated
@@ -82,11 +114,14 @@ function ChartTable({
               <>
                 <th scope="col">Expected</th>
                 <th scope="col">Recorded</th>
-                {series.map((item) => (
+                {statusSeries(summary).map((item) => (
                   <th scope="col" key={item.key}>
                     {item.label}
                   </th>
                 ))}
+                {summary.kind === 'heartbeat' ? (
+                  <th scope="col">Failure reports (subset)</th>
+                ) : null}
                 <th scope="col">Paused seconds</th>
                 <th scope="col">Receive outage</th>
               </>
@@ -94,7 +129,7 @@ function ChartTable({
           </tr>
         </thead>
         <tbody>
-          {chartRows(summary).map((row) => (
+          {statusRows(summary).map((row) => (
             <tr key={row.from}>
               <th scope="row">
                 {formatLocalWithOffset(new Date(row.from))} –{' '}
@@ -102,19 +137,26 @@ function ChartTable({
               </th>
               {latency ? (
                 <>
-                  <td>{row.samples}</td>
-                  <td>{row.medianMs === null ? 'No median' : `${row.medianMs} ms`}</td>
-                  <td>{row.maxMs === null ? 'No response' : `${row.maxMs} ms`}</td>
+                  <td data-label="Responses">{row.samples}</td>
+                  <td data-label="Median">
+                    {row.medianMs === null ? 'No median' : `${row.medianMs} ms`}
+                  </td>
+                  <td data-label="Max">{row.maxMs === null ? 'No response' : `${row.maxMs} ms`}</td>
                 </>
               ) : (
                 <>
-                  <td>{row.expected}</td>
-                  <td>{row.recorded}</td>
-                  {series.map((item) => (
-                    <td key={item.key}>{row[item.key]}</td>
+                  <td data-label="Expected">{row.expected}</td>
+                  <td data-label="Recorded">{row.recorded}</td>
+                  {statusSeries(summary).map((item) => (
+                    <td data-label={item.label} key={item.key}>
+                      {row[item.key]}
+                    </td>
                   ))}
-                  <td>{row.pausedSeconds}</td>
-                  <td>
+                  {summary.kind === 'heartbeat' ? (
+                    <td data-label="Failure reports (subset)">{row.failureReports}</td>
+                  ) : null}
+                  <td data-label="Paused seconds">{row.pausedSeconds}</td>
+                  <td data-label="Receive outage">
                     {summary.outages.some(
                       (span: Span) =>
                         Date.parse(span.from) < Date.parse(row.to) &&
@@ -136,17 +178,18 @@ function HistoryChart({
   summary,
   reducedMotion,
 }: {
-  summary: HttpSummary;
+  summary: MonitorSummary;
   reducedMotion: boolean;
 }) {
   const [table, setTable] = useState(false);
-  const rows = chartRows(summary);
+  const rows = statusRows(summary);
   const captionId = useId();
   return (
     <figure className="summary-figure">
       <figcaption id={captionId}>
         Status history — {summary.window}, {summary.bucketSeconds / 3600} h buckets. Denominator:
-        expected scheduled checks; paused time excluded.
+        expected {summary.kind === 'http' ? 'scheduled checks' : 'heartbeat deadlines'}; paused time
+        excluded.
         {summary.truncated
           ? ` Partial window from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`
           : ' Unobserved slots are not treated as healthy or failing.'}
@@ -175,7 +218,7 @@ function HistoryChart({
               margin={{ top: 12, right: 8, bottom: 16, left: 0 }}
             >
               <defs>
-                {series.map((item, index) => (
+                {statusSeries(summary).map((item, index) => (
                   <pattern
                     key={item.key}
                     id={`status-pattern-${item.key}`}
@@ -191,19 +234,28 @@ function HistoryChart({
               </defs>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
-                type="number"
+                xAxisId="buckets"
                 dataKey="at"
-                domain={[Date.parse(summary.from), Date.parse(summary.to)]}
                 tickFormatter={timeTick}
-                scale="time"
                 interval="preserveStartEnd"
               />
+              <XAxis
+                xAxisId="time"
+                type="number"
+                dataKey="at"
+                hide
+                domain={[Date.parse(summary.from), Date.parse(summary.to)]}
+              />
               <YAxis allowDecimals={false} />
-              <Tooltip labelFormatter={(value) => formatLocalWithOffset(new Date(Number(value)))} />
+              <Tooltip
+                axisId="buckets"
+                labelFormatter={(value) => statusBucketLabel(rows, value)}
+              />
               <Legend />
               {shadedSpans(summary, rows, true).map((area) => (
                 <ReferenceArea
                   key={`${area.from}-${area.to}`}
+                  xAxisId="time"
                   x1={area.from}
                   x2={area.to}
                   fill={area.outage ? '#e3a4a4' : '#d4d4dc'}
@@ -224,8 +276,9 @@ function HistoryChart({
                   }
                 />
               ))}
-              {series.map((item) => (
+              {statusSeries(summary).map((item) => (
                 <Bar
+                  xAxisId="buckets"
                   key={item.key}
                   dataKey={item.key}
                   name={item.label}
@@ -356,14 +409,16 @@ export default function SummaryCharts({
   summary,
   deadlineMs,
 }: {
-  summary: HttpSummary;
-  deadlineMs: number;
+  summary: MonitorSummary;
+  deadlineMs?: number;
 }) {
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   return (
     <div className="summary-charts">
       <HistoryChart summary={summary} reducedMotion={reducedMotion} />
-      <LatencyChart summary={summary} deadlineMs={deadlineMs} reducedMotion={reducedMotion} />
+      {summary.kind === 'http' && deadlineMs !== undefined ? (
+        <LatencyChart summary={summary} deadlineMs={deadlineMs} reducedMotion={reducedMotion} />
+      ) : null}
     </div>
   );
 }

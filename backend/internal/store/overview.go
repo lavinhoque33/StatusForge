@@ -38,9 +38,14 @@ type (
 		Notifications       int `json:"notifications"`
 		RecoveryWindowHours int `json:"recoveryWindowHours"`
 	}
+	OverviewNotification struct {
+		Notification
+		ApplicationID   *string `json:"applicationId"`
+		ApplicationName *string `json:"applicationName"`
+	}
 	AttentionItems struct {
-		Count int            `json:"count"`
-		Items []Notification `json:"items"`
+		Count int                    `json:"count"`
+		Items []OverviewNotification `json:"items"`
 	}
 	OverviewResult struct {
 		EvaluatedAt            string             `json:"evaluatedAt"`
@@ -63,7 +68,7 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (OverviewResult, er
 		FailingWithoutIncident: []StatusItem{},
 		CoverageProblems:       []StatusItem{},
 		RecentRecoveries:       []IncidentItem{},
-		Notifications:          AttentionItems{Items: []Notification{}},
+		Notifications:          AttentionItems{Items: []OverviewNotification{}},
 		Counts: OverviewCounts{
 			ByState: map[string]int{
 				"healthy":         0,
@@ -93,6 +98,7 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (OverviewResult, er
 	for _, a := range apps {
 		appNames[a.ID] = a.Name
 	}
+	refs := make(map[string]MonitorRef, len(ms))
 	for _, m := range ms {
 		ref := MonitorRef{ID: m.ID, Name: m.Name, Kind: monitorKind(m)}
 		if m.ApplicationID != "" {
@@ -102,6 +108,7 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (OverviewResult, er
 				ref.ApplicationName = &name
 			}
 		}
+		refs[m.ID] = ref
 		switch m.Lifecycle {
 		case "paused":
 			r.Counts.Paused++
@@ -181,7 +188,12 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (OverviewResult, er
 	if len(notes) > 10 {
 		notes = notes[:10]
 	}
-	r.Notifications.Items = notes
+	for _, note := range notes {
+		ref := refs[note.MonitorID]
+		r.Notifications.Items = append(r.Notifications.Items, OverviewNotification{
+			Notification: note, ApplicationID: ref.ApplicationID, ApplicationName: ref.ApplicationName,
+		})
+	}
 	live, e := s.Liveness(ctx)
 	if e != nil {
 		return r, e

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { summaryFixture } from '../test/summaryFixture';
+import { formatLocalWithOffset } from './time';
 import {
   chartRows,
   coverageSentence,
@@ -8,6 +9,7 @@ import {
   latencySentence,
   summaryNotes,
   shadedSpans,
+  statusBucketLabel,
 } from './summaryPresentation';
 
 describe('HTTP summary presentation', () => {
@@ -56,6 +58,15 @@ describe('HTTP summary presentation', () => {
     expect(rows.map((row) => row.notObserved)).toEqual([0, 12]);
     expect(rows.map((row) => row.medianMs)).toEqual([11, null]);
     expect(rows.map((row) => row.maxMs)).toEqual([16, null]);
+  });
+  it('labels the hovered status bucket by its actual clipped range, not epoch zero', () => {
+    const rows = chartRows(summaryFixture);
+    const first = statusBucketLabel(rows, rows[0].at);
+    const second = statusBucketLabel(rows, rows[1].at);
+    expect(first).toContain(formatLocalWithOffset(new Date(rows[0].from)));
+    expect(first).toContain(formatLocalWithOffset(new Date(rows[0].to)));
+    expect(first).not.toEqual(second);
+    expect(statusBucketLabel(rows, undefined)).toBe('Unknown bucket');
   });
   it('breaks the latency line during a receive outage without altering table totals', () => {
     const summary = {

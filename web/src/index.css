@@ -5,7 +5,7 @@
   --muted: #57606a;
   --border: #d0d7de;
   --surface: #f6f8fa;
-  --ok: #1f883d;
+  --ok: #187338;
   --warn: #9a6700;
   --fail: #cf222e;
   font-family: system-ui, sans-serif;
@@ -86,8 +86,10 @@ nav ul {
   list-style: none;
 }
 nav a {
-  display: inline-block;
-  padding: 0.4rem 0;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 0.2rem;
   font-weight: 600;
 }
 nav a[aria-current='page'] {
@@ -99,7 +101,8 @@ a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+.summary-plot svg[tabindex='0']:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
@@ -545,7 +548,47 @@ textarea:focus-visible {
   white-space: normal;
 }
 @media (max-width: 600px) {
-  .summary-table {
-    min-width: 700px;
+  .summary-table th[scope='row'] {
+    display: block;
+    white-space: normal;
+  }
+  .summary-table td::before {
+    content: attr(data-label) ': ';
+    font-weight: 600;
+  }
+}
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.history-filters label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 9rem;
+}
+.history-filters select,
+.history-filters input {
+  box-sizing: border-box;
+  min-height: 44px;
+  max-width: 100%;
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .history-filters label,
+  .history-filters .button {
+    flex: 1 1 100%;
+  }
+  .app-header,
+  .app-main {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.75rem;
+  }
+  .panel {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }

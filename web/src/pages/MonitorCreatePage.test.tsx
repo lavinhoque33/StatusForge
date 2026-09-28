@@ -113,7 +113,7 @@ describe('MonitorCreatePage', () => {
     expect(grace).toHaveValue('300');
     fireEvent.click(screen.getByRole('button', { name: 'Create monitor' }));
     expect(await screen.findByText('sfh_secret-once')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy token' })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy token' })).toHaveFocus());
     expect(screen.getByText('Heartbeat created. Token shown once.')).toHaveAttribute(
       'role',
       'status',

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 )
@@ -152,5 +153,32 @@ func TestSummaryWindowBound(t *testing.T) {
 	if e != nil || !partial.Truncated || partial.Coverage.Recorded != 2 ||
 		partial.CoveredFrom != monitor.Stamp(now.Add(-20*time.Second)) {
 		t.Fatalf("partial: %+v %v", partial.Coverage, e)
+	}
+}
+
+func TestHeartbeatSummaryFailureFromPersistedReason(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	s := dailyTestStore(t, now)
+	m := dailyMonitor(now.Add(-time.Hour))
+	m.Kind = "heartbeat"
+	m.Heartbeat = &heartbeat.Configuration{
+		Schedule: heartbeat.Schedule{IntervalSeconds: 10, GraceSeconds: 5},
+	}
+	if err := s.Create(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	at := monitor.Stamp(now.Add(-time.Second))
+	obs := monitor.Observation{
+		ID: "failure", MonitorID: m.ID, Kind: "heartbeat_report",
+		StartedAt: at, CompletedAt: at, Counted: true, Outcome: "failing",
+		Reason: "reported_failure", Report: &heartbeat.Report{Status: "failure"},
+	}
+	if err := s.PutObservation(t.Context(), obs); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.HeartbeatSummary(t.Context(), m, "24h", now)
+	if err != nil || result.Coverage.Recorded != 1 ||
+		result.Coverage.Outcomes.OnTime != 1 || result.Coverage.Outcomes.FailureReports != 1 {
+		t.Fatalf("persisted failure summary: %+v %v", result.Coverage, err)
 	}
 }

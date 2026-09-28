@@ -34,6 +34,17 @@ func (f *dailyFake) Summary(
 	), nil
 }
 
+func (f *dailyFake) HeartbeatSummary(
+	_ context.Context, m monitor.Monitor, w string, now time.Time,
+) (summary.HeartbeatResult, error) {
+	if f.failed {
+		return summary.HeartbeatResult{}, store.ErrUnavailable
+	}
+	return summary.ComputeHeartbeat(
+		summary.Input{MonitorID: m.ID, Window: w, To: now, Lifecycle: m.Lifecycle},
+	), nil
+}
+
 func (f *dailyFake) Overview(_ context.Context, now time.Time) (store.OverviewResult, error) {
 	if f.failed {
 		return store.OverviewResult{}, store.ErrUnavailable
@@ -74,8 +85,8 @@ func TestDailyAPIValidationAndErrors(t *testing.T) {
 		t.Fatalf("unknown: %d %+v", code, body)
 	}
 	db.m.Kind = "heartbeat"
-	if code, body := call("/api/monitors/" + m.ID + "/summary"); code != 409 ||
-		body["error"] != "not_supported" {
+	if code, body := call("/api/monitors/" + m.ID + "/summary"); code != 200 ||
+		body["kind"] != "heartbeat" || body["latency"] != nil {
 		t.Fatalf("heartbeat: %d %+v", code, body)
 	}
 	db.m.Kind = "http"

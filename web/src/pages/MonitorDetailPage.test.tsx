@@ -21,11 +21,29 @@ const CHECKS_POST = 'POST /api/monitors/monitor-1/checks';
 const MONITOR_PATCH = 'PATCH /api/monitors/monitor-1';
 const LIFECYCLE_POST = 'POST /api/monitors/monitor-1/lifecycle';
 function stubApi(handlers: Parameters<typeof stubFetch>[0]) {
+  const observations = handlers[OBSERVATIONS_GET];
+  const gaps = handlers[GAPS_GET];
+  const paged =
+    (handler: typeof observations, key: 'observations' | 'gaps') => async (init: RequestInit) => {
+      const response = await handler!(init);
+      if (!response.ok) return response;
+      const body = await response.json();
+      const entries = body[key] as { completedAt?: string; fromDueAt?: string }[];
+      return jsonResponse({
+        ...body,
+        nextCursor: null,
+        searchedThrough: entries.length
+          ? (entries[entries.length - 1].completedAt ?? entries[entries.length - 1].fromDueAt)
+          : null,
+      });
+    };
   return stubFetch({
     [INCIDENTS_GET]: () => jsonResponse({ incidents: [] }),
     [MAINTENANCE_GET]: () => jsonResponse({ windows: [] }),
     'GET /api/applications': () => jsonResponse({ applications: [] }),
     ...handlers,
+    ...(observations ? { [OBSERVATIONS_GET]: paged(observations, 'observations') } : {}),
+    ...(gaps ? { [GAPS_GET]: paged(gaps, 'gaps') } : {}),
   });
 }
 
@@ -71,7 +89,9 @@ describe('MonitorDetailPage', () => {
     render(<MonitorDetailPage monitorId="monitor-1" />);
 
     expect(await screen.findByText('Unknown — no checks yet')).toBeInTheDocument();
-    expect(screen.getByText('No checks have been recorded for this monitor.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No checks have been recorded for this monitor.'),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(/Configuration changed since the last check/),
     ).not.toBeInTheDocument();
@@ -310,8 +330,12 @@ describe('MonitorDetailPage', () => {
 
     expect(await screen.findByText('The check ran but could not be recorded.')).toBeInTheDocument();
     expect(screen.getByText('Unknown — no checks yet')).toBeInTheDocument();
-    expect(screen.queryByText(/Healthy|Failing|Checker problem/)).not.toBeInTheDocument();
-    expect(screen.getByText('No checks have been recorded for this monitor.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('row', { name: /Healthy|Failing|Checker problem/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('No checks have been recorded for this monitor.'),
+    ).toBeInTheDocument();
   });
 
   it('reports a check already in progress without retrying it', async () => {
@@ -635,7 +659,7 @@ describe('MonitorDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     expect(screen.getByLabelText('Name')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /Healthy/ })).toHaveTextContent('v1');
+    expect(await screen.findByRole('row', { name: /Healthy/ })).toHaveTextContent('v1');
   });
 
   it('notes configuration drift above the timeline and clears it after a check at the new version', async () => {

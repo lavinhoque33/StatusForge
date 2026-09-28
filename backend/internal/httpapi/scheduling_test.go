@@ -72,4 +72,22 @@ func TestSchedulingRoutes(t *testing.T) {
 			t.Fatalf("%s -> %d", tc.path, w.Code)
 		}
 	}
+	for _, tc := range []struct{ query, field string }{
+		{"outcome=unknown", "outcome"},
+		{"outcome=healthy,unknown", "outcome"},
+		{"counted=maybe", "counted"},
+		{"maintenance=1", "maintenance"},
+		{"from=2026-09-29T00:00:00Z&to=2026-09-28T00:00:00Z", "from"},
+		{"before=", "before"},
+	} {
+		w = send(http.MethodGet, "/api/monitors/"+created.ID+"/observations?"+tc.query, "")
+		var body struct {
+			Error  string         `json:"error"`
+			Fields monitor.Fields `json:"fields"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil ||
+			w.Code != 400 || body.Error != "validation_failed" || body.Fields[tc.field].Code == "" {
+			t.Fatalf("%s: %d %s %v", tc.query, w.Code, w.Body.String(), err)
+		}
+	}
 }

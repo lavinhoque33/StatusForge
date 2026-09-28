@@ -1,4 +1,4 @@
-import type { HttpSummary } from '../api/dailyUse';
+import type { HeartbeatSummary, HttpSummary, MonitorSummary } from '../api/dailyUse';
 import { formatLocalWithOffset } from './time';
 
 export function duration(seconds: number): string {
@@ -6,7 +6,15 @@ export function duration(seconds: number): string {
   if (seconds % 3600 === 0) return `${seconds / 3600} h`;
   return `${Math.round(seconds / 60)} min`;
 }
-export function coverageSentence(summary: HttpSummary): string {
+export function coverageSentence(summary: MonitorSummary): string {
+  if (summary.kind === 'heartbeat') {
+    const c = summary.coverage;
+    const ratio =
+      c.expected === 0
+        ? 'no expected deadlines'
+        : `${Math.round((c.recorded / c.expected) * 100)} %`;
+    return `${summary.window === '24h' ? 'Last 24 hours' : 'Last 7 days'}: ${c.recorded} of ${c.expected} expected heartbeat deadlines recorded (${ratio}); ${c.notObserved} not observed. Of ${c.recorded - c.maintenance} counted deadlines: ${c.outcomes.onTime} on time, ${c.outcomes.late} late, ${c.outcomes.missed} missed; ${c.outcomes.failureReports} failure reports (included in on time or late). Paused ${duration(c.pausedSeconds)}; maintenance ${c.maintenance} deadlines; ${c.notCounted} not counted.`;
+  }
   const c = summary.coverage;
   const counted = c.outcomes.healthy + c.outcomes.failing + c.outcomes.checkerProblem;
   const ratio =
@@ -25,7 +33,7 @@ export function latencySentence(summary: HttpSummary): string {
   return `Response time (from this machine): median ${latencyValue(latency.medianMs)}, p95 ${latencyValue(latency.p95Ms)}, max ${latency.maxMs === null ? 'unknown' : latencyValue(latency.maxMs)} over ${latency.samples} responses; ${latency.noResponse} without response; ${latency.checkerProblems} checker problems.`;
 }
 /** `monitorCreatedAt` suppresses the pause-history note when lifecycle history starts at creation. */
-export function summaryNotes(summary: HttpSummary, monitorCreatedAt: string): string[] {
+export function summaryNotes(summary: MonitorSummary, monitorCreatedAt: string): string[] {
   const notes: string[] = [];
   if (summary.truncated || Date.parse(summary.coveredFrom) > Date.parse(summary.from))
     notes.push(
@@ -82,6 +90,50 @@ export function chartRows(summary: HttpSummary): ChartRow[] {
   }));
 }
 
+export type HeartbeatChartRow = {
+  from: string;
+  to: string;
+  at: number;
+  expected: number;
+  recorded: number;
+  onTime: number;
+  late: number;
+  missed: number;
+  failureReports: number;
+  notObserved: number;
+  maintenance: number;
+  notCounted: number;
+  pausedSeconds: number;
+};
+export function heartbeatChartRows(summary: HeartbeatSummary): HeartbeatChartRow[] {
+  return summary.buckets.map((bucket) => ({
+    from: bucket.from,
+    to: bucket.to,
+    at: (Date.parse(bucket.from) + Date.parse(bucket.to)) / 2,
+    expected: bucket.expected,
+    recorded: bucket.recorded,
+    onTime: bucket.onTime,
+    late: bucket.late,
+    missed: bucket.missed,
+    failureReports: bucket.failureReports,
+    notObserved: bucket.notObserved,
+    maintenance: bucket.maintenance,
+    notCounted: bucket.notCounted,
+    pausedSeconds: bucket.pausedSeconds,
+  }));
+}
+
+/** Recharts passes the categorical bucket midpoint as the tooltip label. */
+export function statusBucketLabel(
+  rows: Pick<ChartRow, 'at' | 'from' | 'to'>[],
+  value: unknown,
+): string {
+  const bucket = rows.find((row) => row.at === Number(value));
+  return bucket
+    ? `${formatLocalWithOffset(new Date(bucket.from))} – ${formatLocalWithOffset(new Date(bucket.to))}`
+    : 'Unknown bucket';
+}
+
 /** Break plotted lines across receiver outages without changing bucket totals. */
 export function latencyPlotRows(summary: HttpSummary): ChartRow[] {
   const rows = chartRows(summary);
@@ -116,8 +168,8 @@ export type ShadedSpan = {
 
 /** Merge touching outage/pause spans before drawing labels at narrow widths. */
 export function shadedSpans(
-  summary: HttpSummary,
-  rows: ChartRow[],
+  summary: MonitorSummary,
+  rows: Pick<ChartRow, 'from' | 'to' | 'pausedSeconds'>[],
   includePaused: boolean,
 ): ShadedSpan[] {
   const spans: ShadedSpan[] = summary.outages.map((outage) => ({

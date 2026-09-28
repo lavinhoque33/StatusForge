@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/summary"
 )
@@ -20,14 +21,16 @@ const (
 )
 
 type windowRecord struct {
-	DueAt               *string `dynamodbav:"dueAt"`
-	StartedAt           string  `dynamodbav:"startedAt"`
-	Counted             bool    `dynamodbav:"counted"`
-	NotCountedReason    *string `dynamodbav:"notCountedReason"`
-	MaintenanceWindowID *string `dynamodbav:"maintenanceWindowId"`
-	Outcome             string  `dynamodbav:"outcome"`
-	Reason              string  `dynamodbav:"reason"`
-	DurationMs          int64   `dynamodbav:"durationMs"`
+	Kind                string            `dynamodbav:"kind"`
+	DueAt               *string           `dynamodbav:"dueAt"`
+	StartedAt           string            `dynamodbav:"startedAt"`
+	Counted             bool              `dynamodbav:"counted"`
+	NotCountedReason    *string           `dynamodbav:"notCountedReason"`
+	MaintenanceWindowID *string           `dynamodbav:"maintenanceWindowId"`
+	Outcome             string            `dynamodbav:"outcome"`
+	Reason              string            `dynamodbav:"reason"`
+	Report              *heartbeat.Report `dynamodbav:"report"`
+	DurationMs          int64             `dynamodbav:"durationMs"`
 }
 
 // windowQuery returns up to limit newest records from the key range. A sentinel record
@@ -102,16 +105,41 @@ func (s *Store) Summary(
 	window string,
 	now time.Time,
 ) (summary.Result, error) {
-	return s.summaryWithBounds(ctx, m, window, now, summaryObservationLimit, summaryGapLimit)
+	in, err := s.summaryInput(ctx, m, window, now, summaryObservationLimit, summaryGapLimit)
+	if err != nil {
+		return summary.Result{}, err
+	}
+	return summary.Compute(in), nil
+}
+
+func (s *Store) HeartbeatSummary(
+	ctx context.Context, m monitor.Monitor, window string, now time.Time,
+) (summary.HeartbeatResult, error) {
+	in, err := s.summaryInput(ctx, m, window, now, summaryObservationLimit, summaryGapLimit)
+	if err != nil {
+		return summary.HeartbeatResult{}, err
+	}
+	return summary.ComputeHeartbeat(in), nil
 }
 
 func (s *Store) summaryWithBounds(
+	ctx context.Context, m monitor.Monitor, window string, now time.Time,
+	observationLimit, gapLimit int,
+) (summary.Result, error) {
+	in, err := s.summaryInput(ctx, m, window, now, observationLimit, gapLimit)
+	if err != nil {
+		return summary.Result{}, err
+	}
+	return summary.Compute(in), nil
+}
+
+func (s *Store) summaryInput(
 	ctx context.Context,
 	m monitor.Monitor,
 	window string,
 	now time.Time,
 	observationLimit, gapLimit int,
-) (summary.Result, error) {
+) (summary.Input, error) {
 	length := 24 * time.Hour
 	if window == "7d" {
 		length = 7 * 24 * time.Hour
@@ -124,10 +152,10 @@ func (s *Store) summaryWithBounds(
 		from,
 		now,
 		observationLimit,
-		"dueAt, startedAt, counted, notCountedReason, maintenanceWindowId, outcome, reason, durationMs, expiresAt, PK, SK",
+		"kind, dueAt, startedAt, counted, notCountedReason, maintenanceWindowId, outcome, reason, report, durationMs, expiresAt, PK, SK",
 	)
 	if e != nil {
-		return summary.Result{}, e
+		return summary.Input{}, e
 	}
 	gaps, gtrunc, e := s.windowQuery(
 		ctx,
@@ -139,7 +167,7 @@ func (s *Store) summaryWithBounds(
 		"fromDueAt, toDueAt, missedCount, expiresAt, PK, SK",
 	)
 	if e != nil {
-		return summary.Result{}, e
+		return summary.Input{}, e
 	}
 	in := summary.Input{
 		MonitorID: m.ID,
@@ -167,17 +195,20 @@ func (s *Store) summaryWithBounds(
 		}
 		var o windowRecord
 		if attributevalue.UnmarshalMap(item, &o) != nil {
-			return summary.Result{}, ErrUnavailable
+			return summary.Input{}, ErrUnavailable
 		}
 		in.Observations = append(
 			in.Observations,
 			summary.Observation{
+				Kind:                o.Kind,
 				DueAt:               o.DueAt,
 				StartedAt:           o.StartedAt,
 				Counted:             o.Counted,
 				NotCountedReason:    o.NotCountedReason,
 				MaintenanceWindowID: o.MaintenanceWindowID,
 				Outcome:             o.Outcome,
+				FailureReport:       o.Kind == "heartbeat_report" && o.Reason == "reported_failure",
+				Late:                o.Report != nil && o.Report.Late,
 				Reason:              o.Reason,
 				DurationMs:          o.DurationMs,
 			},
@@ -189,7 +220,7 @@ func (s *Store) summaryWithBounds(
 		}
 		var g monitor.Gap
 		if attributevalue.UnmarshalMap(item, &g) != nil {
-			return summary.Result{}, ErrUnavailable
+			return summary.Input{}, ErrUnavailable
 		}
 		in.Gaps = append(
 			in.Gaps,
@@ -200,14 +231,14 @@ func (s *Store) summaryWithBounds(
 	// (the latter communicates how far back pause history is known).
 	events, e := s.lifecycleWindow(ctx, m.ID, from, now)
 	if e != nil {
-		return summary.Result{}, e
+		return summary.Input{}, e
 	}
 	for _, event := range events {
 		in.Events = append(in.Events, summary.LifecycleEvent{Action: event.Action, At: event.At})
 	}
 	windows, e := s.maintenanceWindow(ctx, m.ID, from.Add(-7*24*time.Hour), now)
 	if e != nil {
-		return summary.Result{}, e
+		return summary.Input{}, e
 	}
 	for _, w := range windows {
 		if w.CancelledAt != nil && *w.CancelledAt <= w.StartAt {
@@ -224,12 +255,12 @@ func (s *Store) summaryWithBounds(
 	}
 	live, e := s.Liveness(ctx)
 	if e != nil {
-		return summary.Result{}, e
+		return summary.Input{}, e
 	}
 	for _, o := range live.Outages {
 		in.Outages = append(in.Outages, summary.Span{From: o.From, To: o.To})
 	}
-	return summary.Compute(in), nil
+	return in, nil
 }
 
 func (s *Store) lifecycleWindow(

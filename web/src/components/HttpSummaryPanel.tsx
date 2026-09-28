@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { getHttpSummary, type HttpSummary, type SummaryWindow } from '../api/dailyUse';
+import { getMonitorSummary, type MonitorSummary, type SummaryWindow } from '../api/dailyUse';
 import { isAbortError } from '../api/http';
 import { describeApiError } from '../lib/errors';
 import { coverageSentence, latencySentence, summaryNotes } from '../lib/summaryPresentation';
@@ -14,15 +14,15 @@ export function HttpSummaryPanel({
 }: {
   monitorId: string;
   createdAt: string;
-  deadlineMs: number;
+  deadlineMs?: number;
 }) {
   const [window, setWindow] = useState<SummaryWindow>('24h');
-  const [summary, setSummary] = useState<HttpSummary | null>(null);
+  const [summary, setSummary] = useState<MonitorSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(
     async (signal: AbortSignal) => {
       try {
-        const next = await getHttpSummary(monitorId, window, signal);
+        const next = await getMonitorSummary(monitorId, window, signal);
         if (signal.aborted) return;
         setSummary(next);
         setError(null);
@@ -92,7 +92,7 @@ export function HttpSummaryPanel({
               {note}
             </p>
           ))}
-          <p>{latencySentence(summary)}</p>
+          {summary.kind === 'http' ? <p>{latencySentence(summary)}</p> : null}
           <Suspense fallback={<p role="status">Loading charts…</p>}>
             <SummaryCharts summary={summary} deadlineMs={deadlineMs} />
           </Suspense>

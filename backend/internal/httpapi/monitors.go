@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -514,28 +513,37 @@ func (s *monitorAPI) lifecycle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
-	limit := 50
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 200 {
-			f := monitor.Fields{}
-			f.Add("limit", "out_of_range", "limit must be 1–200")
-			fieldsError(w, f)
-			return
-		}
-		limit = n
+	fields := monitor.Fields{}
+	limit := historyLimit(r, fields)
+	filter := historyFilter(r, fields)
+	if len(fields) != 0 {
+		fieldsError(w, fields)
+		return
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := s.store.Get(r.Context(), id); err != nil {
 		s.failure(w, err)
 		return
 	}
-	obs, err := s.store.Observations(r.Context(), id, limit)
-	if err != nil {
-		s.failure(w, err)
+	db, ok := s.store.(historyStore)
+	if !ok {
+		apiError(w, 503, "store_unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"observations": obs})
+	page, err := db.HistoryObservations(r.Context(), id, limit, filter)
+	if err != nil {
+		historyFailure(w, err, s)
+		return
+	}
+	writeJSON(
+		w,
+		200,
+		map[string]any{
+			"observations":    page.Items,
+			"nextCursor":      page.NextCursor,
+			"searchedThrough": page.SearchedThrough,
+		},
+	)
 }
 
 func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
@@ -602,26 +610,38 @@ func (s *monitorAPI) intervals(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *monitorAPI) gaps(w http.ResponseWriter, r *http.Request) {
-	limit := 50
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 200 {
-			f := monitor.Fields{}
-			f.Add("limit", "out_of_range", "limit must be 1–200")
-			fieldsError(w, f)
-			return
-		}
-		limit = n
+	fields := monitor.Fields{}
+	limit := historyLimit(r, fields)
+	before := r.URL.Query().Get("before")
+	if r.URL.Query().Has("before") && before == "" {
+		fields.Add("before", "invalid_value", "invalid cursor")
+	}
+	if len(fields) != 0 {
+		fieldsError(w, fields)
+		return
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := s.store.Get(r.Context(), id); err != nil {
 		s.failure(w, err)
 		return
 	}
-	gaps, err := s.store.Gaps(r.Context(), id, limit)
-	if err != nil {
-		s.failure(w, err)
+	db, ok := s.store.(historyStore)
+	if !ok {
+		apiError(w, 503, "store_unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"gaps": gaps})
+	page, err := db.HistoryGaps(r.Context(), id, limit, before)
+	if err != nil {
+		historyFailure(w, err, s)
+		return
+	}
+	writeJSON(
+		w,
+		200,
+		map[string]any{
+			"gaps":            page.Items,
+			"nextCursor":      page.NextCursor,
+			"searchedThrough": page.SearchedThrough,
+		},
+	)
 }

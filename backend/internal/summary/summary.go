@@ -8,6 +8,9 @@ import (
 
 type (
 	Observation struct {
+		Kind                string
+		FailureReport       bool
+		Late                bool
 		DueAt               *string
 		StartedAt           string
 		Counted             bool

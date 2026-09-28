@@ -33,7 +33,19 @@ func (s *monitorAPI) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if m.Kind == "heartbeat" {
-		apiError(w, 409, "not_supported")
+		db, ok := s.store.(interface {
+			HeartbeatSummary(context.Context, monitor.Monitor, string, time.Time) (summary.HeartbeatResult, error)
+		})
+		if !ok {
+			apiError(w, 503, "store_unavailable")
+			return
+		}
+		result, err := db.HeartbeatSummary(r.Context(), m, window, s.now())
+		if err != nil {
+			s.failure(w, err)
+			return
+		}
+		writeJSON(w, 200, result)
 		return
 	}
 	db, ok := s.store.(dailyStore)

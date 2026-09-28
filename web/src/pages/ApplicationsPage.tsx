@@ -17,17 +17,25 @@ import { ApiRequestError, ApiValidationError, isAbortError, type FieldIssue } fr
 import { listMonitors, type MonitorRecord } from '../api/monitors';
 import { HeartbeatTokenPanel } from '../components/HeartbeatTokenPanel';
 import { describeApiError, fieldErrorMessage } from '../lib/errors';
-import { formatLocalWithOffset } from '../lib/time';
+import { heartbeatDeadlines, heartbeatState } from '../lib/heartbeatHeadline';
+import { applicationSummary } from '../lib/applicationSummary';
+import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
+import { effectiveState } from '../lib/statusHeadline';
+import { useNow } from '../lib/useNow';
+import { usePolling } from '../lib/usePolling';
+import { Link } from '../router/Link';
 
 function ApplicationCard({
   application,
   monitors,
+  markerRefresh,
   refresh,
   initialToken,
   clearIssuedToken,
 }: {
   application: Application;
   monitors: MonitorRecord[];
+  markerRefresh: number;
   refresh: () => Promise<void>;
   initialToken: string | null;
   clearIssuedToken: () => void;
@@ -61,12 +69,26 @@ function ApplicationCard({
   useEffect(() => {
     const controller = new AbortController();
     void listMarkers(application.id, controller.signal)
-      .then(setMarkers)
+      .then((entries) => {
+        setMarkers(entries);
+        setMarkerError('');
+      })
       .catch((error: unknown) => {
         if (!isAbortError(error)) setMarkerError(describeApiError(error));
       });
     return () => controller.abort();
-  }, [application.id, reload]);
+  }, [application.id, reload, markerRefresh]);
+  const summary = applicationSummary(application.id, monitors, markers);
+  const now = useNow(
+    60_000,
+    summary.members.flatMap((monitor) =>
+      monitor.kind === 'heartbeat'
+        ? heartbeatDeadlines(monitor)
+        : monitor.status.freshUntil !== null
+          ? [Date.parse(monitor.status.freshUntil)]
+          : [],
+    ),
+  );
   const archived = application.archivedAt !== null;
   const available = monitors.filter(
     (monitor) => monitor.lifecycle !== 'archived' && monitor.applicationId !== application.id,
@@ -145,6 +167,52 @@ function ApplicationCard({
           {formatLocalWithOffset(new Date(application.createdAt))}
         </time>
       </p>
+      <section>
+        <h4>Current summary</h4>
+        <p>
+          {summary.members.length} member monitor{summary.members.length === 1 ? '' : 's'};{' '}
+          {summary.openIncidents} open incident{summary.openIncidents === 1 ? '' : 's'}.
+        </p>
+        {summary.members.length ? (
+          <ul>
+            {summary.members.map((monitor) => (
+              <li key={monitor.id}>
+                <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —{' '}
+                {monitor.lifecycle === 'active'
+                  ? (monitor.kind === 'heartbeat'
+                      ? heartbeatState(monitor, now)
+                      : effectiveState(monitor.status, now)
+                    ).replaceAll('_', ' ')
+                  : monitor.lifecycle}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No member monitors.</p>
+        )}
+        {summary.lastDeployment ? (
+          <p>
+            Last deployment: {summary.lastDeployment.version} —{' '}
+            <time dateTime={summary.lastDeployment.deployedAt ?? summary.lastDeployment.reportedAt}>
+              {formatLocalWithOffset(
+                new Date(summary.lastDeployment.deployedAt ?? summary.lastDeployment.reportedAt),
+              )}
+            </time>{' '}
+            (
+            {formatRelativeAge(
+              summary.lastDeployment.deployedAt ?? summary.lastDeployment.reportedAt,
+              now,
+            )}
+            ).
+          </p>
+        ) : (
+          <p>No deployment recorded.</p>
+        )}
+        <p className="note">
+          Showing at most 50 recent deployment markers per application; older markers may not be
+          included.
+        </p>
+      </section>
       {token ? (
         <HeartbeatTokenPanel
           token={token}
@@ -183,7 +251,7 @@ function ApplicationCard({
               Save name
             </button>
           </form>
-          <section aria-label="Application token">
+          <section>
             <h4>Token</h4>
             <p>
               {application.token ? (
@@ -291,7 +359,7 @@ function ApplicationCard({
         </>
       )}
       <p role="status">{notice}</p>
-      <section aria-label="Members">
+      <section>
         <h4>Members</h4>
         {application.members.length === 0 ? (
           <p>No monitors assigned.</p>
@@ -343,7 +411,7 @@ function ApplicationCard({
           </form>
         ) : null}
       </section>
-      <section aria-label="Deployments">
+      <section>
         <h4>Deployments</h4>
         {markerError ? <p role="alert">{markerError}</p> : null}
         {!archived ? (
@@ -425,6 +493,7 @@ export function ApplicationsPage() {
   const [error, setError] = useState('');
   const [creationNotice, setCreationNotice] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [markerRefresh, setMarkerRefresh] = useState(0);
   const [pending, setPending] = useState(false);
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -436,6 +505,8 @@ export function ApplicationsPage() {
       setApplications(apps);
       setMonitors(allMonitors);
       setLoaded(true);
+      setMarkerRefresh((value) => value + 1);
+      setError('');
     } catch (cause) {
       if (!isAbortError(cause)) setError(describeApiError(cause));
     }
@@ -447,6 +518,7 @@ export function ApplicationsPage() {
     });
     return () => controller.abort();
   }, [refresh]);
+  usePolling({ refresh: () => refresh() });
   const create = async (event: FormEvent) => {
     event.preventDefault();
     setPending(true);
@@ -509,6 +581,7 @@ export function ApplicationsPage() {
             <ApplicationCard
               key={application.id}
               application={application}
+              markerRefresh={markerRefresh}
               monitors={monitors}
               initialToken={issued[application.id] ?? null}
               clearIssuedToken={() =>

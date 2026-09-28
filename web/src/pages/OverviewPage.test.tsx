@@ -4,6 +4,7 @@ import type { Overview } from '../api/dailyUse';
 import { getOverview } from '../api/dailyUse';
 import type { Incident } from '../api/incidents';
 import { monitorStatusFixture } from '../test/fixtures';
+import { groupByApplication } from '../lib/applicationGroups';
 import { OverviewPage } from './OverviewPage';
 
 vi.mock('../api/dailyUse', () => ({ getOverview: vi.fn() }));
@@ -64,7 +65,66 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
+it('groups each section by application name, preserving order inside each group and placing unassigned last', () => {
+  const grouped = groupByApplication([
+    { monitor: { ...monitor, id: 'u', name: 'Unassigned' } },
+    {
+      monitor: {
+        ...monitor,
+        id: 'b',
+        name: 'Billing',
+        applicationId: 'billing',
+        applicationName: 'Billing',
+      },
+    },
+    {
+      monitor: {
+        ...monitor,
+        id: 'a',
+        name: 'Accounts',
+        applicationId: 'accounts',
+        applicationName: 'Accounts',
+      },
+    },
+    {
+      monitor: {
+        ...monitor,
+        id: 'b2',
+        name: 'Billing two',
+        applicationId: 'billing',
+        applicationName: 'Billing',
+      },
+    },
+  ]);
+  expect(grouped.map((group) => group.name)).toEqual(['Accounts', 'Billing', 'No application']);
+  expect(grouped[1].items.map((item) => item.monitor.id)).toEqual(['b', 'b2']);
+});
 describe('Overview', () => {
+  it('renders application headings above grouped problem items, with unassigned last', async () => {
+    vi.mocked(getOverview).mockResolvedValue({
+      ...data,
+      failingWithoutIncident: [
+        { monitor, status: monitorStatusFixture({ state: 'failing', reason: null }) },
+        {
+          monitor: {
+            ...monitor,
+            id: 'm2',
+            name: 'Billing check',
+            applicationId: 'billing',
+            applicationName: 'Billing',
+          },
+          status: monitorStatusFixture({ state: 'failing', reason: null }),
+        },
+      ],
+    });
+    render(<OverviewPage />);
+    const section = await screen.findByRole('region', { name: 'Failing — incident not open yet' });
+    const headings = Array.from(section.querySelectorAll('h4')).map(
+      (element) => element.textContent,
+    );
+    expect(headings).toEqual(['Billing', 'No application']);
+    expect(section.querySelectorAll('li')[0]).toHaveTextContent('Billing check');
+  });
   it('shows All clear above outages and recent recoveries when problem sections are empty', async () => {
     vi.mocked(getOverview).mockResolvedValue({
       ...data,
