@@ -106,6 +106,9 @@ func (s *Store) Tick(ctx context.Context, now time.Time) (int, int, int, error) 
 	}
 	active, created, gaps := 0, 0, 0
 	for _, m := range ms {
+		if m.Kind == "heartbeat" {
+			continue
+		}
 		if m.Lifecycle == "active" {
 			active++
 			latest := slotStamp(m.ID, m.IntervalSeconds, now)
@@ -353,6 +356,9 @@ func (s *Store) SweepOld(ctx context.Context, now time.Time) (int, error) {
 	}
 	gaps := 0
 	for _, m := range monitors {
+		if m.Kind == "heartbeat" {
+			continue
+		}
 		works, err := s.queryWorks(
 			ctx,
 			m.ID,
@@ -692,6 +698,9 @@ func (s *Store) RecordResult(
 	o monitor.Observation,
 	token string,
 ) (monitor.Observation, error) {
+	if o.Kind == "" {
+		o.Kind = "http_check"
+	}
 	if err := s.ensure(ctx); err != nil {
 		return o, err
 	}
@@ -704,6 +713,7 @@ func (s *Store) RecordResult(
 	}
 	o.Counted = true
 	evidence := monitor.Evidence{
+		Kind:           o.Kind,
 		ObservationID:  o.ID,
 		InitiatedBy:    o.InitiatedBy,
 		StartedAt:      o.StartedAt,

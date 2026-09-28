@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 )
@@ -43,6 +44,7 @@ type (
 		Clock            Clock
 		Workers          int
 		ReminderInterval time.Duration
+		LivenessInterval time.Duration
 		Logger           *slog.Logger
 	}
 )
@@ -117,9 +119,25 @@ func (s *Scheduler) Run(ctx context.Context) {
 		}()
 	}
 	recoveryDone := false
+	lastLiveness := time.Time{}
 	tick := func() {
 		now := clock.Now()
 		tickCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		if writer, ok := s.Store.(interface {
+			WriteLiveness(context.Context, time.Time, time.Duration) (heartbeat.Liveness, error)
+		}); ok {
+			interval := s.LivenessInterval
+			if interval <= 0 {
+				interval = 10 * time.Second
+			}
+			if lastLiveness.IsZero() || now.Sub(lastLiveness) >= interval {
+				if _, e := writer.WriteLiveness(tickCtx, now, interval); e != nil {
+					logger.Warn("receive liveness write failed", "reason", "dependency_failure")
+				} else {
+					lastLiveness = now
+				}
+			}
+		}
 		defer cancel()
 		sweepGaps := 0
 		if !recoveryDone {
@@ -182,6 +200,20 @@ func (s *Scheduler) Run(ctx context.Context) {
 					!errors.Is(e, store.ErrNotEligible) {
 					logger.Warn("scheduler reminder failed", "reason", "dependency_failure")
 				}
+			}
+			if m.Kind == "heartbeat" {
+				if deadlines, ok := s.Store.(interface {
+					Liveness(context.Context) (heartbeat.Liveness, error)
+					Deadline(context.Context, monitor.Monitor, time.Time, heartbeat.Liveness) error
+				}); ok && m.Lifecycle == "active" {
+					if live, e := deadlines.Liveness(tickCtx); e == nil {
+						if e = deadlines.Deadline(tickCtx, m, now, live); e != nil &&
+							!errors.Is(e, store.ErrNotEligible) {
+							logger.Warn("heartbeat deadline failed", "reason", "dependency_failure")
+						}
+					}
+				}
+				continue
 			}
 			ws, e := s.Store.Works(tickCtx, m, now)
 			if e != nil {

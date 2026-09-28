@@ -118,6 +118,24 @@ func (s *Store) Create(ctx context.Context, m monitor.Monitor) error {
 		return err
 	}
 	now, _ := time.Parse(time.RFC3339Nano, m.CreatedAt)
+	if m.Kind == "heartbeat" {
+		item, e := monitorItem(m)
+		if e != nil {
+			return e
+		}
+		_, e = s.db.PutItem(
+			ctx,
+			&dynamodb.PutItemInput{
+				TableName:           aws.String(s.table),
+				Item:                item,
+				ConditionExpression: aws.String("attribute_not_exists(PK)"),
+			},
+		)
+		if e != nil {
+			return ErrUnavailable
+		}
+		return nil
+	}
 	m.ScheduledThrough = slotStamp(m.ID, m.IntervalSeconds, now)
 	item, err := monitorItem(m)
 	if err != nil {
@@ -254,6 +272,9 @@ func (s *Store) save(
 	trigger string,
 	now time.Time,
 ) error {
+	if m.Kind == "heartbeat" {
+		return s.saveHeartbeat(ctx, m, previous, condition, values, trigger, now)
+	}
 	values[":name"] = &types.AttributeValueMemberS{Value: m.Name}
 	values[":check"] = mustAV(m.Check)
 	values[":nextVersion"] = &types.AttributeValueMemberN{Value: fmt.Sprint(m.ConfigVersion)}
@@ -466,6 +487,9 @@ func (s *Store) PatchIntervalPolicy(
 		return m, ErrVersionConflict
 	}
 	next := m.Patch(name, check, now)
+	if m.Kind == "heartbeat" {
+		return m, ErrNotEligible
+	}
 	if policy != nil {
 		next.IncidentPolicy = *policy
 	}
@@ -516,6 +540,37 @@ func (s *Store) Lifecycle(
 	next, ok := m.Transition(action, now)
 	if !ok {
 		return m, ErrInvalidTransition
+	}
+	if m.Kind == "heartbeat" {
+		if action == "resume" {
+			next.Evaluation = incident.Clear(m.Evaluation)
+			next.Maintenance.Windows = incident.Prune(m.Maintenance.Windows, now)
+			next.Maintenance.ActiveID = ""
+			if m.OpenIncident != nil {
+				op := *m.OpenIncident
+				opened, _ := time.Parse(time.RFC3339Nano, op.OpenedAt)
+				op.NextReminderAt = monitor.Stamp(
+					incident.NextSlot(opened, s.reminderInterval, now),
+				)
+				next.OpenIncident = &op
+			}
+		}
+		err = s.saveHeartbeat(
+			ctx,
+			next,
+			m,
+			"lifecycle = :from AND updatedAt = :updated",
+			map[string]types.AttributeValue{
+				":from":    mustAV(m.Lifecycle),
+				":updated": mustAV(m.UpdatedAt),
+			},
+			action,
+			now,
+		)
+		if err == nil && action == "archive" && m.OpenIncident != nil {
+			s.cancelResolvedReminders(ctx, m.ID, m.OpenIncident.ID)
+		}
+		return next, err
 	}
 	trigger := ""
 	if action == "resume" {

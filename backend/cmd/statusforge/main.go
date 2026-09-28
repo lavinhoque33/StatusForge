@@ -14,6 +14,7 @@ import (
 
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
 	"github.com/lavinhoque33/statusforge/backend/internal/config"
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/httpapi"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/notify"
@@ -65,6 +66,7 @@ func run() error {
 		return err
 	}
 	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
+	heartbeat.SetLivenessInterval(cfg.LivenessIntervalSeconds)
 	persistence.SetReminderInterval(time.Duration(cfg.ReminderIntervalSeconds) * time.Second)
 	notifyPolicy, err := notify.PolicyForURL(cfg.NotifyURL)
 	if err != nil {
@@ -121,7 +123,7 @@ func run() error {
 	if cfg.SchedulerEnabled {
 		go func() {
 			defer close(schedulerDone)
-			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger, ReminderInterval: time.Duration(cfg.ReminderIntervalSeconds) * time.Second}).Run(
+			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger, ReminderInterval: time.Duration(cfg.ReminderIntervalSeconds) * time.Second, LivenessInterval: time.Duration(cfg.LivenessIntervalSeconds) * time.Second}).Run(
 				schedulerCtx,
 			)
 		}()

@@ -7,6 +7,7 @@ import { MonitorHeadline } from '../components/MonitorHeadline';
 import { describeApiError } from '../lib/errors';
 import { notUpdatedText, updatedText } from '../lib/refresh';
 import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
+import { heartbeatDeadlines } from '../lib/heartbeatHeadline';
 import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
@@ -30,23 +31,19 @@ export function MonitorListPage() {
   const [state, setState] = useState<ListState>({ name: 'loading' });
   const [freshness, setFreshness] = useState<Freshness>({ name: 'none' });
   const [reloadToken, setReloadToken] = useState(0);
-  // The earliest freshUntil among fresh outcome statuses: when it passes the
-  // headline flips to Stale without waiting for a poll or age tick.
-  const staleDeadlineMs =
+  // The timer selects the next future deadline, even when the first one has passed.
+  const deadlines =
     state.name === 'ready'
-      ? state.monitors.reduce<number | null>((earliest, monitor) => {
-          const status = monitor.status;
-          const fresh =
-            (status.state === 'healthy' ||
-              status.state === 'failing' ||
-              status.state === 'checker_problem') &&
-            status.freshUntil !== null
-              ? Date.parse(status.freshUntil)
-              : null;
-          return fresh !== null && (earliest === null || fresh < earliest) ? fresh : earliest;
-        }, null)
-      : null;
-  const now = useNow(FRESHNESS_REFRESH_MS, staleDeadlineMs);
+      ? state.monitors.flatMap((monitor) =>
+          monitor.kind === 'heartbeat'
+            ? heartbeatDeadlines(monitor)
+            : monitor.status.freshUntil !== null &&
+                ['healthy', 'failing', 'checker_problem'].includes(monitor.status.state)
+              ? [Date.parse(monitor.status.freshUntil)]
+              : [],
+        )
+      : [];
+  const now = useNow(FRESHNESS_REFRESH_MS, deadlines);
   const stateRef = useRef(state);
 
   useEffect(() => {
@@ -134,11 +131,15 @@ export function MonitorListPage() {
                 </h3>
                 <p className="monitor-meta">
                   <LifecycleBadge lifecycle={monitor.lifecycle} />
+                  {monitor.kind === 'heartbeat' ? (
+                    <span className="type-label">Heartbeat</span>
+                  ) : null}
                   <span className="version">v{monitor.configVersion}</span>
                 </p>
                 <MonitorHeadline
                   status={monitor.status}
-                  intervalSeconds={monitor.intervalSeconds}
+                  intervalSeconds={monitor.intervalSeconds ?? monitor.heartbeat!.intervalSeconds}
+                  monitor={monitor}
                   now={now}
                   maintenance={monitor.maintenance}
                 />

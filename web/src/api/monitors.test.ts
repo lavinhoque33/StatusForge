@@ -174,12 +174,27 @@ describe('mutations and reads', () => {
   it('reads the intervals the process offers', async () => {
     stubApi({
       'GET /api/intervals': () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
     });
 
     await expect(listIntervals()).resolves.toEqual({
       intervalSeconds: [60, 300, 600, 900],
       defaultIntervalSeconds: 300,
+      heartbeat: {
+        intervalSeconds: [300, 900, 3600],
+        graceSeconds: [60, 300, 900],
+        defaultIntervalSeconds: 3600,
+        defaultGraceSeconds: 900,
+      },
     });
   });
 });

@@ -6,6 +6,8 @@ import (
 	"hash/fnv"
 	"strings"
 	"time"
+
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 )
 
 const DefaultIntervalSeconds = 300
@@ -18,6 +20,7 @@ type Lease struct {
 	MaintenanceWindowID *string `dynamodbav:"maintenanceWindowId,omitempty"`
 }
 type Evidence struct {
+	Kind           string      `dynamodbav:"kind,omitempty"`
 	ObservationID  string      `dynamodbav:"observationId"`
 	InitiatedBy    string      `dynamodbav:"initiatedBy"`
 	StartedAt      string      `dynamodbav:"startedAt"`
@@ -55,6 +58,21 @@ func apiTime(value string) string {
 	return Stamp(t)
 }
 
+func (m Monitor) MarshalJSON() ([]byte, error) {
+	type raw Monitor
+	if m.Kind != "heartbeat" {
+		if m.Kind == "" {
+			m.Kind = "http"
+		}
+		return json.Marshal(raw(m))
+	}
+	return json.Marshal(struct {
+		raw
+		Check           any `json:"check"`
+		IntervalSeconds any `json:"intervalSeconds"`
+	}{raw(m), nil, nil})
+}
+
 func (o Observation) MarshalJSON() ([]byte, error) {
 	type stored Observation
 	var due *string
@@ -62,10 +80,22 @@ func (o Observation) MarshalJSON() ([]byte, error) {
 		value := apiTime(*o.DueAt)
 		due = &value
 	}
+	if o.Kind == "" {
+		o.Kind = "http_check"
+	}
 	return json.Marshal(struct {
 		stored
-		DueAt *string `json:"dueAt"`
-	}{stored: stored(o), DueAt: due})
+		DueAt          *string `json:"dueAt"`
+		Request        any     `json:"request"`
+		ObservedStatus *int    `json:"observedStatus"`
+	}{stored: stored(o), DueAt: due, Request: observationRequest(o), ObservedStatus: o.ObservedStatus})
+}
+
+func observationRequest(o Observation) any {
+	if o.Kind == "heartbeat_report" || o.Kind == "heartbeat_missed" {
+		return nil
+	}
+	return o.Request
 }
 
 func (g Gap) MarshalJSON() ([]byte, error) {
@@ -141,6 +171,9 @@ func SlotsBetween(id string, interval int, previous, latest time.Time) (time.Tim
 }
 
 func Evaluate(m Monitor, now time.Time) Status {
+	if m.Kind == "heartbeat" {
+		return evaluateHeartbeat(m, now)
+	}
 	result := Status{EvaluatedAt: Stamp(now)}
 	if m.Evidence != nil {
 		obs := m.Evidence.Observation
@@ -189,7 +222,65 @@ func Evaluate(m Monitor, now time.Time) Status {
 	return result
 }
 
+func evaluateHeartbeat(m Monitor, now time.Time) Status {
+	result := Status{EvaluatedAt: Stamp(now)}
+	if m.Evidence != nil {
+		observation := m.Evidence.Observation
+		result.Observation = &observation
+	}
+	if m.Lifecycle == "paused" || m.Lifecycle == "archived" {
+		result.State = m.Lifecycle
+		return result
+	}
+	if m.Expectation == nil {
+		result.State = "unknown"
+		reason := "waiting_for_first_report"
+		result.Reason = &reason
+		return result
+	}
+	result.FreshUntil = &m.Expectation.MissingAt
+	due, _ := time.Parse(time.RFC3339Nano, m.Expectation.LateAt)
+	missing, _ := time.Parse(time.RFC3339Nano, m.Expectation.MissingAt)
+	if m.Evidence != nil && m.Evidence.Outcome == "failing" {
+		result.State = "failing"
+		reason := m.Evidence.Reason
+		result.Reason = &reason
+		return result
+	}
+	if m.Evidence == nil && !now.After(missing) {
+		reason := "waiting_for_first_report"
+		result.Reason = &reason
+		if now.After(due) {
+			result.State = "late"
+		} else {
+			result.State = "unknown"
+		}
+		return result
+	}
+	stale, _ := time.Parse(time.RFC3339Nano, m.Expectation.StaleAt)
+	if stale.IsZero() {
+		stale = missing.Add(time.Duration(3*heartbeat.LivenessInterval()+5) * time.Second)
+	}
+	if !now.Before(stale) {
+		result.State = "stale"
+		return result
+	}
+	if now.After(due) {
+		result.State = "late"
+	} else {
+		result.State = "healthy"
+	}
+	return result
+}
+
 func WithStatus(m Monitor, now time.Time) Monitor {
+	if m.Kind == "heartbeat" {
+		if m.Heartbeat != nil {
+			m.Heartbeat.IngestPath = "/ingest/heartbeats/" + m.ID
+		}
+		m.Status = Evaluate(m, now)
+		return m
+	}
 	if m.IntervalSeconds == 0 {
 		m.IntervalSeconds = DefaultIntervalSeconds
 	}

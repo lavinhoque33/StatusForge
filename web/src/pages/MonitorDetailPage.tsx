@@ -21,6 +21,7 @@ import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
 import { TimelineTable } from '../components/TimelineTable';
+import { HeartbeatTokenSection } from '../components/HeartbeatTokenSection';
 import { MaintenanceSection } from '../components/MaintenanceSection';
 import { describeApiError } from '../lib/errors';
 import {
@@ -37,6 +38,7 @@ import { intervalLabel } from '../lib/intervals';
 import { formatDeadlineSeconds, formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
 import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
+import { heartbeatDeadlines } from '../lib/heartbeatHeadline';
 import { Link } from '../router/Link';
 
 type LoadState =
@@ -66,13 +68,8 @@ type Freshness =
 
 /** True when the form fields match what the monitor stores (nothing unsaved). */
 function fieldsEqual(fields: MonitorFormFields, stored: MonitorFormFields): boolean {
-  return (
-    fields.name === stored.name &&
-    fields.url === stored.url &&
-    fields.expectedStatus === stored.expectedStatus &&
-    fields.deadlineSeconds === stored.deadlineSeconds &&
-    fields.openAfter === stored.openAfter &&
-    fields.recoverAfter === stored.recoverAfter
+  return Object.keys(stored).every(
+    (key) => fields[key as keyof MonitorFormFields] === stored[key as keyof MonitorFormFields],
   );
 }
 
@@ -110,12 +107,13 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const choice = useRef<IntervalChoice>(intervalChoice());
   const now = useNow(
     FRESHNESS_REFRESH_MS,
-    load.name === 'ready' &&
-      (load.monitor.status.state === 'healthy' ||
-        load.monitor.status.state === 'failing' ||
-        load.monitor.status.state === 'checker_problem') &&
-      load.monitor.status.freshUntil !== null
-      ? Date.parse(load.monitor.status.freshUntil)
+    load.name === 'ready'
+      ? load.monitor.kind === 'heartbeat'
+        ? heartbeatDeadlines(load.monitor)
+        : ['healthy', 'failing', 'checker_problem'].includes(load.monitor.status.state) &&
+            load.monitor.status.freshUntil !== null
+          ? Date.parse(load.monitor.status.freshUntil)
+          : null
       : null,
   );
   const checkController = useRef<AbortController | null>(null);
@@ -309,13 +307,26 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     setFieldErrors({});
     setEditNotice(null);
 
-    updateMonitor(monitor.id, {
-      expectedConfigVersion: monitor.configVersion,
-      name: fields.name,
-      check: checkInputFromFields(fields),
-      intervalSeconds: selectedIntervalForMonitor(choice.current),
-      incidentPolicy: incidentPolicyFromFields(fields),
-    })
+    updateMonitor(
+      monitor.id,
+      monitor.kind === 'heartbeat'
+        ? {
+            expectedConfigVersion: monitor.configVersion,
+            name: fields.name,
+            heartbeat: {
+              intervalSeconds: fields.heartbeatIntervalSeconds,
+              graceSeconds: fields.heartbeatGraceSeconds,
+            },
+            incidentPolicy: incidentPolicyFromFields(fields),
+          }
+        : {
+            expectedConfigVersion: monitor.configVersion,
+            name: fields.name,
+            check: checkInputFromFields(fields),
+            intervalSeconds: selectedIntervalForMonitor(choice.current),
+            incidentPolicy: incidentPolicyFromFields(fields),
+          },
+    )
       .then((updated) => {
         setSavePending(false);
         setLoad((current) =>
@@ -419,11 +430,13 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       <h2 id="monitor-detail-heading">{monitor.name}</h2>
       <p className="monitor-meta">
         <LifecycleBadge lifecycle={monitor.lifecycle} />
+        {monitor.kind === 'heartbeat' ? <span className="type-label">Heartbeat</span> : null}
         <span className="version">v{monitor.configVersion}</span>
       </p>
       <MonitorHeadline
         status={monitor.status}
-        intervalSeconds={monitor.intervalSeconds}
+        intervalSeconds={monitor.intervalSeconds ?? monitor.heartbeat!.intervalSeconds}
+        monitor={monitor}
         now={now}
         maintenance={monitor.maintenance}
       />
@@ -453,26 +466,61 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       <section className="panel" aria-labelledby="monitor-configuration-heading">
         <h3 id="monitor-configuration-heading">Configuration</h3>
         <dl className="config-list">
-          <div>
-            <dt>URL</dt>
-            <dd>{monitor.check.url}</dd>
-          </div>
-          <div>
-            <dt>Method</dt>
-            <dd>{monitor.check.method}</dd>
-          </div>
-          <div>
-            <dt>Expected status</dt>
-            <dd>{monitor.check.expectedStatus}</dd>
-          </div>
-          <div>
-            <dt>Deadline</dt>
-            <dd>{formatDeadlineSeconds(monitor.check.deadlineMs)}</dd>
-          </div>
-          <div>
-            <dt>Interval</dt>
-            <dd>{intervalLabel(monitor.intervalSeconds)}</dd>
-          </div>
+          {monitor.kind === 'heartbeat' && monitor.heartbeat ? (
+            <>
+              <div>
+                <dt>Interval</dt>
+                <dd>{intervalLabel(monitor.heartbeat.intervalSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Grace period</dt>
+                <dd>{intervalLabel(monitor.heartbeat.graceSeconds)}</dd>
+              </div>
+              {monitor.expectation ? (
+                <>
+                  <div>
+                    <dt>Next due</dt>
+                    <dd>
+                      <time dateTime={monitor.expectation.dueAt}>
+                        {formatLocalWithOffset(new Date(monitor.expectation.dueAt))}
+                      </time>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Missing after</dt>
+                    <dd>
+                      <time dateTime={monitor.expectation.missingAt}>
+                        {formatLocalWithOffset(new Date(monitor.expectation.missingAt))}
+                      </time>
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : monitor.check ? (
+            <>
+              <div>
+                <dt>URL</dt>
+                <dd>{monitor.check.url}</dd>
+              </div>
+              <div>
+                <dt>Method</dt>
+                <dd>{monitor.check.method}</dd>
+              </div>
+              <div>
+                <dt>Expected status</dt>
+                <dd>{monitor.check.expectedStatus}</dd>
+              </div>
+              <div>
+                <dt>Deadline</dt>
+                <dd>{formatDeadlineSeconds(monitor.check.deadlineMs)}</dd>
+              </div>
+              <div>
+                <dt>Interval</dt>
+                <dd>{intervalLabel(monitor.intervalSeconds!)}</dd>
+              </div>
+            </>
+          ) : null}
           <div>
             <dt>Open after</dt>
             <dd>{monitor.incidentPolicy.openAfter} failed checks</dd>
@@ -481,10 +529,12 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             <dt>Resolve after</dt>
             <dd>{monitor.incidentPolicy.recoverAfter} healthy checks</dd>
           </div>
-          <div>
-            <dt>Body limit</dt>
-            <dd>{monitor.check.maxBodyBytes} bytes</dd>
-          </div>
+          {monitor.check ? (
+            <div>
+              <dt>Body limit</dt>
+              <dd>{monitor.check.maxBodyBytes} bytes</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Version</dt>
             <dd>v{monitor.configVersion}</dd>
@@ -527,7 +577,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             pending={savePending}
             disabled={archived}
             intervals={intervals}
-            storedIntervalSeconds={monitor.intervalSeconds}
+            storedIntervalSeconds={monitor.intervalSeconds ?? undefined}
             onIntervalChange={(seconds) => {
               choice.current.current = seconds;
             }}
@@ -547,6 +597,29 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         )}
       </section>
 
+      {monitor.heartbeat ? (
+        <>
+          <HeartbeatTokenSection
+            id={monitor.id}
+            heartbeat={monitor.heartbeat}
+            archived={archived}
+            refresh={reload}
+          />
+          <section className="panel" aria-labelledby="heartbeat-proof-heading">
+            <h3 id="heartbeat-proof-heading">What a heartbeat proves</h3>
+            <p>
+              A request carrying the heartbeat’s token reached StatusForge at the recorded time with
+              the recorded fields. It does not prove the job did its work correctly or that its
+              output (for example a backup) is usable. A missing report means none was received by
+              the deadline while StatusForge was receiving; it does not prove the job did not run.
+            </p>
+            <p>
+              Outages shorter than three times the liveness interval are not detected; a missed run
+              during an outage is reported only at the next window.
+            </p>
+          </section>
+        </>
+      ) : null}
       <section className="panel" aria-labelledby="monitor-lifecycle-heading">
         <h3 id="monitor-lifecycle-heading">Lifecycle</h3>
         {archived ? (
@@ -625,41 +698,43 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         windows={windows}
         refresh={reload}
       />
-      <section className="panel" aria-labelledby="monitor-check-heading">
-        <h3 id="monitor-check-heading">Manual check</h3>
-        <button
-          type="button"
-          className="button"
-          onClick={startCheckIfIdle}
-          disabled={archived}
-          aria-disabled={runState.name === 'running' ? true : undefined}
-        >
-          {runState.name === 'running'
-            ? `Checking… up to ${formatDeadlineSeconds(monitor.check.deadlineMs)}`
-            : 'Run check now'}
-        </button>
-        <p className="note">
-          The check runs once, now, and is stored as a manual observation. Scheduled checks run on
-          their own; this never changes the schedule.
-        </p>
-        {runState.name === 'notice' ? (
-          <div className="notice">
-            <p role="status">{runState.message}</p>
-            {runState.offerReload === true ? (
-              <button
-                type="button"
-                className="button"
-                onClick={() => {
-                  setRunState({ name: 'idle' });
-                  reload();
-                }}
-              >
-                Reload
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
+      {monitor.kind === 'http' && monitor.check ? (
+        <section className="panel" aria-labelledby="monitor-check-heading">
+          <h3 id="monitor-check-heading">Manual check</h3>
+          <button
+            type="button"
+            className="button"
+            onClick={startCheckIfIdle}
+            disabled={archived}
+            aria-disabled={runState.name === 'running' ? true : undefined}
+          >
+            {runState.name === 'running'
+              ? `Checking… up to ${formatDeadlineSeconds(monitor.check.deadlineMs)}`
+              : 'Run check now'}
+          </button>
+          <p className="note">
+            The check runs once, now, and is stored as a manual observation. Scheduled checks run on
+            their own; this never changes the schedule.
+          </p>
+          {runState.name === 'notice' ? (
+            <div className="notice">
+              <p role="status">{runState.message}</p>
+              {runState.offerReload === true ? (
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => {
+                    setRunState({ name: 'idle' });
+                    reload();
+                  }}
+                >
+                  Reload
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="panel" aria-labelledby="monitor-incidents-heading">
         <h3 id="monitor-incidents-heading">Recent incidents</h3>
@@ -682,9 +757,16 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         )}
       </section>
       <section className="panel" aria-labelledby="monitor-timeline-heading">
-        <h3 id="monitor-timeline-heading">Checks and gaps</h3>
+        <h3 id="monitor-timeline-heading">
+          {monitor.kind === 'heartbeat' ? 'Reports and gaps' : 'Checks and gaps'}
+        </h3>
         {driftNote === null ? null : <p className="drift-note">{driftNote}</p>}
-        <TimelineTable observations={observations} gaps={gaps} windows={windows} />
+        <TimelineTable
+          observations={observations}
+          gaps={gaps}
+          windows={windows}
+          monitorKind={monitor.kind}
+        />
       </section>
     </article>
   );

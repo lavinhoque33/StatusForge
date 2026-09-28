@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
+	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
@@ -49,6 +50,7 @@ type monitorAPI struct {
 	logger      *slog.Logger
 	now         func() time.Time
 	minInterval int
+	limiters    *heartbeatLimiters
 }
 
 func NewMonitorRouter(
@@ -77,6 +79,18 @@ func NewMonitorRouter(
 	mux := newMux(logger, now)
 	mux.Get("/api/health/live", handleLive)
 	mux.Get("/api/health/ready", handleReady(logger, deps, readinessTimeout, now))
+	mux.Get("/api/system/liveness", func(w http.ResponseWriter, r *http.Request) {
+		if v, ok := s.(interface {
+			Liveness(context.Context) (heartbeat.Liveness, error)
+		}); ok {
+			live, e := v.Liveness(r.Context())
+			if e == nil {
+				writeJSON(w, 200, live)
+				return
+			}
+		}
+		apiError(w, 503, "store_unavailable")
+	})
 	a := &monitorAPI{
 		store:       s,
 		runner:      r,
@@ -85,6 +99,7 @@ func NewMonitorRouter(
 		now:         now,
 		minInterval: minInterval,
 	}
+	a.limiters = newHeartbeatLimiters()
 	mux.Get("/api/intervals", a.intervals)
 	mux.Get("/api/monitors", a.list)
 	mux.Post("/api/monitors", a.create)
@@ -92,6 +107,9 @@ func NewMonitorRouter(
 	mux.Patch("/api/monitors/{id}", a.patch)
 	mux.Post("/api/monitors/{id}/lifecycle", a.lifecycle)
 	mux.Post("/api/monitors/{id}/checks", a.check)
+	mux.Post("/api/monitors/{id}/heartbeat/token", a.heartbeatToken)
+	mux.Delete("/api/monitors/{id}/heartbeat/token", a.heartbeatRevoke)
+	mux.Post("/ingest/heartbeats/{id}", a.ingestHeartbeat)
 	mux.Get("/api/monitors/{id}/observations", a.observations)
 	mux.Get("/api/monitors/{id}/maintenance", a.maintenanceList)
 	mux.Post("/api/monitors/{id}/maintenance", a.maintenanceCreate)
@@ -147,6 +165,19 @@ func decode(w http.ResponseWriter, r *http.Request, out any, paths map[string]st
 				}
 			}
 		}
+		if k == "heartbeat" {
+			var nested map[string]json.RawMessage
+			if json.Unmarshal(v, &nested) == nil {
+				for child := range nested {
+					if child != "intervalSeconds" && child != "graceSeconds" {
+						f := monitor.Fields{}
+						f.Add("heartbeat."+child, "unknown_field", "unknown field")
+						fieldsError(w, f)
+						return false
+					}
+				}
+			}
+		}
 		if _, ok := paths[k]; !ok {
 			f := monitor.Fields{}
 			f.Add(k, "unknown_field", "unknown field")
@@ -175,6 +206,8 @@ func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
 		apiError(w, 409, "archived")
 	case errors.Is(err, store.ErrLeaseHeld):
 		apiError(w, 409, "check_in_progress")
+	case errors.Is(err, store.ErrNotEligible):
+		apiError(w, 409, "not_supported")
 	default:
 		s.logger.Error("store unavailable", "reason", "dependency_failure")
 		apiError(w, 503, "store_unavailable")
@@ -196,9 +229,11 @@ func (s *monitorAPI) list(w http.ResponseWriter, r *http.Request) {
 
 func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name            *string          `json:"name"`
-		IntervalSeconds *int             `json:"intervalSeconds"`
-		IncidentPolicy  *incident.Policy `json:"incidentPolicy"`
+		Name            *string             `json:"name"`
+		Kind            *string             `json:"kind"`
+		Heartbeat       *heartbeat.Schedule `json:"heartbeat"`
+		IntervalSeconds *int                `json:"intervalSeconds"`
+		IncidentPolicy  *incident.Policy    `json:"incidentPolicy"`
 		Check           *struct {
 			URL            *string `json:"url"`
 			Method         *string `json:"method"`
@@ -211,8 +246,27 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 		w,
 		r,
 		&req,
-		map[string]string{"name": "", "check": "", "intervalSeconds": "", "incidentPolicy": ""},
+		map[string]string{
+			"name":            "",
+			"check":           "",
+			"intervalSeconds": "",
+			"incidentPolicy":  "",
+			"kind":            "",
+			"heartbeat":       "",
+		},
 	) {
+		return
+	}
+	if req.Kind != nil && *req.Kind == "heartbeat" {
+		s.createHeartbeat(
+			w,
+			r,
+			req.Name,
+			req.Check != nil,
+			req.Heartbeat,
+			req.IntervalSeconds != nil,
+			req.IncidentPolicy,
+		)
 		return
 	}
 	fields := monitor.Fields{}
@@ -221,6 +275,12 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 		name = monitor.ValidateName(*req.Name, fields)
 	} else {
 		fields.Add("name", "required", "name is required")
+	}
+	if req.Kind != nil && *req.Kind != "http" {
+		fields.Add("kind", "invalid_value", "kind must be http or heartbeat")
+	}
+	if req.Heartbeat != nil {
+		fields.Add("heartbeat", "unexpected", "heartbeat is not valid for HTTP monitors")
 	}
 	c := monitor.Check{
 		Method:         "GET",
@@ -291,10 +351,12 @@ func (s *monitorAPI) get(w http.ResponseWriter, r *http.Request) {
 
 func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Expected        *int             `json:"expectedConfigVersion"`
-		Name            *string          `json:"name"`
-		IntervalSeconds *int             `json:"intervalSeconds"`
-		IncidentPolicy  *incident.Policy `json:"incidentPolicy"`
+		Expected        *int                `json:"expectedConfigVersion"`
+		Name            *string             `json:"name"`
+		IntervalSeconds *int                `json:"intervalSeconds"`
+		IncidentPolicy  *incident.Policy    `json:"incidentPolicy"`
+		Kind            *string             `json:"kind"`
+		Heartbeat       *heartbeat.Schedule `json:"heartbeat"`
 		Check           *struct {
 			URL            *string `json:"url"`
 			Method         *string `json:"method"`
@@ -313,8 +375,28 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 			"check":                 "",
 			"intervalSeconds":       "",
 			"incidentPolicy":        "",
+			"kind":                  "", "heartbeat": "",
 		},
 	) {
+		return
+	}
+	base, lookupErr := s.store.Get(r.Context(), chi.URLParam(r, "id"))
+	if lookupErr != nil {
+		s.failure(w, lookupErr)
+		return
+	}
+	if base.Kind == "heartbeat" || req.Heartbeat != nil || req.Kind != nil {
+		s.patchHeartbeat(
+			w,
+			r,
+			req.Expected,
+			req.Name,
+			req.Check != nil,
+			req.IntervalSeconds != nil,
+			req.Kind,
+			req.Heartbeat,
+			req.IncidentPolicy,
+		)
 		return
 	}
 	fields := monitor.Fields{}
@@ -445,6 +527,10 @@ func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
 
 func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if m, e := s.store.Get(r.Context(), id); e == nil && m.Kind == "heartbeat" {
+		apiError(w, 409, "not_supported")
+		return
+	}
 	m, token, err := s.store.ClaimManual(r.Context(), id, s.now())
 	if err != nil {
 		s.failure(w, err)
@@ -492,6 +578,12 @@ func (s *monitorAPI) intervals(w http.ResponseWriter, _ *http.Request) {
 		map[string]any{
 			"intervalSeconds":        monitor.AllowedIntervals(s.minInterval),
 			"defaultIntervalSeconds": monitor.DefaultIntervalSeconds,
+			"heartbeat": map[string]any{
+				"intervalSeconds":        heartbeat.Intervals(s.minInterval),
+				"graceSeconds":           heartbeat.Graces(s.minInterval),
+				"defaultIntervalSeconds": 3600,
+				"defaultGraceSeconds":    900,
+			},
 		},
 	)
 }

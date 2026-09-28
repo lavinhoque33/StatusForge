@@ -67,4 +67,21 @@ describe('useNow', () => {
     });
     expect(result.current).toBeGreaterThan(deadline);
   });
+  it('arms the stale instant after the late instant has fired', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-27T12:00:00.000Z'));
+    const late = Date.now() + 7_000;
+    const stale = Date.now() + 12_000;
+    const { result } = renderHook(() => useNow(30_000, [late, stale]));
+    await act(async () => {
+      vi.advanceTimersByTime(7_001);
+    });
+    expect(result.current).toBeGreaterThanOrEqual(late);
+    expect(vi.getTimerCount()).toBe(2);
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(result.current).toBeGreaterThanOrEqual(stale);
+    expect(vi.getTimerCount()).toBe(1);
+  });
 });

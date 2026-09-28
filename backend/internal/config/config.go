@@ -32,6 +32,7 @@ type Config struct {
 	DeliveryWorkers         int
 	DeliveryRetrySchedule   []time.Duration
 	ReminderIntervalSeconds int
+	LivenessIntervalSeconds int
 }
 
 func Load(lookup func(string) (string, bool)) (Config, error) {
@@ -97,6 +98,14 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil || cfg.ReminderIntervalSeconds < 60 || cfg.ReminderIntervalSeconds > 86400 {
 		return Config{}, fmt.Errorf(
 			"STATUSFORGE_REMINDER_INTERVAL_SECONDS: must be an integer 60–86400",
+		)
+	}
+	cfg.LivenessIntervalSeconds, err = strconv.Atoi(
+		get("STATUSFORGE_LIVENESS_INTERVAL_SECONDS", "10"),
+	)
+	if err != nil || cfg.LivenessIntervalSeconds < 2 || cfg.LivenessIntervalSeconds > 60 {
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_LIVENESS_INTERVAL_SECONDS: must be an integer 2–60",
 		)
 	}
 	if err := validateTargets(cfg.AllowedTargets); err != nil {

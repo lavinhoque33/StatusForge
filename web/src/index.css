@@ -98,6 +98,7 @@ nav a[aria-current='page'] {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
@@ -179,6 +180,9 @@ textarea:focus-visible {
   color: var(--warn);
 }
 .monitor-state--stale {
+  color: var(--warn);
+}
+.monitor-state--late {
   color: var(--warn);
 }
 .monitor-state--unknown,
@@ -406,6 +410,30 @@ textarea:focus-visible {
     display: block;
     width: auto;
   }
+}
+.token-panel pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.token-panel > code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.activity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-block: 1rem;
+}
+.activity-list {
+  list-style: none;
+  padding: 0;
+}
+.activity-list li {
+  overflow-wrap: anywhere;
 }
 @media (prefers-reduced-motion: reduce) {
   * {

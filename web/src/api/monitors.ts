@@ -7,7 +7,7 @@
  * Reason codes stay strings so a vocabulary addition cannot break rendering;
  * the presentation layer maps known codes to words.
  */
-import { ApiInvalidResponseError, requestJson } from './http';
+import { ApiInvalidResponseError, requestJson, requestNoContent } from './http';
 import { parseWindow, type Window } from './maintenance';
 
 /** Observation window requested by the detail page (contract default is 50). */
@@ -22,9 +22,9 @@ export type Lifecycle = 'active' | 'paused' | 'archived';
 
 export type CheckOutcome = 'healthy' | 'failing' | 'checker_problem';
 
-/** The presented status states. */
+/** The presented status states, including heartbeat lateness. */
 export type StatusState =
-  'healthy' | 'failing' | 'checker_problem' | 'stale' | 'unknown' | 'paused' | 'archived';
+  'healthy' | 'late' | 'failing' | 'checker_problem' | 'stale' | 'unknown' | 'paused' | 'archived';
 
 /**
  * The state the interface presents: the backend state, with a local switch to
@@ -33,7 +33,8 @@ export type StatusState =
 export type MonitorStatusEffective = StatusState;
 
 /** Why a monitor has no current status. */
-export type StatusUnknownReason = 'no_checks' | 'config_changed';
+export type StatusUnknownReason =
+  'no_checks' | 'config_changed' | 'waiting_for_first_report' | 'missing' | 'reported_failure';
 
 /** The status computed on every read, with the observation it is based on. */
 export type MonitorStatus = {
@@ -55,14 +56,26 @@ export type CheckConfig = {
 };
 export type IncidentPolicy = { openAfter: number; recoverAfter: number };
 
+export type HeartbeatConfig = {
+  intervalSeconds: number;
+  graceSeconds: number;
+  token: { hint: string; createdAt: string } | null;
+  lastReportAt: string | null;
+  ingestPath: string;
+};
+export type Expectation = { dueAt: string; lateAt: string; missingAt: string; staleAt: string };
+export type MonitorKind = 'http' | 'heartbeat';
 export type Monitor = {
   id: string;
   name: string;
   lifecycle: Lifecycle;
   configVersion: number;
   /** Seconds between scheduled checks. */
-  intervalSeconds: number;
-  check: CheckConfig;
+  intervalSeconds: number | null;
+  kind: MonitorKind;
+  heartbeat: HeartbeatConfig | null;
+  expectation: Expectation | null;
+  check: CheckConfig | null;
   incidentPolicy: IncidentPolicy;
   openIncident: { id: string; openedAt: string } | null;
   maintenance: { active: Window | null; next: Window | null };
@@ -73,6 +86,15 @@ export type Monitor = {
 };
 
 export type Observation = {
+  kind: 'http_check' | 'heartbeat_report' | 'heartbeat_missed';
+  report: {
+    runId: string | null;
+    finishedAt: string | null;
+    durationMs: number | null;
+    exitCode: number | null;
+    message: string | null;
+    late: boolean;
+  } | null;
   id: string;
   monitorId: string;
   configVersion: number;
@@ -85,7 +107,7 @@ export type Observation = {
   counted: boolean;
   notCountedReason: string | null;
   maintenanceWindowId: string | null;
-  request: CheckConfig;
+  request: CheckConfig | null;
   startedAt: string;
   completedAt: string;
   durationMs: number;
@@ -111,6 +133,12 @@ export type Gap = {
 export type Intervals = {
   intervalSeconds: number[];
   defaultIntervalSeconds: number;
+  heartbeat: {
+    intervalSeconds: number[];
+    graceSeconds: number[];
+    defaultIntervalSeconds: number;
+    defaultGraceSeconds: number;
+  };
 };
 
 /**
@@ -127,16 +155,20 @@ export type CheckInput = {
 
 export type CreateMonitorInput = {
   name: string;
-  check: CheckInput;
+  kind?: MonitorKind;
+  check?: CheckInput;
   intervalSeconds?: number;
+  heartbeat?: { intervalSeconds: number; graceSeconds: number };
   incidentPolicy?: IncidentPolicy;
 };
+export type CreatedMonitor = MonitorRecord & { issuedToken?: string };
 
 export type UpdateMonitorInput = {
   expectedConfigVersion: number;
   name: string;
-  check: CheckInput;
+  check?: CheckInput;
   intervalSeconds?: number;
+  heartbeat?: { intervalSeconds: number; graceSeconds: number };
   incidentPolicy?: IncidentPolicy;
 };
 
@@ -167,6 +199,9 @@ function isLifecycle(value: unknown): value is Lifecycle {
   return value === 'active' || value === 'paused' || value === 'archived';
 }
 
+function isMonitorKind(value: unknown): value is MonitorKind {
+  return value === 'http' || value === 'heartbeat';
+}
 function isOutcome(value: unknown): value is CheckOutcome {
   return value === 'healthy' || value === 'failing' || value === 'checker_problem';
 }
@@ -175,6 +210,7 @@ function isStatusState(value: unknown): value is StatusState {
   return (
     value === 'healthy' ||
     value === 'failing' ||
+    value === 'late' ||
     value === 'checker_problem' ||
     value === 'stale' ||
     value === 'unknown' ||
@@ -184,7 +220,13 @@ function isStatusState(value: unknown): value is StatusState {
 }
 
 function isStatusUnknownReason(value: unknown): value is StatusUnknownReason {
-  return value === 'no_checks' || value === 'config_changed';
+  return (
+    value === 'no_checks' ||
+    value === 'config_changed' ||
+    value === 'waiting_for_first_report' ||
+    value === 'missing' ||
+    value === 'reported_failure'
+  );
 }
 
 /** Parse the `check` object of a monitor or the `request` object of an observation. */
@@ -215,14 +257,73 @@ export function parseMonitor(value: unknown): Monitor {
   if (!('configVersion' in value) || !isInteger(value.configVersion) || value.configVersion < 1) {
     invalid();
   }
+  const kind = 'kind' in value ? value.kind : 'http';
+  if (!isMonitorKind(kind)) invalid();
   if (
     !('intervalSeconds' in value) ||
-    !isInteger(value.intervalSeconds) ||
-    value.intervalSeconds < 1
-  ) {
+    (kind === 'http'
+      ? !isInteger(value.intervalSeconds) || value.intervalSeconds < 1
+      : value.intervalSeconds !== null)
+  )
     invalid();
-  }
   if (!('check' in value)) invalid();
+  if (kind === 'http' && value.check === null) invalid();
+  if (kind === 'heartbeat' && value.check !== null) invalid();
+  let heartbeat: HeartbeatConfig | null = null;
+  let expectation: Expectation | null = null;
+  if (kind === 'heartbeat') {
+    const hb = prop(value, 'heartbeat');
+    if (typeof hb !== 'object' || hb === null) invalid();
+    if (
+      !isInteger(prop(hb, 'intervalSeconds')) ||
+      !isInteger(prop(hb, 'graceSeconds')) ||
+      (prop(hb, 'intervalSeconds') as number) < 1 ||
+      (prop(hb, 'graceSeconds') as number) < 1 ||
+      (prop(hb, 'graceSeconds') as number) > (prop(hb, 'intervalSeconds') as number) ||
+      !isNonEmptyString(prop(hb, 'ingestPath'))
+    )
+      invalid();
+    const token = prop(hb, 'token');
+    if (
+      token !== null &&
+      (typeof token !== 'object' ||
+        !isNonEmptyString(prop(token as object, 'hint')) ||
+        !isTimestamp(prop(token as object, 'createdAt')))
+    )
+      invalid();
+    const lastReportAt = prop(hb, 'lastReportAt');
+    if (lastReportAt !== null && !isTimestamp(lastReportAt)) invalid();
+    heartbeat = {
+      intervalSeconds: prop(hb, 'intervalSeconds') as number,
+      graceSeconds: prop(hb, 'graceSeconds') as number,
+      ingestPath: prop(hb, 'ingestPath') as string,
+      lastReportAt: lastReportAt as string | null,
+      token:
+        token === null
+          ? null
+          : {
+              hint: prop(token as object, 'hint') as string,
+              createdAt: prop(token as object, 'createdAt') as string,
+            },
+    };
+    const exp = prop(value, 'expectation');
+    if (exp !== null) {
+      if (
+        typeof exp !== 'object' ||
+        !isTimestamp(prop(exp, 'dueAt')) ||
+        !isTimestamp(prop(exp, 'lateAt')) ||
+        !isTimestamp(prop(exp, 'missingAt')) ||
+        !isTimestamp(prop(exp, 'staleAt'))
+      )
+        invalid();
+      expectation = {
+        dueAt: prop(exp, 'dueAt') as string,
+        lateAt: prop(exp, 'lateAt') as string,
+        missingAt: prop(exp, 'missingAt') as string,
+        staleAt: prop(exp, 'staleAt') as string,
+      };
+    }
+  }
   if (!('createdAt' in value) || !isTimestamp(value.createdAt)) invalid();
   if (!('updatedAt' in value) || !isTimestamp(value.updatedAt)) invalid();
   if (
@@ -268,8 +369,11 @@ export function parseMonitor(value: unknown): Monitor {
     name: value.name,
     lifecycle: value.lifecycle,
     configVersion: value.configVersion,
-    intervalSeconds: value.intervalSeconds,
-    check: parseCheckConfig(value.check),
+    intervalSeconds: kind === 'http' ? (value.intervalSeconds as number) : null,
+    kind,
+    heartbeat,
+    expectation,
+    check: kind === 'http' ? parseCheckConfig(value.check) : null,
     incidentPolicy: { openAfter: policy.openAfter, recoverAfter: policy.recoverAfter },
     openIncident:
       openIncident === null
@@ -300,6 +404,9 @@ export function parseMonitor(value: unknown): Monitor {
  */
 export function parseObservation(value: unknown): Observation {
   if (typeof value !== 'object' || value === null) invalid();
+  const kind = 'kind' in value ? value.kind : 'http_check';
+  if (kind !== 'http_check' && kind !== 'heartbeat_report' && kind !== 'heartbeat_missed')
+    invalid();
   if (!('id' in value) || !isNonEmptyString(value.id)) invalid();
   if (!('monitorId' in value) || !isNonEmptyString(value.monitorId)) invalid();
   if (!('configVersion' in value) || !isInteger(value.configVersion) || value.configVersion < 1) {
@@ -312,11 +419,42 @@ export function parseObservation(value: unknown): Observation {
   if (!('completedAt' in value) || !isTimestamp(value.completedAt)) invalid();
   if (!('durationMs' in value) || !isInteger(value.durationMs) || value.durationMs < 0) invalid();
   if (!('outcome' in value) || !isOutcome(value.outcome)) invalid();
-  if (!('reason' in value) || !isNonEmptyString(value.reason)) invalid();
-  if (!('bodyBytesRead' in value) || !isInteger(value.bodyBytesRead) || value.bodyBytesRead < 0) {
+  if (!isNonEmptyString(prop(value, 'reason'))) invalid();
+  if (
+    kind === 'http_check' &&
+    (!('bodyBytesRead' in value) ||
+      !isInteger(value.bodyBytesRead) ||
+      value.bodyBytesRead < 0 ||
+      !('bodyTruncated' in value) ||
+      typeof value.bodyTruncated !== 'boolean')
+  )
     invalid();
-  }
-  if (!('bodyTruncated' in value) || typeof value.bodyTruncated !== 'boolean') invalid();
+  const rawReport = prop(value, 'report');
+  let report: Observation['report'] = null;
+  if (kind === 'heartbeat_report') {
+    if (typeof rawReport !== 'object' || rawReport === null) invalid();
+    const optionalString = (key: string) => {
+      const item = prop(rawReport, key);
+      if (item !== null && typeof item !== 'string') invalid();
+      return item as string | null;
+    };
+    const optionalNumber = (key: string) => {
+      const item = prop(rawReport, key);
+      if (item !== null && !isInteger(item)) invalid();
+      return item as number | null;
+    };
+    const finishedAt = optionalString('finishedAt');
+    if (finishedAt !== null && !isTimestamp(finishedAt)) invalid();
+    if (typeof prop(rawReport, 'late') !== 'boolean') invalid();
+    report = {
+      runId: optionalString('runId'),
+      finishedAt,
+      durationMs: optionalNumber('durationMs'),
+      exitCode: optionalNumber('exitCode'),
+      message: optionalString('message'),
+      late: prop(rawReport, 'late') as boolean,
+    };
+  } else if (kind === 'http_check' && rawReport !== undefined && rawReport !== null) invalid();
 
   let trigger: string | null = null;
   if (prop(value, 'trigger') !== null && prop(value, 'trigger') !== undefined) {
@@ -339,6 +477,8 @@ export function parseObservation(value: unknown): Observation {
   const observation: Observation = {
     id: value.id,
     monitorId: value.monitorId,
+    kind,
+    report,
     configVersion: value.configVersion,
     initiatedBy: value.initiatedBy,
     trigger,
@@ -346,14 +486,19 @@ export function parseObservation(value: unknown): Observation {
     counted: value.counted,
     maintenanceWindowId: windowId,
     notCountedReason,
-    request: parseCheckConfig(value.request),
+    request:
+      kind === 'http_check'
+        ? parseCheckConfig(value.request)
+        : value.request === null
+          ? null
+          : invalid(),
     startedAt: value.startedAt,
     completedAt: value.completedAt,
     durationMs: value.durationMs,
     outcome: value.outcome,
-    reason: value.reason,
-    bodyBytesRead: value.bodyBytesRead,
-    bodyTruncated: value.bodyTruncated,
+    reason: prop(value, 'reason') as string,
+    bodyBytesRead: kind === 'http_check' ? (prop(value, 'bodyBytesRead') as number) : 0,
+    bodyTruncated: kind === 'http_check' ? (prop(value, 'bodyTruncated') as boolean) : false,
   };
   if (
     'observedStatus' in value &&
@@ -403,6 +548,14 @@ function parseMonitorRecord(value: unknown): MonitorRecord {
   if (typeof value !== 'object' || value === null) invalid();
   if (!('status' in value)) invalid();
   return { ...parseMonitor(value), status: parseMonitorStatus(prop(value, 'status')) };
+}
+function parseCreatedMonitor(value: unknown): CreatedMonitor {
+  const monitor = parseMonitorRecord(value);
+  if (monitor.kind === 'heartbeat') {
+    if (!isNonEmptyString(prop(value as object, 'issuedToken'))) invalid();
+    return { ...monitor, issuedToken: prop(value as object, 'issuedToken') as string };
+  }
+  return monitor;
 }
 
 function parseMonitorList(body: unknown): MonitorRecord[] {
@@ -466,7 +619,31 @@ export function parseIntervals(value: unknown): Intervals {
   ) {
     invalid();
   }
-  return { intervalSeconds, defaultIntervalSeconds: value.defaultIntervalSeconds };
+  const hb = prop(value, 'heartbeat');
+  if (typeof hb !== 'object' || hb === null) invalid();
+  const list = (key: string) => {
+    const values = prop(hb, key);
+    if (
+      !Array.isArray(values) ||
+      values.length === 0 ||
+      values.some((entry) => !isInteger(entry) || entry < 1)
+    )
+      invalid();
+    return values as number[];
+  };
+  const hbInterval = prop(hb, 'defaultIntervalSeconds');
+  const hbGrace = prop(hb, 'defaultGraceSeconds');
+  if (!isInteger(hbInterval) || hbInterval < 1 || !isInteger(hbGrace) || hbGrace < 1) invalid();
+  return {
+    intervalSeconds,
+    defaultIntervalSeconds: value.defaultIntervalSeconds,
+    heartbeat: {
+      intervalSeconds: list('intervalSeconds'),
+      graceSeconds: list('graceSeconds'),
+      defaultIntervalSeconds: hbInterval,
+      defaultGraceSeconds: hbGrace,
+    },
+  };
 }
 
 /** `GET /api/monitors` — every lifecycle, oldest first (server order). */
@@ -478,8 +655,8 @@ export function listMonitors(signal?: AbortSignal): Promise<MonitorRecord[]> {
 export function createMonitor(
   input: CreateMonitorInput,
   signal?: AbortSignal,
-): Promise<MonitorRecord> {
-  return requestJson(MONITORS_PATH, parseMonitorRecord, { method: 'POST', body: input, signal });
+): Promise<CreatedMonitor> {
+  return requestJson(MONITORS_PATH, parseCreatedMonitor, { method: 'POST', body: input, signal });
 }
 
 /** `GET /api/monitors/{id}`. */
@@ -546,4 +723,60 @@ export function listGaps(id: string, limit = GAP_LIMIT, signal?: AbortSignal): P
 /** `GET /api/intervals` — the intervals this process offers, ascending. */
 export function listIntervals(signal?: AbortSignal): Promise<Intervals> {
   return requestJson('/api/intervals', parseIntervals, { signal });
+}
+
+export type IssuedToken = { token: string; hint: string; createdAt: string };
+function parseIssuedToken(value: unknown): IssuedToken {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !isNonEmptyString(prop(value, 'token')) ||
+    !isNonEmptyString(prop(value, 'hint')) ||
+    !isTimestamp(prop(value, 'createdAt'))
+  )
+    invalid();
+  return {
+    token: prop(value, 'token') as string,
+    hint: prop(value, 'hint') as string,
+    createdAt: prop(value, 'createdAt') as string,
+  };
+}
+export function rotateHeartbeatToken(id: string): Promise<IssuedToken> {
+  return requestJson(
+    `${MONITORS_PATH}/${encodeURIComponent(id)}/heartbeat/token`,
+    parseIssuedToken,
+    { method: 'POST' },
+  );
+}
+export function revokeHeartbeatToken(id: string): Promise<void> {
+  return requestNoContent(`${MONITORS_PATH}/${encodeURIComponent(id)}/heartbeat/token`);
+}
+export type Liveness = { aliveAt: string; outages: { from: string; to: string }[] };
+export function getLiveness(signal?: AbortSignal): Promise<Liveness> {
+  return requestJson(
+    '/api/system/liveness',
+    (value: unknown) => {
+      if (
+        typeof value !== 'object' ||
+        value === null ||
+        !isTimestamp(prop(value, 'aliveAt')) ||
+        !Array.isArray(prop(value, 'outages'))
+      )
+        invalid();
+      return {
+        aliveAt: prop(value, 'aliveAt') as string,
+        outages: (prop(value, 'outages') as unknown[]).map((entry) => {
+          if (
+            typeof entry !== 'object' ||
+            entry === null ||
+            !isTimestamp(prop(entry, 'from')) ||
+            !isTimestamp(prop(entry, 'to'))
+          )
+            invalid();
+          return { from: prop(entry, 'from') as string, to: prop(entry, 'to') as string };
+        }),
+      };
+    },
+    { signal },
+  );
 }

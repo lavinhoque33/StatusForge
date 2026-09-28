@@ -45,7 +45,16 @@ function baseStubs(
     [OBSERVATIONS_GET]: () => jsonResponse({ observations: overrides.observations ?? [] }),
     [GAPS_GET]: () => jsonResponse({ gaps: overrides.gaps ?? [] }),
     [INTERVALS_GET]: () =>
-      jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+      jsonResponse({
+        intervalSeconds: [60, 300, 600, 900],
+        defaultIntervalSeconds: 300,
+        heartbeat: {
+          intervalSeconds: [300, 900, 3600],
+          graceSeconds: [60, 300, 900],
+          defaultIntervalSeconds: 3600,
+          defaultGraceSeconds: 900,
+        },
+      }),
   };
 }
 
@@ -94,7 +103,16 @@ describe('MonitorDetailPage', () => {
       [OBSERVATIONS_GET]: () => jsonResponse({ observations: [] }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
     });
 
     render(<MonitorDetailPage monitorId="monitor-1" />);
@@ -184,7 +202,16 @@ describe('MonitorDetailPage', () => {
         }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
       [CHECKS_POST]: () =>
         new Promise<Response>((resolve) => {
           releaseCheck = (response) => {
@@ -311,7 +338,16 @@ describe('MonitorDetailPage', () => {
       [OBSERVATIONS_GET]: () => jsonResponse({ observations: [] }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
       [CHECKS_POST]: () => jsonResponse({ error: 'archived' }, 409),
     });
 
@@ -354,7 +390,16 @@ describe('MonitorDetailPage', () => {
       [OBSERVATIONS_GET]: () => jsonResponse({ observations: [] }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
       [MONITOR_PATCH]: () => jsonResponse(monitorRecordFixture({ intervalSeconds: 60 })),
     });
 
@@ -381,7 +426,16 @@ describe('MonitorDetailPage', () => {
       [OBSERVATIONS_GET]: () => jsonResponse({ observations: [] }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
     });
 
     render(<MonitorDetailPage monitorId="monitor-1" />);
@@ -403,7 +457,16 @@ describe('MonitorDetailPage', () => {
       [OBSERVATIONS_GET]: () => jsonResponse({ observations: [] }),
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
       [MONITOR_PATCH]: () => jsonResponse({ error: 'version_conflict' }, 409),
     });
 
@@ -612,7 +675,16 @@ describe('MonitorDetailPage', () => {
       },
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
       [CHECKS_POST]: () => {
         checkRuns += 1;
         return jsonResponse(observationFixture({ counted: true }), 201);
@@ -674,7 +746,16 @@ describe('MonitorDetailPage', () => {
       },
       [GAPS_GET]: () => jsonResponse({ gaps: [] }),
       [INTERVALS_GET]: () =>
-        jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+        jsonResponse({
+          intervalSeconds: [60, 300, 600, 900],
+          defaultIntervalSeconds: 300,
+          heartbeat: {
+            intervalSeconds: [300, 900, 3600],
+            graceSeconds: [60, 300, 900],
+            defaultIntervalSeconds: 3600,
+            defaultGraceSeconds: 900,
+          },
+        }),
     });
 
     render(<MonitorDetailPage monitorId="monitor-1" />);

@@ -3,11 +3,13 @@ import type { FieldIssue } from '../api/http';
 import type { Intervals } from '../api/monitors';
 import { IntervalField } from './IntervalField';
 import { fieldErrorMessage } from '../lib/errors';
+import { intervalLabel } from '../lib/intervals';
 import type { MonitorFormFields } from '../lib/monitorForm';
 
 type MonitorFormProps = {
   fields: MonitorFormFields;
   onFieldsChange: (fields: MonitorFormFields) => void;
+  allowKindChoice?: boolean;
   fieldErrors: Record<string, FieldIssue>;
   formMessage: string | null;
   pending: boolean;
@@ -101,6 +103,7 @@ export function MonitorForm({
   pending,
   disabled = false,
   intervals,
+  allowKindChoice = false,
   storedIntervalSeconds,
   onIntervalChange,
   submitLabel,
@@ -122,43 +125,127 @@ export function MonitorForm({
         error={fieldErrors['name']}
         disabled={disabled}
       />
-      <TextField
-        id="monitor-url"
-        name="url"
-        label="URL"
-        hint="Loopback http URL, for example http://127.0.0.1:8090/healthy"
-        value={fields.url}
-        onChange={(url) => onFieldsChange({ ...fields, url })}
-        error={fieldErrors['check.url']}
-        disabled={disabled}
-      />
-      <TextField
-        id="monitor-expected-status"
-        name="expectedStatus"
-        label="Expected status"
-        type="number"
-        min={100}
-        max={599}
-        step={1}
-        value={fields.expectedStatus}
-        onChange={(expectedStatus) => onFieldsChange({ ...fields, expectedStatus })}
-        error={fieldErrors['check.expectedStatus']}
-        disabled={disabled}
-      />
-      <TextField
-        id="monitor-deadline-seconds"
-        name="deadlineSeconds"
-        label="Deadline (seconds)"
-        hint="1 to 30 seconds"
-        type="number"
-        min={1}
-        max={30}
-        step={1}
-        value={fields.deadlineSeconds}
-        onChange={(deadlineSeconds) => onFieldsChange({ ...fields, deadlineSeconds })}
-        error={fieldErrors['check.deadlineMs']}
-        disabled={disabled}
-      />
+      {allowKindChoice ? (
+        <div className="form-field">
+          <label htmlFor="monitor-kind">Type</label>
+          <select
+            id="monitor-kind"
+            value={fields.kind}
+            disabled={disabled}
+            onChange={(event) =>
+              onFieldsChange({
+                ...fields,
+                kind: event.target.value as MonitorFormFields['kind'],
+                openAfter: event.target.value === 'heartbeat' ? '1' : '2',
+                recoverAfter: event.target.value === 'heartbeat' ? '1' : '2',
+              })
+            }
+          >
+            <option value="http">HTTP check</option>
+            <option value="heartbeat">Heartbeat</option>
+          </select>
+        </div>
+      ) : null}
+      {fields.kind === 'http' ? (
+        <>
+          <TextField
+            id="monitor-url"
+            name="url"
+            label="URL"
+            hint="Loopback http URL, for example http://127.0.0.1:8090/healthy"
+            value={fields.url}
+            onChange={(url) => onFieldsChange({ ...fields, url })}
+            error={fieldErrors['check.url']}
+            disabled={disabled}
+          />
+          <TextField
+            id="monitor-expected-status"
+            name="expectedStatus"
+            label="Expected status"
+            type="number"
+            min={100}
+            max={599}
+            step={1}
+            value={fields.expectedStatus}
+            onChange={(expectedStatus) => onFieldsChange({ ...fields, expectedStatus })}
+            error={fieldErrors['check.expectedStatus']}
+            disabled={disabled}
+          />
+          <TextField
+            id="monitor-deadline-seconds"
+            name="deadlineSeconds"
+            label="Deadline (seconds)"
+            hint="1 to 30 seconds"
+            type="number"
+            min={1}
+            max={30}
+            step={1}
+            value={fields.deadlineSeconds}
+            onChange={(deadlineSeconds) => onFieldsChange({ ...fields, deadlineSeconds })}
+            error={fieldErrors['check.deadlineMs']}
+            disabled={disabled}
+          />
+        </>
+      ) : (
+        <>
+          <div className="form-field">
+            <label htmlFor="heartbeat-interval">Heartbeat interval</label>
+            <select
+              id="heartbeat-interval"
+              value={fields.heartbeatIntervalSeconds}
+              disabled={disabled || intervals === null}
+              onChange={(event) => {
+                const interval = Number(event.target.value);
+                onFieldsChange({
+                  ...fields,
+                  heartbeatIntervalSeconds: interval,
+                  heartbeatGraceSeconds: Math.min(
+                    fields.heartbeatGraceSeconds,
+                    intervals?.heartbeat.graceSeconds
+                      .filter((seconds) => seconds <= interval)
+                      .at(-1) ?? interval,
+                  ),
+                });
+              }}
+            >
+              {(intervals?.heartbeat.intervalSeconds ?? [fields.heartbeatIntervalSeconds]).map(
+                (seconds) => (
+                  <option key={seconds} value={seconds}>
+                    {intervalLabel(seconds)}
+                  </option>
+                ),
+              )}
+            </select>
+            {fieldErrors['heartbeat.intervalSeconds'] ? (
+              <span role="alert">
+                {fieldErrorMessage(fieldErrors['heartbeat.intervalSeconds'])}
+              </span>
+            ) : null}
+          </div>
+          <div className="form-field">
+            <label htmlFor="heartbeat-grace">Grace period</label>
+            <select
+              id="heartbeat-grace"
+              value={fields.heartbeatGraceSeconds}
+              disabled={disabled || intervals === null}
+              onChange={(event) =>
+                onFieldsChange({ ...fields, heartbeatGraceSeconds: Number(event.target.value) })
+              }
+            >
+              {(intervals?.heartbeat.graceSeconds ?? [fields.heartbeatGraceSeconds])
+                .filter((seconds) => seconds <= fields.heartbeatIntervalSeconds)
+                .map((seconds) => (
+                  <option key={seconds} value={seconds}>
+                    {intervalLabel(seconds)}
+                  </option>
+                ))}
+            </select>
+            {fieldErrors['heartbeat.graceSeconds'] ? (
+              <span role="alert">{fieldErrorMessage(fieldErrors['heartbeat.graceSeconds'])}</span>
+            ) : null}
+          </div>
+        </>
+      )}
       <TextField
         id="monitor-open-after"
         name="openAfter"
@@ -187,13 +274,15 @@ export function MonitorForm({
         error={fieldErrors['incidentPolicy.recoverAfter']}
         disabled={disabled}
       />
-      <IntervalField
-        id="monitor-interval"
-        intervals={intervals}
-        storedSeconds={storedIntervalSeconds}
-        onChange={(seconds) => onIntervalChange?.(seconds)}
-        disabled={disabled}
-      />
+      {fields.kind === 'http' ? (
+        <IntervalField
+          id="monitor-interval"
+          intervals={intervals}
+          storedSeconds={storedIntervalSeconds}
+          onChange={(seconds) => onIntervalChange?.(seconds)}
+          disabled={disabled}
+        />
+      ) : null}
       {formMessage === null ? null : (
         <p className="form-message" role="alert">
           {formMessage}

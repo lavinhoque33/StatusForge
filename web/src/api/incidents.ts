@@ -29,6 +29,7 @@ export type AttemptResult =
   | 'process_stopped';
 
 export type Evidence = {
+  kind: 'http_check' | 'heartbeat_report' | 'heartbeat_missed';
   observationId: string;
   startedAt: string;
   initiatedBy: string;
@@ -137,6 +138,10 @@ function array<T>(value: unknown, parse: (item: unknown) => T): T[] {
 function evidence(value: unknown): Evidence {
   const v = record(value);
   return {
+    kind:
+      v.kind === undefined
+        ? 'http_check'
+        : choice(v.kind, ['http_check', 'heartbeat_report', 'heartbeat_missed']),
     observationId: string(v.observationId),
     startedAt: time(v.startedAt),
     initiatedBy: string(v.initiatedBy),

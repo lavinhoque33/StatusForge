@@ -24,6 +24,7 @@ func (p Policy) Defaults() Policy {
 
 type (
 	Evidence struct {
+		Kind                string  `json:"kind"           dynamodbav:"kind,omitempty"`
 		ObservationID       string  `json:"observationId"  dynamodbav:"observationId"`
 		StartedAt           string  `json:"startedAt"      dynamodbav:"startedAt"`
 		InitiatedBy         string  `json:"initiatedBy"    dynamodbav:"initiatedBy"`
@@ -50,6 +51,14 @@ type (
 		Last     *Evidence
 	}
 )
+
+func (e Evidence) MarshalJSON() ([]byte, error) {
+	type stored Evidence
+	if e.Kind == "" {
+		e.Kind = "http_check"
+	}
+	return json.Marshal(stored(e))
+}
 
 func Evaluate(
 	policy Policy,
@@ -145,9 +154,10 @@ func RetryAt(start time.Time, attempts int, schedule []time.Duration) (time.Time
 
 type (
 	PayloadMonitor struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		URL  string `json:"url"`
+		ID   string  `json:"id"`
+		Name string  `json:"name"`
+		URL  *string `json:"url"`
+		Kind string  `json:"kind"`
 	}
 	PayloadIncident struct {
 		ID           string  `json:"id"`

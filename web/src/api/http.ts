@@ -118,7 +118,7 @@ async function readJson(response: Response): Promise<unknown | undefined> {
 }
 
 type JsonRequestInit = {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
 };
@@ -165,4 +165,22 @@ export async function requestJson<T>(
     throw new ApiInvalidResponseError(response.status);
   }
   return parse(payload);
+}
+
+/** A no-content mutation; never attempts to parse the successful 204 body. */
+export async function requestNoContent(path: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiUnreachableError();
+  }
+  if (response.status === 204) return;
+  const payload = await readJson(response);
+  if (!response.ok && payload !== undefined) throw errorFromResponse(response.status, payload);
+  throw new ApiInvalidResponseError(response.status);
 }

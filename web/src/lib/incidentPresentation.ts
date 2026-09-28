@@ -63,6 +63,10 @@ export function eventWords(event: IncidentEvent): string {
   }
 }
 export function evidenceWords(evidence: Evidence): string {
+  if (evidence.kind === 'heartbeat_missed')
+    return `Missing — no heartbeat report by deadline; ${evidence.initiatedBy}, v${evidence.configVersion}`;
+  if (evidence.kind === 'heartbeat_report')
+    return `${outcomeWord(evidence.outcome)} — job reported ${evidence.reason === 'reported_failure' ? 'failure' : 'success'}; ${evidence.initiatedBy}, v${evidence.configVersion}`;
   const reason =
     evidence.reason === 'wrong_status'
       ? `wrong status${evidence.observedStatus === null ? '' : `: got ${evidence.observedStatus}`}`

@@ -11,6 +11,9 @@ import { fieldErrorMessage } from './errors';
 
 export type MonitorFormFields = {
   name: string;
+  kind: 'http' | 'heartbeat';
+  heartbeatIntervalSeconds: number;
+  heartbeatGraceSeconds: number;
   url: string;
   expectedStatus: string;
   deadlineSeconds: string;
@@ -21,6 +24,9 @@ export type MonitorFormFields = {
 /** Defaults for a new monitor. */
 export const DEFAULT_MONITOR_FIELDS: MonitorFormFields = {
   name: '',
+  kind: 'http',
+  heartbeatIntervalSeconds: 3600,
+  heartbeatGraceSeconds: 900,
   url: 'http://127.0.0.1:8090/',
   expectedStatus: '200',
   deadlineSeconds: '10',
@@ -33,6 +39,8 @@ export const MONITOR_FIELD_PATHS: readonly string[] = [
   'name',
   'check.url',
   'check.expectedStatus',
+  'heartbeat.intervalSeconds',
+  'heartbeat.graceSeconds',
   'check.deadlineMs',
   'incidentPolicy.openAfter',
   'incidentPolicy.recoverAfter',
@@ -42,9 +50,12 @@ export const MONITOR_FIELD_PATHS: readonly string[] = [
 export function monitorFormFields(monitor: Monitor): MonitorFormFields {
   return {
     name: monitor.name,
-    url: monitor.check.url,
-    expectedStatus: String(monitor.check.expectedStatus),
-    deadlineSeconds: String(monitor.check.deadlineMs / 1000),
+    kind: monitor.kind,
+    heartbeatIntervalSeconds: monitor.heartbeat?.intervalSeconds ?? 3600,
+    heartbeatGraceSeconds: monitor.heartbeat?.graceSeconds ?? 900,
+    url: monitor.check?.url ?? '',
+    expectedStatus: String(monitor.check?.expectedStatus ?? 200),
+    deadlineSeconds: String((monitor.check?.deadlineMs ?? 10000) / 1000),
     openAfter: String(monitor.incidentPolicy.openAfter),
     recoverAfter: String(monitor.incidentPolicy.recoverAfter),
   };

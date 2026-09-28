@@ -14,6 +14,9 @@ func (s *Store) initializeLegacyCursor(
 	ctx context.Context,
 	m monitor.Monitor,
 ) (monitor.Monitor, error) {
+	if m.Kind == "heartbeat" {
+		return monitor.WithStatus(m, s.now()), nil
+	}
 	if m.IntervalSeconds == 0 {
 		m.IntervalSeconds = monitor.DefaultIntervalSeconds
 	}

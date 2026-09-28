@@ -33,6 +33,9 @@ export function monitorFixture(overrides: Partial<Monitor> = {}): Monitor {
     name: 'Sample target',
     lifecycle: 'active',
     configVersion: 1,
+    kind: 'http',
+    heartbeat: null,
+    expectation: null,
     intervalSeconds: 300,
     check: checkFixture(),
     incidentPolicy: { openAfter: 2, recoverAfter: 2 },
@@ -69,6 +72,8 @@ export function monitorRecordFixture(
 
 export function observationFixture(overrides: Partial<Observation> = {}): Observation {
   return {
+    kind: 'http_check',
+    report: null,
     id: 'observation-1',
     monitorId: 'monitor-1',
     configVersion: 1,

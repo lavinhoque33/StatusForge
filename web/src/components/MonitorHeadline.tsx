@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import type { Monitor, MonitorStatus } from '../api/monitors';
+import type { Monitor, MonitorRecord, MonitorStatus } from '../api/monitors';
 import { outcomeWord } from '../lib/outcomes';
 import { effectiveState, headlineParts, stateClass } from '../lib/statusHeadline';
+import { heartbeatHeadline, heartbeatState } from '../lib/heartbeatHeadline';
 import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
 
 type MonitorHeadlineProps = {
@@ -9,6 +10,7 @@ type MonitorHeadlineProps = {
   intervalSeconds: number;
   now: number;
   maintenance?: Monitor['maintenance'];
+  monitor?: MonitorRecord;
 };
 
 /** Render `text` with its single `<time>` slot replaced by the real element. */
@@ -44,8 +46,10 @@ export function MonitorHeadline({
   intervalSeconds,
   now,
   maintenance,
+  monitor,
 }: MonitorHeadlineProps) {
-  const state = effectiveState(status, now);
+  const state =
+    monitor?.kind === 'heartbeat' ? heartbeatState(monitor, now) : effectiveState(status, now);
   const parts = headlineParts(status, now, intervalSeconds);
   const active = maintenance?.active;
   const suffix =
@@ -73,6 +77,14 @@ export function MonitorHeadline({
     );
   }
 
+  if (monitor?.kind === 'heartbeat') {
+    return (
+      <p className={`monitor-headline ${stateClass(state)}`}>
+        {heartbeatHeadline(monitor, now)}
+        {suffix}
+      </p>
+    );
+  }
   return (
     <p className={`monitor-headline ${stateClass(state)}`}>
       {parts.time === null ? parts.text : renderWithTime(parts.text, parts.time)}

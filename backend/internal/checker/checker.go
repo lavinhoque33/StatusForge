@@ -49,6 +49,7 @@ func (r *Runner) Run(ctx context.Context, m monitor.Monitor) (o monitor.Observat
 	}
 	startMono := time.Now()
 	o = monitor.Observation{
+		Kind:          "http_check",
 		ID:            rand.Text(),
 		MonitorID:     m.ID,
 		ConfigVersion: m.ConfigVersion,

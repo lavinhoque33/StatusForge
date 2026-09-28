@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiValidationError, isAbortError, type FieldIssue } from '../api/http';
 import { createMonitor, listIntervals, type Intervals } from '../api/monitors';
 import { MonitorForm } from '../components/MonitorForm';
+import { HeartbeatTokenPanel } from '../components/HeartbeatTokenPanel';
 import { describeApiError } from '../lib/errors';
 import { intervalChoice, type IntervalChoice } from '../lib/intervalChoice';
 import {
@@ -27,6 +28,9 @@ export function MonitorCreatePage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, FieldIssue>>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [issued, setIssued] = useState<{ token: string; id: string; ingestPath: string } | null>(
+    null,
+  );
   const choice = useRef<IntervalChoice>(intervalChoice());
 
   useEffect(() => {
@@ -45,15 +49,33 @@ export function MonitorCreatePage() {
     setPending(true);
     setFieldErrors({});
     setFormMessage(null);
-    createMonitor({
-      name: fields.name,
-      check: checkInputFromFields(fields),
-      intervalSeconds: choice.current.current ?? intervals?.defaultIntervalSeconds,
-      incidentPolicy: incidentPolicyFromFields(fields),
-    })
+    createMonitor(
+      fields.kind === 'heartbeat'
+        ? {
+            kind: 'heartbeat',
+            name: fields.name,
+            heartbeat: {
+              intervalSeconds: fields.heartbeatIntervalSeconds,
+              graceSeconds: fields.heartbeatGraceSeconds,
+            },
+            incidentPolicy: incidentPolicyFromFields(fields),
+          }
+        : {
+            name: fields.name,
+            check: checkInputFromFields(fields),
+            intervalSeconds: choice.current.current ?? intervals?.defaultIntervalSeconds,
+            incidentPolicy: incidentPolicyFromFields(fields),
+          },
+    )
       .then((monitor) => {
         setPending(false);
-        navigate(`/monitors/${encodeURIComponent(monitor.id)}`);
+        if (monitor.kind === 'heartbeat' && monitor.issuedToken && monitor.heartbeat) {
+          setIssued({
+            token: monitor.issuedToken,
+            id: monitor.id,
+            ingestPath: monitor.heartbeat.ingestPath,
+          });
+        } else navigate(`/monitors/${encodeURIComponent(monitor.id)}`);
       })
       .catch((error: unknown) => {
         if (isAbortError(error)) return;
@@ -72,22 +94,31 @@ export function MonitorCreatePage() {
     <section aria-labelledby="create-monitor-heading">
       <h2 id="create-monitor-heading">New monitor</h2>
       <p>
-        A monitor checks one loopback http target on a schedule you choose. Only hosts listed in
-        STATUSFORGE_ALLOWED_TARGETS are accepted.
+        Choose an HTTP check for a loopback target, or a heartbeat to receive completion reports
+        from a job.
       </p>
-      <MonitorForm
-        fields={fields}
-        onFieldsChange={setFields}
-        fieldErrors={fieldErrors}
-        formMessage={formMessage}
-        pending={pending}
-        intervals={intervals}
-        onIntervalChange={(seconds) => {
-          choice.current.current = seconds;
-        }}
-        submitLabel="Create monitor"
-        onSubmit={submit}
-      />
+      {issued === null ? (
+        <MonitorForm
+          allowKindChoice
+          fields={fields}
+          onFieldsChange={setFields}
+          fieldErrors={fieldErrors}
+          formMessage={formMessage}
+          pending={pending}
+          intervals={intervals}
+          onIntervalChange={(seconds) => {
+            choice.current.current = seconds;
+          }}
+          submitLabel="Create monitor"
+          onSubmit={submit}
+        />
+      ) : (
+        <HeartbeatTokenPanel
+          token={issued.token}
+          ingestPath={issued.ingestPath}
+          onDismiss={() => navigate(`/monitors/${encodeURIComponent(issued.id)}`)}
+        />
+      )}
       <p>
         <Link to="/">Back to monitors</Link>
       </p>

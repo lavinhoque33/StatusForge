@@ -11,6 +11,7 @@ import { IncidentDetailPage } from './IncidentDetailPage';
 
 const at = '2026-09-27T10:00:00.000Z';
 const evidence: Evidence = {
+  kind: 'http_check',
   observationId: 'o1',
   startedAt: at,
   initiatedBy: 'scheduled',

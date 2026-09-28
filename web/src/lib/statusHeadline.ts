@@ -33,6 +33,8 @@ function stateWord(state: MonitorStatusEffective): string {
     case 'failing':
     case 'checker_problem':
       return outcomeWord(state);
+    case 'late':
+      return 'Late';
     case 'stale':
       return 'Stale';
     case 'unknown':
@@ -125,6 +127,8 @@ export function headlineParts(
     case 'failing':
     case 'checker_problem':
       return outcomeHeadline(status, now);
+    case 'late':
+      return { word: 'Late', text: 'Late', time: null };
     case 'stale':
       return staleHeadline(status, now, intervalSeconds);
     case 'unknown':

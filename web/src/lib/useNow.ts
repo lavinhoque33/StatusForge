@@ -22,7 +22,7 @@ export const FRESHNESS_REFRESH_MS = 5_000;
  */
 export function useNow(
   intervalMs: number = RELATIVE_AGE_REFRESH_MS,
-  deadlineMs: number | null = null,
+  deadlineMs: number | readonly number[] | null = null,
 ): number {
   const [now, setNow] = useState(() => Date.now());
 
@@ -33,8 +33,10 @@ export function useNow(
 
   useEffect(() => {
     if (deadlineMs === null) return;
-    const wait = deadlineMs - Date.now();
-    if (wait <= 0) return;
+    const candidates = Array.isArray(deadlineMs) ? deadlineMs : [deadlineMs];
+    const future = candidates.filter((instant) => instant > Date.now());
+    if (future.length === 0) return;
+    const wait = Math.min(...future) - Date.now();
     const timer = window.setTimeout(() => setNow(Date.now()), wait + 1);
     return () => window.clearTimeout(timer);
   }, [deadlineMs]);

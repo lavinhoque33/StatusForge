@@ -18,6 +18,7 @@ func (s *Store) evaluationItems(
 	at time.Time,
 ) (incident.Evaluation, *incident.Open, []types.TransactWriteItem, error) {
 	snapshot := incident.Evidence{
+		Kind:                o.Kind,
 		ObservationID:       o.ID,
 		StartedAt:           o.StartedAt,
 		InitiatedBy:         o.InitiatedBy,

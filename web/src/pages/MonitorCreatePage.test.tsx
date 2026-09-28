@@ -7,7 +7,16 @@ const INTERVALS_GET = 'GET /api/intervals';
 
 const INTERVALS_OK = {
   [INTERVALS_GET]: () =>
-    jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+    jsonResponse({
+      intervalSeconds: [60, 300, 600, 900],
+      defaultIntervalSeconds: 300,
+      heartbeat: {
+        intervalSeconds: [300, 900, 3600],
+        graceSeconds: [60, 300, 900],
+        defaultIntervalSeconds: 3600,
+        defaultGraceSeconds: 900,
+      },
+    }),
 };
 
 afterEach(() => {
@@ -62,6 +71,66 @@ describe('MonitorCreatePage', () => {
       intervalSeconds: 60,
       incidentPolicy: { openAfter: 2, recoverAfter: 2 },
     });
+  });
+
+  it('filters grace by interval and shows the issued token only until navigation', async () => {
+    const issuedToken = 'sfh_secret-once';
+    const heartbeat = monitorRecordFixture(
+      {
+        id: 'heartbeat-1',
+        kind: 'heartbeat',
+        check: null,
+        intervalSeconds: null,
+        heartbeat: {
+          intervalSeconds: 300,
+          graceSeconds: 300,
+          token: { hint: 'once', createdAt: '2026-09-27T10:00:00.000Z' },
+          lastReportAt: null,
+          ingestPath: '/ingest/heartbeats/heartbeat-1',
+        },
+        expectation: {
+          dueAt: '2026-09-27T10:05:00.000Z',
+          lateAt: '2026-09-27T10:05:00.000Z',
+          missingAt: '2026-09-27T10:10:00.000Z',
+          staleAt: '2026-09-27T10:10:35.000Z',
+        },
+      },
+      { reason: 'waiting_for_first_report' },
+    );
+    const fetchMock = stubApi({
+      ...INTERVALS_OK,
+      'POST /api/monitors': () => jsonResponse({ ...heartbeat, issuedToken }, 201),
+    });
+    const { unmount } = render(<MonitorCreatePage />);
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'heartbeat' } });
+    const interval = await screen.findByLabelText('Heartbeat interval');
+    fireEvent.change(interval, { target: { value: '300' } });
+    const grace = screen.getByLabelText('Grace period');
+    expect(Array.from(grace.querySelectorAll('option')).map((option) => option.value)).toEqual([
+      '60',
+      '300',
+    ]);
+    expect(grace).toHaveValue('300');
+    fireEvent.click(screen.getByRole('button', { name: 'Create monitor' }));
+    expect(await screen.findByText('sfh_secret-once')).toBeInTheDocument();
+    expect(screen.getByText(/Shown once/)).toBeInTheDocument();
+    expect(
+      screen.getByText((text) =>
+        text.includes(
+          'curl -fsS -X POST -H "Authorization: Bearer sfh_secret-once" http://127.0.0.1:8080/ingest/heartbeats/heartbeat-1',
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(JSON.parse(String(callsTo(fetchMock, 'POST', '/api/monitors')[0]?.[1]?.body))).toEqual({
+      kind: 'heartbeat',
+      name: '',
+      heartbeat: { intervalSeconds: 300, graceSeconds: 300 },
+      incidentPolicy: { openAfter: 1, recoverAfter: 1 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    unmount();
+    render(<MonitorCreatePage />);
+    expect(screen.queryByText(issuedToken)).not.toBeInTheDocument();
   });
 
   it('sends no interval when /api/intervals is unavailable, letting the backend default apply', async () => {

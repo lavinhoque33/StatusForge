@@ -31,6 +31,7 @@ export function outcomeWord(outcome: CheckOutcome): string {
  * the meaning of an existing observation.
  */
 export function observationReason(observation: Observation): string {
+  if (observation.request === null) return observation.reason.split('_').join(' ');
   switch (observation.reason) {
     case 'ok':
       return 'ok';

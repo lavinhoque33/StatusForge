@@ -22,8 +22,14 @@ function GapRow({ gap }: { gap: Gap }) {
         </span>
       </td>
       <td data-label="Reason">
-        {gap.missedCount === 1 ? 'Missed 1 check' : `Missed ${gap.missedCount} checks`} —{' '}
-        {gapReasonWords(gap.reason)}
+        {gap.reason === 'not_observed' ? (
+          'Not observed — StatusForge was not receiving'
+        ) : (
+          <>
+            {gap.missedCount === 1 ? 'Missed 1 check' : `Missed ${gap.missedCount} checks`} —{' '}
+            {gapReasonWords(gap.reason)}
+          </>
+        )}
       </td>
       <td data-label="Status">—</td>
       <td data-label="Duration">—</td>
@@ -57,13 +63,21 @@ export function TimelineTable({
   observations,
   gaps,
   windows = [],
+  monitorKind = 'http',
 }: {
   observations: Observation[];
   gaps: Gap[];
   windows?: Window[];
+  monitorKind?: 'http' | 'heartbeat';
 }) {
   if (observations.length === 0 && gaps.length === 0 && windows.length === 0) {
-    return <p>No checks have been recorded for this monitor.</p>;
+    return (
+      <p>
+        {monitorKind === 'http'
+          ? 'No checks have been recorded for this monitor.'
+          : 'No reports have been recorded for this heartbeat.'}
+      </p>
+    );
   }
 
   const timeline: Array<
@@ -128,14 +142,49 @@ export function TimelineTable({
                   </time>
                 </td>
                 <td data-label="Outcome">
-                  <OutcomeLabel observation={entry.observation} />
+                  {entry.observation.kind === 'heartbeat_report' ? (
+                    entry.observation.report?.late ? (
+                      'Received late'
+                    ) : (
+                      'Received'
+                    )
+                  ) : entry.observation.kind === 'heartbeat_missed' ? (
+                    'Missing'
+                  ) : (
+                    <OutcomeLabel observation={entry.observation} />
+                  )}
                   {entry.observation.maintenanceWindowId === null ? null : (
                     <span> · Maintenance</span>
                   )}
                 </td>
-                <td data-label="Reason">{observationReason(entry.observation)}</td>
-                <td data-label="Status">{entry.observation.observedStatus ?? '—'}</td>
-                <td data-label="Duration">{entry.observation.durationMs} ms</td>
+                <td data-label="Reason">
+                  {entry.observation.kind === 'heartbeat_report' ? (
+                    <>
+                      Run ID: {entry.observation.report?.runId ?? '—'}
+                      {entry.observation.report?.message ? (
+                        <> · Message: {entry.observation.report.message}</>
+                      ) : null}
+                    </>
+                  ) : entry.observation.kind === 'heartbeat_missed' ? (
+                    'No report by deadline'
+                  ) : (
+                    observationReason(entry.observation)
+                  )}
+                </td>
+                <td data-label="Status">
+                  {entry.observation.kind === 'heartbeat_report'
+                    ? `Exit code: ${entry.observation.report?.exitCode ?? '—'}`
+                    : (entry.observation.observedStatus ?? '—')}
+                </td>
+                <td data-label="Duration">
+                  {entry.observation.kind === 'heartbeat_report'
+                    ? entry.observation.report?.durationMs === null
+                      ? '—'
+                      : `${entry.observation.report?.durationMs} ms`
+                    : entry.observation.kind === 'heartbeat_missed'
+                      ? '—'
+                      : `${entry.observation.durationMs} ms`}
+                </td>
                 <td data-label="Version">v{entry.observation.configVersion}</td>
                 <td data-label="Initiated by">
                   {entry.observation.initiatedBy}

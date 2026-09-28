@@ -159,7 +159,7 @@ func (s *Store) intent(
 		inc.ID+":"+key,
 		kind,
 		seq,
-		incident.PayloadMonitor{ID: m.ID, Name: m.Name, URL: m.Check.URL},
+		incident.PayloadMonitor{ID: m.ID, Name: m.Name, URL: payloadURL(m), Kind: monitorKind(m)},
 		incident.PayloadIncident{
 			ID:           inc.ID,
 			OpenedAt:     inc.OpenedAt,

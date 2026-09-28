@@ -1,6 +1,7 @@
 /** Route matching for monitor and incident pages. */
 export type Route =
   | { name: 'monitors' }
+  | { name: 'activity' }
   | { name: 'create-monitor' }
   | { name: 'monitor-detail'; monitorId: string }
   | { name: 'incidents' }
@@ -11,6 +12,7 @@ export function matchRoute(pathname: string): Route {
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
   if (path === '/') return { name: 'monitors' };
   if (path === '/incidents') return { name: 'incidents' };
+  if (path === '/activity') return { name: 'activity' };
 
   const segments = path.split('/').filter((segment) => segment !== '');
   if (segments.length === 2 && segments[0] === 'monitors') {
