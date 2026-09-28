@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Gap, Observation } from '../api/monitors';
 import type { Window } from '../api/maintenance';
 import { observationReason } from '../lib/outcomes';
@@ -5,6 +6,7 @@ import { gapReasonWords, notCountedReasonWords } from '../lib/reasons';
 import { formatLocalWithOffset } from '../lib/time';
 import { mergeTimeline, type TimelineEntry } from '../lib/timeline';
 import { OutcomeLabel } from './OutcomeLabel';
+import { ScrollRegion } from './ScrollRegion';
 
 function GapRow({ gap }: { gap: Gap }) {
   const from = formatLocalWithOffset(new Date(gap.fromDueAt));
@@ -70,6 +72,7 @@ export function TimelineTable({
   windows?: Window[];
   monitorKind?: 'http' | 'heartbeat';
 }) {
+  const captionId = useId();
   if (observations.length === 0 && gaps.length === 0 && windows.length === 0) {
     return (
       <p>
@@ -108,9 +111,9 @@ export function TimelineTable({
   }
   timeline.sort((a, b) => b.instant - a.instant);
   return (
-    <div className="table-wrapper">
+    <ScrollRegion labelledBy={captionId}>
       <table className="observations">
-        <caption>Checks and gaps, newest first</caption>
+        <caption id={captionId}>Checks and gaps, newest first</caption>
         <thead>
           <tr>
             <th scope="col">Started (local)</th>
@@ -201,7 +204,7 @@ export function TimelineTable({
           )}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 

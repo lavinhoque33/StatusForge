@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSystem, type SystemInfo } from './api/system';
 import { AttentionBanner } from './components/AttentionBanner';
 import { IncidentDetailPage } from './pages/IncidentDetailPage';
@@ -13,11 +13,65 @@ import { OverviewPage } from './pages/OverviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { Link } from './router/Link';
 import { usePathname } from './router/history';
-import { matchRoute } from './router/routes';
+import { matchRoute, type Route } from './router/routes';
+
+const pageNames: Record<Route['name'], string> = {
+  overview: 'Overview',
+  monitors: 'Monitors',
+  'create-monitor': 'New monitor',
+  'monitor-detail': 'Monitor',
+  incidents: 'Incidents',
+  'incident-detail': 'Incident',
+  activity: 'Activity',
+  applications: 'Applications',
+  settings: 'Settings',
+  'not-found': 'Page not found',
+};
 
 export default function App() {
   const pathname = usePathname();
   const route = matchRoute(pathname);
+  const routeName = route.name;
+  const previousPathname = useRef(pathname);
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const navigating = previousPathname.current !== pathname;
+    previousPathname.current = pathname;
+    const main = mainRef.current;
+    if (!main) return;
+
+    document.title = `${pageNames[routeName]} — StatusForge`;
+    let focused = !navigating;
+    const updateHeading = () => {
+      const heading = main.querySelector<HTMLHeadingElement>('h2');
+      // The incident loader has a temporary heading; wait for its real heading
+      // so focus does not fall back to body when the loader is replaced.
+      if (
+        !heading ||
+        (routeName === 'incident-detail' &&
+          heading.textContent === 'Incident' &&
+          main.querySelector('[role="status"]'))
+      )
+        return false;
+      heading.tabIndex = -1;
+      document.title = `${heading.textContent?.trim() || pageNames[routeName]} — StatusForge`;
+      if (!focused) {
+        focused = true;
+        // A component may intentionally manage focus during a transition.
+        if (!main.contains(document.activeElement) || document.activeElement === document.body) {
+          heading.focus();
+        }
+      }
+      return true;
+    };
+    if (updateHeading()) return;
+    const observer = new MutationObserver(() => {
+      if (updateHeading()) observer.disconnect();
+    });
+    observer.observe(main, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [pathname, routeName]);
+
   const [identity, setIdentity] = useState<Pick<SystemInfo, 'version' | 'demo'> | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -94,7 +148,7 @@ export default function App() {
         <AttentionBanner />
       </header>
 
-      <main className="app-main">
+      <main className="app-main" ref={mainRef}>
         {route.name === 'overview' ? <OverviewPage /> : null}
         {route.name === 'monitors' ? <MonitorListPage /> : null}
         {route.name === 'create-monitor' ? <MonitorCreatePage /> : null}

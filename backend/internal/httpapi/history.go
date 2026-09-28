@@ -91,12 +91,12 @@ func historyFilter(r *http.Request, fields monitor.Fields) store.HistoryFilter {
 	return f
 }
 
-func historyFailure(w http.ResponseWriter, err error, s *monitorAPI) {
+func historyFailure(w http.ResponseWriter, r *http.Request, err error, s *monitorAPI) {
 	if errors.Is(err, store.ErrInvalidCursor) {
 		fields := monitor.Fields{}
 		fields.Add("before", "invalid_value", "invalid cursor")
 		fieldsError(w, fields)
 		return
 	}
-	s.failure(w, err)
+	s.failure(w, r, err)
 }

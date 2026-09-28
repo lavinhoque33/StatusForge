@@ -55,6 +55,17 @@ describe('mergeTimeline', () => {
 });
 
 describe('TimelineTable', () => {
+  it('names and focuses the horizontally scrollable timeline', () => {
+    render(<TimelineTable observations={[observationFixture()]} gaps={[]} />);
+    const region = screen.getByRole('region', { name: 'Checks and gaps, newest first' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    region.focus();
+    expect(region).toHaveFocus();
+    expect(region).toContainElement(
+      screen.getByRole('table', { name: 'Checks and gaps, newest first' }),
+    );
+  });
+
   it('renders gap rows with the contract wording and the covered range', () => {
     render(
       <TimelineTable

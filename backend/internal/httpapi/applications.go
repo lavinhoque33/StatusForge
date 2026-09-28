@@ -41,7 +41,7 @@ func (s *monitorAPI) apps(w http.ResponseWriter) applicationStore {
 	return v
 }
 
-func (s *monitorAPI) appFailure(w http.ResponseWriter, e error) {
+func (s *monitorAPI) appFailure(w http.ResponseWriter, r *http.Request, e error) {
 	switch {
 	case errors.Is(e, store.ErrNotFound):
 		apiError(w, 404, "application_not_found")
@@ -50,7 +50,7 @@ func (s *monitorAPI) appFailure(w http.ResponseWriter, e error) {
 	case errors.Is(e, store.ErrDuplicateDeployment):
 		apiError(w, 409, "duplicate_deployment")
 	default:
-		s.failure(w, e)
+		s.failure(w, r, e)
 	}
 }
 
@@ -61,7 +61,7 @@ func (s *monitorAPI) listApplications(w http.ResponseWriter, r *http.Request) {
 	}
 	a, e := db.Applications(r.Context())
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"applications": a})
@@ -74,7 +74,7 @@ func (s *monitorAPI) getApplication(w http.ResponseWriter, r *http.Request) {
 	}
 	a, e := db.Application(r.Context(), chi.URLParam(r, "id"))
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, a)
@@ -103,7 +103,7 @@ func (s *monitorAPI) createApplication(w http.ResponseWriter, r *http.Request) {
 	}
 	a, token, e := db.CreateApplication(r.Context(), *req.Name, s.now())
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 201, struct {
@@ -135,7 +135,7 @@ func (s *monitorAPI) renameApplication(w http.ResponseWriter, r *http.Request) {
 	}
 	a, e := db.RenameApplication(r.Context(), chi.URLParam(r, "id"), *req.Name, s.now())
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, a)
@@ -148,7 +148,7 @@ func (s *monitorAPI) archiveApplication(w http.ResponseWriter, r *http.Request) 
 	}
 	a, e := db.ArchiveApplication(r.Context(), chi.URLParam(r, "id"), s.now())
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, a)
@@ -162,7 +162,7 @@ func (s *monitorAPI) applicationToken(w http.ResponseWriter, r *http.Request) {
 	revoke := r.Method == http.MethodDelete
 	value, token, e := db.ApplicationToken(r.Context(), chi.URLParam(r, "id"), revoke, s.now())
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	if revoke {
@@ -198,14 +198,14 @@ func (s *monitorAPI) setMonitorApplication(w http.ResponseWriter, r *http.Reques
 				monitorErr,
 				store.ErrNotFound,
 			) {
-				s.failure(w, monitorErr)
+				s.failure(w, r, monitorErr)
 				return
 			} else if monitorErr != nil {
-				s.failure(w, monitorErr)
+				s.failure(w, r, monitorErr)
 				return
 			}
 		}
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, monitor.WithStatus(m, s.now()))
@@ -222,7 +222,7 @@ func (s *monitorAPI) listDeployments(w http.ResponseWriter, r *http.Request) {
 	}
 	items, e := db.Deployments(r.Context(), chi.URLParam(r, "id"), limit)
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"deployments": items})
@@ -344,7 +344,7 @@ func (s *monitorAPI) manualDeployment(w http.ResponseWriter, r *http.Request) {
 	m.ReportedAt = monitor.Stamp(s.now())
 	m, e = db.PutDeployment(r.Context(), chi.URLParam(r, "id"), "", m)
 	if e != nil {
-		s.appFailure(w, e)
+		s.appFailure(w, r, e)
 		return
 	}
 	writeJSON(w, 201, m)

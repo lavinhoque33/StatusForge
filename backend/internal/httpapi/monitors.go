@@ -235,7 +235,7 @@ func decode(w http.ResponseWriter, r *http.Request, out any, paths map[string]st
 	return true
 }
 
-func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
+func (s *monitorAPI) failure(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		apiError(w, 404, "monitor_not_found")
@@ -250,7 +250,9 @@ func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotEligible):
 		apiError(w, 409, "not_supported")
 	default:
-		s.logger.Error("store unavailable", "reason", "dependency_failure")
+		if r.Context().Err() == nil {
+			s.logger.Error("store unavailable", "reason", "dependency_failure")
+		}
 		apiError(w, 503, "store_unavailable")
 	}
 }
@@ -258,7 +260,7 @@ func (s *monitorAPI) failure(w http.ResponseWriter, err error) {
 func (s *monitorAPI) list(w http.ResponseWriter, r *http.Request) {
 	ms, err := s.store.List(r.Context())
 	if err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	items := make([]monitor.Monitor, 0, len(ms))
@@ -367,7 +369,7 @@ func (s *monitorAPI) create(w http.ResponseWriter, r *http.Request) {
 	m.IncidentPolicy = policy
 	m.IntervalSeconds = interval
 	if err := s.store.Create(r.Context(), m); err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	w.Header().Set("Location", "/api/monitors/"+m.ID)
@@ -384,7 +386,7 @@ func (s *monitorAPI) validateURL(u string, fields monitor.Fields) {
 func (s *monitorAPI) get(w http.ResponseWriter, r *http.Request) {
 	m, err := s.store.Get(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	writeJSON(w, 200, monitor.WithStatus(m, s.now()))
@@ -423,7 +425,7 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	}
 	base, lookupErr := s.store.Get(r.Context(), chi.URLParam(r, "id"))
 	if lookupErr != nil {
-		s.failure(w, lookupErr)
+		s.failure(w, r, lookupErr)
 		return
 	}
 	if base.Kind == "heartbeat" || req.Heartbeat != nil || req.Kind != nil {
@@ -454,7 +456,7 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 	if req.Check != nil {
 		base, err := s.store.Get(r.Context(), chi.URLParam(r, "id"))
 		if err != nil {
-			s.failure(w, err)
+			s.failure(w, r, err)
 			return
 		}
 		value := base.Check
@@ -508,7 +510,7 @@ func (s *monitorAPI) patch(w http.ResponseWriter, r *http.Request) {
 		m, err = s.store.PatchInterval(r.Context(), chi.URLParam(r, "id"), *req.Expected, req.Name, c, req.IntervalSeconds, s.now())
 	}
 	if err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	writeJSON(w, 200, monitor.WithStatus(m, s.now()))
@@ -535,7 +537,7 @@ func (s *monitorAPI) lifecycle(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.store.Lifecycle(r.Context(), chi.URLParam(r, "id"), *req.Action, s.now())
 	if err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	writeJSON(w, 200, monitor.WithStatus(m, s.now()))
@@ -551,7 +553,7 @@ func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := s.store.Get(r.Context(), id); err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	db, ok := s.store.(historyStore)
@@ -561,7 +563,7 @@ func (s *monitorAPI) observations(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := db.HistoryObservations(r.Context(), id, limit, filter)
 	if err != nil {
-		historyFailure(w, err, s)
+		historyFailure(w, r, err, s)
 		return
 	}
 	writeJSON(
@@ -583,7 +585,7 @@ func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
 	}
 	m, token, err := s.store.ClaimManual(r.Context(), id, s.now())
 	if err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	type result struct {
@@ -610,14 +612,14 @@ func (s *monitorAPI) check(w http.ResponseWriter, r *http.Request) {
 	select {
 	case value := <-done:
 		if value.err != nil {
-			s.failure(w, value.err)
+			s.failure(w, r, value.err)
 			return
 		}
 		writeJSON(w, 201, value.o)
 	case <-r.Context().Done():
 		return
 	case <-time.After(time.Duration(m.Check.DeadlineMs)*time.Millisecond + 5*time.Second):
-		s.failure(w, store.ErrUnavailable)
+		s.failure(w, r, store.ErrUnavailable)
 	}
 }
 
@@ -651,7 +653,7 @@ func (s *monitorAPI) gaps(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := s.store.Get(r.Context(), id); err != nil {
-		s.failure(w, err)
+		s.failure(w, r, err)
 		return
 	}
 	db, ok := s.store.(historyStore)
@@ -661,7 +663,7 @@ func (s *monitorAPI) gaps(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := db.HistoryGaps(r.Context(), id, limit, before)
 	if err != nil {
-		historyFailure(w, err, s)
+		historyFailure(w, r, err, s)
 		return
 	}
 	writeJSON(

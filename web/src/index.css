@@ -130,7 +130,12 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 .summary-plot svg[tabindex='0']:focus-visible,
+.table-wrapper:focus-visible,
 .retention-scroll:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+input[type='datetime-local']::-webkit-calendar-picker-indicator:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }

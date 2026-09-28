@@ -24,6 +24,7 @@ import {
   statusBucketLabel,
 } from '../lib/summaryPresentation';
 import { formatLocalWithOffset } from '../lib/time';
+import { ScrollRegion } from './ScrollRegion';
 
 const httpSeries = [
   { key: 'healthy', label: 'Healthy', color: '#217949' },
@@ -78,10 +79,11 @@ function ChartTable({
   latency: boolean;
   deadlineMs?: number;
 }) {
+  const captionId = useId();
   return (
-    <div className="table-wrapper">
+    <ScrollRegion labelledBy={captionId}>
       <table className="observations summary-table">
-        <caption>
+        <caption id={captionId}>
           {latency ? (
             <>
               Response time by bucket — {summary.window}, {summary.bucketSeconds / 3600} h buckets.
@@ -172,7 +174,7 @@ function ChartTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 function HistoryChart({

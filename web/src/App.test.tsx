@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { jsonResponse, stubApi, systemFixture } from './test/fixtures';
@@ -67,6 +67,19 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Open incidents' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Backend status' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Monitors' })).toHaveAttribute('href', '/monitors');
+
+    const incidentsHeading = screen.getByRole('heading', { name: 'Incidents' });
+    await waitFor(() => expect(incidentsHeading).toHaveFocus());
+    expect(incidentsHeading).toHaveAttribute('tabindex', '-1');
+    expect(document.title).toBe('Incidents — StatusForge');
+    fireEvent.click(screen.getByRole('link', { name: 'Monitors' }));
+    const monitorsHeading = screen.getByRole('heading', { name: 'Monitors' });
+    await waitFor(() => expect(monitorsHeading).toHaveFocus());
+    expect(document.title).toBe('Monitors — StatusForge');
+    window.history.pushState(null, '', '/incidents');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Incidents' })).toHaveFocus());
+    expect(document.title).toBe('Incidents — StatusForge');
   });
 
   it('shows a not-found page for an unknown address', async () => {

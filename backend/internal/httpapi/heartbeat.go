@@ -144,7 +144,7 @@ func (s *monitorAPI) createHeartbeat(
 		CreatedAt: monitor.Stamp(now),
 	}
 	if e = s.store.Create(r.Context(), m); e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	payload, e := json.Marshal(monitor.WithStatus(m, now))
@@ -230,7 +230,7 @@ func (s *monitorAPI) patchHeartbeat(
 		s.now(),
 	)
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, monitor.WithStatus(m, s.now()))
@@ -252,7 +252,7 @@ func (s *monitorAPI) tokenChange(w http.ResponseWriter, r *http.Request, revoke 
 	}
 	token, metadata, e := v.HeartbeatToken(r.Context(), chi.URLParam(r, "id"), revoke, s.now())
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	if revoke {

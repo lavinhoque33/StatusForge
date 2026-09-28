@@ -1,13 +1,18 @@
 package httpapi
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
+	"github.com/lavinhoque33/statusforge/backend/internal/store"
 )
 
 func TestRequestLogger(t *testing.T) {
@@ -131,6 +136,68 @@ func TestRequestLogger(t *testing.T) {
 			for _, forbidden := range test.forbidden {
 				if strings.Contains(logs.String(), forbidden) {
 					t.Errorf("log output contains %q:\n%s", forbidden, logs.String())
+				}
+			}
+		})
+	}
+}
+
+type unavailableListStore struct {
+	MonitorStore
+	cancel context.CancelFunc
+}
+
+func (s unavailableListStore) List(context.Context) ([]monitor.Monitor, error) {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	return nil, store.ErrUnavailable
+}
+
+func TestStoreUnavailableRequestCancellationLogs(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		name := "live request"
+		if canceled {
+			name = "client canceled"
+		}
+		t.Run(name, func(t *testing.T) {
+			logs, logger := newLogRecorder()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			db := unavailableListStore{}
+			if canceled {
+				db.cancel = cancel
+			}
+			api := &monitorAPI{store: db, logger: logger}
+			handler := chi.Chain(middlewareChain(logger, stoppedClock(testNow))...).Handler(
+				http.HandlerFunc(api.list),
+			)
+			req := httptest.NewRequest(http.MethodGet, "/api/monitors", nil).WithContext(ctx)
+			req.Host = "localhost:8080"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusServiceUnavailable ||
+				rec.Body.String() != "{\"error\":\"store_unavailable\"}\n" {
+				t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+			}
+			request := logs.find(t, "http request")
+			if canceled {
+				if request["level"] != slog.LevelInfo.String() ||
+					request["client_canceled"] != true {
+					t.Errorf("canceled request log = %v", request)
+				}
+				for _, line := range logs.lines(t) {
+					if line["level"] == slog.LevelError.String() {
+						t.Errorf("canceled request generated ERROR: %v", line)
+					}
+				}
+			} else {
+				failure := logs.find(t, "store unavailable")
+				if failure["level"] != slog.LevelError.String() || failure["reason"] != "dependency_failure" {
+					t.Errorf("dependency failure log = %v", failure)
+				}
+				if request["level"] != slog.LevelError.String() {
+					t.Errorf("request log = %v", request)
 				}
 			}
 		})

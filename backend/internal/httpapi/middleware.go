@@ -52,22 +52,28 @@ func requestIDHeader(next http.Handler) http.Handler {
 
 // requestLogger writes one structured line per request.
 //
-// It records the method, path, status, duration_ms, and request_id, and
-// nothing else: the query string, request headers, and request bodies are not
-// logged, so credentials and payloads cannot leak into the log.
+// It records the method, path, status, duration_ms, and request_id; a canceled
+// request also carries client_canceled=true. Query strings, request headers,
+// and request bodies are not logged.
 func requestLogger(logger *slog.Logger, now func() time.Time) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := now()
 			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
-				logger.LogAttrs(r.Context(), requestLevel(recorder.status), "http request",
+				attrs := []slog.Attr{
 					slog.String("method", r.Method),
 					slog.String("path", r.URL.Path),
 					slog.Int("status", recorder.status),
 					slog.Int64("duration_ms", now().Sub(start).Milliseconds()),
 					slog.String("request_id", middleware.GetReqID(r.Context())),
-				)
+				}
+				level := requestLevel(recorder.status)
+				if r.Context().Err() != nil {
+					level = slog.LevelInfo
+					attrs = append(attrs, slog.Bool("client_canceled", true))
+				}
+				logger.LogAttrs(r.Context(), level, "http request", attrs...)
 			}()
 			next.ServeHTTP(recorder, r)
 		})

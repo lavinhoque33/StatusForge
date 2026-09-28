@@ -93,7 +93,7 @@ func (s *monitorAPI) listIncidents(w http.ResponseWriter, r *http.Request, mid s
 	}
 	items, e := db.ListIncidents(r.Context(), mid, state, limit, s.now())
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"incidents": items})
@@ -114,7 +114,7 @@ func (s *monitorAPI) incidentDetail(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(e, store.ErrIncidentNotFound) {
 			apiError(w, 404, "incident_not_found")
 		} else {
-			s.failure(w, e)
+			s.failure(w, r, e)
 		}
 		return
 	}
@@ -128,7 +128,7 @@ func (s *monitorAPI) incidentDetail(w http.ResponseWriter, r *http.Request) {
 		} else {
 			m, err := s.store.Get(r.Context(), in.MonitorID)
 			if err != nil {
-				s.failure(w, err)
+				s.failure(w, r, err)
 				return
 			}
 			appID = m.ApplicationID
@@ -142,7 +142,7 @@ func (s *monitorAPI) incidentDetail(w http.ResponseWriter, r *http.Request) {
 		var err error
 		nearby, err = deployments.NearbyDeployments(r.Context(), appID, opened, resolved, s.now())
 		if err != nil {
-			s.failure(w, err)
+			s.failure(w, r, err)
 			return
 		}
 	}
@@ -185,7 +185,7 @@ func (s *monitorAPI) retry(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(e, store.ErrNotFailed):
 			apiError(w, 409, "not_failed")
 		default:
-			s.failure(w, e)
+			s.failure(w, r, e)
 		}
 		return
 	}
@@ -203,7 +203,7 @@ func (s *monitorAPI) attention(w http.ResponseWriter, r *http.Request) {
 	}
 	notes, e := db.Attention(r.Context(), limit)
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"notifications": notes})

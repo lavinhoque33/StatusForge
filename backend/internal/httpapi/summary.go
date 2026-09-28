@@ -29,7 +29,7 @@ func (s *monitorAPI) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	m, e := s.store.Get(r.Context(), chi.URLParam(r, "id"))
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	if m.Kind == "heartbeat" {
@@ -42,7 +42,7 @@ func (s *monitorAPI) summary(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := db.HeartbeatSummary(r.Context(), m, window, s.now())
 		if err != nil {
-			s.failure(w, err)
+			s.failure(w, r, err)
 			return
 		}
 		writeJSON(w, 200, result)
@@ -55,7 +55,7 @@ func (s *monitorAPI) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	result, e := db.Summary(r.Context(), m, window, s.now())
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, result)
@@ -69,7 +69,7 @@ func (s *monitorAPI) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	result, e := db.Overview(r.Context(), s.now())
 	if e != nil {
-		s.failure(w, e)
+		s.failure(w, r, e)
 		return
 	}
 	writeJSON(w, 200, result)

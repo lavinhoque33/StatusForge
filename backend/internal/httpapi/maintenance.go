@@ -34,7 +34,7 @@ func (s *monitorAPI) maintenanceStore(w http.ResponseWriter) maintenanceStore {
 	return db
 }
 
-func (s *monitorAPI) maintenanceFailure(w http.ResponseWriter, err error) {
+func (s *monitorAPI) maintenanceFailure(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, store.ErrOverlaps):
 		field := monitor.Fields{}
@@ -49,7 +49,7 @@ func (s *monitorAPI) maintenanceFailure(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrWindowNotFound):
 		apiError(w, 404, "window_not_found")
 	default:
-		s.failure(w, err)
+		s.failure(w, r, err)
 	}
 }
 
@@ -64,7 +64,7 @@ func (s *monitorAPI) maintenanceList(w http.ResponseWriter, r *http.Request) {
 	}
 	windows, err := db.ListMaintenance(r.Context(), chi.URLParam(r, "id"), limit, s.now())
 	if err != nil {
-		s.maintenanceFailure(w, err)
+		s.maintenanceFailure(w, r, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"windows": windows})
@@ -134,7 +134,7 @@ func (s *monitorAPI) maintenanceCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	window, err := db.CreateMaintenance(r.Context(), chi.URLParam(r, "id"), start, end, note, now)
 	if err != nil {
-		s.maintenanceFailure(w, err)
+		s.maintenanceFailure(w, r, err)
 		return
 	}
 	writeJSON(w, 201, window)
@@ -152,7 +152,7 @@ func (s *monitorAPI) maintenanceCancel(w http.ResponseWriter, r *http.Request) {
 		s.now(),
 	)
 	if err != nil {
-		s.maintenanceFailure(w, err)
+		s.maintenanceFailure(w, r, err)
 		return
 	}
 	writeJSON(w, 200, window)

@@ -1,18 +1,21 @@
+import { useId } from 'react';
 import type { Observation } from '../api/monitors';
 import { observationReason } from '../lib/outcomes';
 import { formatLocalWithOffset } from '../lib/time';
 import { OutcomeLabel } from './OutcomeLabel';
+import { ScrollRegion } from './ScrollRegion';
 
 /** Observation history, newest first. Collapses to stacked rows below 600 px. */
 export function ObservationsTable({ observations }: { observations: Observation[] }) {
+  const captionId = useId();
   if (observations.length === 0) {
     return <p>No checks have been recorded for this monitor.</p>;
   }
 
   return (
-    <div className="table-wrapper">
+    <ScrollRegion labelledBy={captionId}>
       <table className="observations">
-        <caption>Observations, newest first</caption>
+        <caption id={captionId}>Observations, newest first</caption>
         <thead>
           <tr>
             <th scope="col">Started (local)</th>
@@ -47,7 +50,7 @@ export function ObservationsTable({ observations }: { observations: Observation[
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 

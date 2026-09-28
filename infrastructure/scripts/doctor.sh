@@ -23,6 +23,11 @@ check "make" make --version
 check "docker" docker --version
 check "docker compose" docker compose version
 check "docker daemon" docker info --format 'server {{.ServerVersion}}'
+if out="$(python3 --version 2>&1)"; then
+  printf '  ok       %-16s %s\n' "python3" "$out"
+else
+  printf '  optional %-16s %s\n' "python3" "missing; needed only for make security-check"
+fi
 
 node_major="$(node --version 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')"
 if [ -n "$node_major" ] && [ "$node_major" -lt 24 ]; then
