@@ -39,10 +39,15 @@ func (s *Store) evaluationItems(
 		opened := monitor.Stamp(at)
 		first := t.Evidence[0]
 		last := t.Evidence[len(t.Evidence)-1]
+		var applicationID *string
+		if m.ApplicationID != "" {
+			applicationID = &m.ApplicationID
+		}
 		in := Incident{
 			ID:               id,
 			MonitorID:        m.ID,
 			MonitorName:      m.Name,
+			ApplicationID:    applicationID,
 			State:            "open",
 			OpenedAt:         opened,
 			OpeningEvidence:  t.Evidence,

@@ -1,22 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function HeartbeatTokenPanel({
   token,
   ingestPath,
   onDismiss,
+  applicationId,
+  focusOnShow = false,
 }: {
   token: string;
   ingestPath: string;
   onDismiss: () => void;
+  applicationId?: string;
+  focusOnShow?: boolean;
 }) {
   const [notice, setNotice] = useState('');
-  const command = `curl -fsS -X POST -H "Authorization: Bearer ${token}" http://127.0.0.1:8080${ingestPath}`;
+  const copyRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (applicationId || focusOnShow) copyRef.current?.focus();
+  }, [applicationId, focusOnShow, token]);
+  const command = applicationId
+    ? `curl -fsS -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -d '{"version":"1.2.3"}' http://127.0.0.1:8080/ingest/applications/${encodeURIComponent(applicationId)}/deployments`
+    : `curl -fsS -X POST -H "Authorization: Bearer ${token}" http://127.0.0.1:8080${ingestPath}`;
   return (
-    <section className="panel token-panel" aria-label="New heartbeat token">
-      <h3>Heartbeat token — Shown once</h3>
+    <section
+      className="panel token-panel"
+      aria-label={applicationId ? 'New application token' : 'New heartbeat token'}
+    >
+      <h3>{applicationId ? 'Application' : 'Heartbeat'} token — Shown once</h3>
       <p>Copy this token now. It will not be available again after you leave this page.</p>
       <code>{token}</code>
       <button
+        ref={copyRef}
         type="button"
         className="button"
         onClick={() => {
@@ -29,7 +43,7 @@ export function HeartbeatTokenPanel({
         Copy token
       </button>
       <p role="status">{notice}</p>
-      <p>Example report:</p>
+      <p>Example {applicationId ? 'deployment' : 'report'}:</p>
       <pre>
         <code>{command}</code>
       </pre>

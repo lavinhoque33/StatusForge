@@ -435,6 +435,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PUT /control/mode", s.handlePutMode)
 	mux.HandleFunc("POST /control/run", s.handleRun)
 	mux.HandleFunc("POST /control/replay", s.handleReplay)
+	mux.HandleFunc("POST /control/deploy", s.handleDeploy)
 	return mux
 }
 
@@ -524,6 +525,60 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 	}
 	s.send(r.Context(), body)
 	writeJSON(w, http.StatusOK, s.Status())
+}
+
+func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.DeployURL == "" || s.cfg.DeployToken == "" {
+		writeControlError(w, 409, "not_configured", "deploy URL and token are required")
+		return
+	}
+	var request struct {
+		Version      string  `json:"version"`
+		Description  *string `json:"description,omitempty"`
+		Link         *string `json:"link,omitempty"`
+		DeploymentID *string `json:"deploymentId,omitempty"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxControlBytes))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF ||
+		request.Version == "" {
+		writeControlError(
+			w,
+			400,
+			"invalid_request",
+			"version is required and the body must be valid JSON",
+		)
+		return
+	}
+	body, _ := json.Marshal(request)
+	req, err := http.NewRequestWithContext(
+		r.Context(),
+		http.MethodPost,
+		s.cfg.DeployURL,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		writeControlError(w, 502, "api_unreachable", "deployment API unreachable")
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+s.cfg.DeployToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		writeControlError(w, 502, "api_unreachable", "deployment API unreachable")
+		return
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil || len(data) > maxResponseBytes {
+		writeControlError(w, 502, "api_unreachable", "deployment API response unavailable")
+		return
+	}
+	var payload any
+	if len(data) > 0 && json.Unmarshal(data, &payload) != nil {
+		payload = nil
+	}
+	writeJSON(w, 200, map[string]any{"apiStatus": resp.StatusCode, "response": payload})
 }
 
 // writeControlError writes the fixture's error envelope. Messages name the

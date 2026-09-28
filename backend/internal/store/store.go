@@ -200,6 +200,9 @@ func (s *Store) Get(ctx context.Context, id string) (monitor.Monitor, error) {
 	if attributevalue.UnmarshalMap(out.Item, &m) != nil {
 		return monitor.Monitor{}, ErrUnavailable
 	}
+	if err := s.visibleApplication(ctx, &m); err != nil {
+		return monitor.Monitor{}, err
+	}
 	m.IncidentPolicy = m.IncidentPolicy.Defaults()
 	if err := s.presentMaintenance(ctx, &m); err != nil {
 		return monitor.Monitor{}, err
@@ -240,6 +243,9 @@ func (s *Store) List(ctx context.Context) ([]monitor.Monitor, error) {
 				return nil, ErrUnavailable
 			}
 			m.IncidentPolicy = m.IncidentPolicy.Defaults()
+			if err := s.visibleApplication(ctx, &m); err != nil {
+				return nil, err
+			}
 			if err := s.presentMaintenance(ctx, &m); err != nil {
 				return nil, err
 			}

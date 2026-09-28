@@ -16,6 +16,7 @@ const evidence = {
 const incident = {
   id: 'i',
   monitorId: 'm',
+  applicationId: null,
   monitorName: 'Monitor',
   state: 'open',
   resolution: null,
@@ -75,7 +76,13 @@ describe('incident API boundary', () => {
   ])('rejects unexpected notification or event vocabulary', async ({ note: candidate, events }) => {
     stubApi({
       'GET /api/monitors/m/incidents/i': () =>
-        jsonResponse({ incident, events, gaps: [], notifications: [candidate] }),
+        jsonResponse({
+          incident,
+          events,
+          gaps: [],
+          notifications: [candidate],
+          nearbyDeployments: [],
+        }),
     });
     await expect(getIncident('m', 'i')).rejects.toBeInstanceOf(ApiInvalidResponseError);
   });

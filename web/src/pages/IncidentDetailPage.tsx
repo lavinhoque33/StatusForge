@@ -16,6 +16,7 @@ import {
   resolutionWords,
   timelineWords,
 } from '../lib/incidentPresentation';
+import { intervalLabel } from '../lib/intervals';
 import { formatLocalWithOffset } from '../lib/time';
 import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
@@ -137,7 +138,7 @@ export function IncidentDetailPage({
         )}
       </section>
     );
-  const { incident, events, gaps, notifications } = detail;
+  const { incident, events, gaps, notifications, nearbyDeployments } = detail;
   return (
     <article aria-labelledby="incident-heading">
       <h2 id="incident-heading">
@@ -194,6 +195,37 @@ export function IncidentDetailPage({
             : `; last at ${formatLocalWithOffset(new Date(incident.lastCheckerProblem.startedAt))}: ${evidenceWords(incident.lastCheckerProblem)}`}
         </p>
         <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
+      </section>
+      <section className="panel" aria-labelledby="nearby-deployments-heading">
+        <h3 id="nearby-deployments-heading">Nearby deployments</h3>
+        <p>Context only — a deployment near an incident does not show it caused the incident.</p>
+        {nearbyDeployments.length === 0 ? (
+          <p>No deployments near this incident.</p>
+        ) : (
+          <ul className="incident-list">
+            {nearbyDeployments.map((marker) => (
+              <li key={marker.id}>
+                <p>
+                  Deployment {marker.version} reported{' '}
+                  {intervalLabel(Math.abs(marker.offsetSeconds))}
+                  {marker.offsetSeconds < 0 ? ' before this incident opened' : ' after it opened'}
+                  {' · '}
+                  <time dateTime={marker.reportedAt}>
+                    {formatLocalWithOffset(new Date(marker.reportedAt))}
+                  </time>
+                </p>
+                {marker.description ? <p>{marker.description}</p> : null}
+                {marker.link ? (
+                  <p>
+                    <a href={marker.link} rel="noopener noreferrer" target="_blank">
+                      {marker.link}
+                    </a>
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
       <section className="panel" aria-labelledby="incident-timeline-heading">
         <h3 id="incident-timeline-heading">Timeline</h3>

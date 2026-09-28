@@ -67,6 +67,7 @@ export type Expectation = { dueAt: string; lateAt: string; missingAt: string; st
 export type MonitorKind = 'http' | 'heartbeat';
 export type Monitor = {
   id: string;
+  applicationId: string | null;
   name: string;
   lifecycle: Lifecycle;
   configVersion: number;
@@ -252,6 +253,11 @@ export function parseCheckConfig(value: unknown): CheckConfig {
 export function parseMonitor(value: unknown): Monitor {
   if (typeof value !== 'object' || value === null) invalid();
   if (!('id' in value) || !isNonEmptyString(value.id)) invalid();
+  if (
+    !('applicationId' in value) ||
+    (value.applicationId !== null && !isNonEmptyString(value.applicationId))
+  )
+    invalid();
   if (!('name' in value) || typeof value.name !== 'string') invalid();
   if (!('lifecycle' in value) || !isLifecycle(value.lifecycle)) invalid();
   if (!('configVersion' in value) || !isInteger(value.configVersion) || value.configVersion < 1) {
@@ -367,6 +373,7 @@ export function parseMonitor(value: unknown): Monitor {
   const monitor: Monitor = {
     id: value.id,
     name: value.name,
+    applicationId: value.applicationId as string | null,
     lifecycle: value.lifecycle,
     configVersion: value.configVersion,
     intervalSeconds: kind === 'http' ? (value.intervalSeconds as number) : null,
@@ -677,6 +684,16 @@ export function updateMonitor(
   });
 }
 
+/** Context-only membership never changes the configuration version. */
+export function requestApplicationMembership(
+  id: string,
+  applicationId: string | null,
+): Promise<MonitorRecord> {
+  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}/application`, parseMonitorRecord, {
+    method: 'PUT',
+    body: { applicationId },
+  });
+}
 /** `POST /api/monitors/{id}/lifecycle`. */
 export function changeLifecycle(
   id: string,

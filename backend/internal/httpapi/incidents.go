@@ -118,10 +118,44 @@ func (s *monitorAPI) incidentDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	nearby := []store.NearbyMarker{}
+	if deployments, ok := s.store.(interface {
+		NearbyDeployments(context.Context, string, time.Time, *time.Time, time.Time) ([]store.NearbyMarker, error)
+	}); ok {
+		appID := ""
+		if in.ApplicationID != nil {
+			appID = *in.ApplicationID
+		} else {
+			m, err := s.store.Get(r.Context(), in.MonitorID)
+			if err != nil {
+				s.failure(w, err)
+				return
+			}
+			appID = m.ApplicationID
+		}
+		opened, _ := time.Parse(time.RFC3339Nano, in.OpenedAt)
+		var resolved *time.Time
+		if in.ResolvedAt != nil {
+			at, _ := time.Parse(time.RFC3339Nano, *in.ResolvedAt)
+			resolved = &at
+		}
+		var err error
+		nearby, err = deployments.NearbyDeployments(r.Context(), appID, opened, resolved, s.now())
+		if err != nil {
+			s.failure(w, err)
+			return
+		}
+	}
 	writeJSON(
 		w,
 		200,
-		map[string]any{"incident": in, "events": events, "gaps": gaps, "notifications": notes},
+		map[string]any{
+			"incident":          in,
+			"events":            events,
+			"gaps":              gaps,
+			"notifications":     notes,
+			"nearbyDeployments": nearby,
+		},
 	)
 }
 

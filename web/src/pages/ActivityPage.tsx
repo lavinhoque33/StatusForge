@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isAbortError } from '../api/http';
 import { listMonitors, listObservations, type MonitorRecord } from '../api/monitors';
+import { listApplications, listMarkers, type Application } from '../api/applications';
 import { describeApiError } from '../lib/errors';
-import { mergeActivity, type ActivityReport } from '../lib/activity';
+import { mergeActivity, mergeActivityItems, type ActivityItem } from '../lib/activity';
 import { notCountedReasonWords } from '../lib/reasons';
 import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
@@ -10,22 +11,28 @@ import { Link } from '../router/Link';
 
 export function ActivityPage() {
   const [monitors, setMonitors] = useState<MonitorRecord[]>([]);
-  const [reports, setReports] = useState<ActivityReport[]>([]);
+  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [applicationFilter, setApplicationFilter] = useState('all');
   const [filter, setFilter] = useState('all');
   const [counted, setCounted] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<number | null>(null);
   const load = useCallback(async (signal: AbortSignal) => {
     try {
-      const heartbeats = (await listMonitors(signal)).filter(
-        (monitor) => monitor.kind === 'heartbeat',
-      );
-      const lists = await Promise.all(
-        heartbeats.map((monitor) => listObservations(monitor.id, 50, signal)),
-      );
+      const [allMonitors, allApplications] = await Promise.all([
+        listMonitors(signal),
+        listApplications(signal),
+      ]);
+      const heartbeats = allMonitors.filter((monitor) => monitor.kind === 'heartbeat');
+      const [lists, markers] = await Promise.all([
+        Promise.all(heartbeats.map((monitor) => listObservations(monitor.id, 50, signal))),
+        Promise.all(allApplications.map((app) => listMarkers(app.id, signal))),
+      ]);
       if (signal.aborted) return;
       setMonitors(heartbeats);
-      setReports(mergeActivity(heartbeats, lists));
+      setApplications(allApplications);
+      setItems(mergeActivityItems(mergeActivity(heartbeats, lists), allApplications, markers));
       setError(null);
       setUpdated(Date.now());
     } catch (cause) {
@@ -40,17 +47,21 @@ export function ActivityPage() {
     return () => controller.abort();
   }, [load]);
   usePolling({ refresh: () => load(new AbortController().signal) });
-  const visible = reports.filter(
-    ({ monitor, observation }) =>
-      (filter === 'all' || monitor.id === filter) &&
-      (counted === 'all' || observation.counted === (counted === 'counted')),
+  const visible = items.filter((item) =>
+    item.kind === 'deployment'
+      ? filter === 'all' &&
+        counted === 'all' &&
+        (applicationFilter === 'all' || item.application.id === applicationFilter)
+      : (filter === 'all' || item.monitor.id === filter) &&
+        (counted === 'all' || item.observation.counted === (counted === 'counted')) &&
+        (applicationFilter === 'all' || item.monitor.applicationId === applicationFilter),
   );
   return (
     <section aria-labelledby="activity-heading">
       <h2 id="activity-heading">Activity</h2>
       <p>
-        Recent heartbeat reports, newest first. Up to 50 observations per heartbeat, then the 100
-        newest reports across all heartbeats.
+        Recent heartbeat reports and deployments, newest first. Up to 50 observations per heartbeat
+        and 50 markers per application, then the 100 newest entries.
       </p>
       {error ? <p role="alert">{error}</p> : null}
       {updated === null && error === null ? <p role="status">Loading activity…</p> : null}
@@ -64,6 +75,20 @@ export function ActivityPage() {
         </p>
       ) : null}
       <div className="activity-filters">
+        <label htmlFor="activity-application">Application</label>
+        <select
+          id="activity-application"
+          value={applicationFilter}
+          onChange={(event) => setApplicationFilter(event.target.value)}
+        >
+          <option value="all">All applications</option>
+          {applications.map((application) => (
+            <option key={application.id} value={application.id}>
+              {application.name}
+              {application.archivedAt ? ' (archived)' : ''}
+            </option>
+          ))}
+        </select>
         <label htmlFor="activity-heartbeat">Heartbeat</label>
         <select
           id="activity-heartbeat"
@@ -89,31 +114,48 @@ export function ActivityPage() {
         </select>
       </div>
       {updated !== null && visible.length === 0 ? (
-        <p>No reports match these filters.</p>
+        <p>No activity matches these filters.</p>
       ) : (
         <ul className="activity-list">
-          {visible.map(({ monitor, observation }) => (
-            <li key={`${monitor.id}-${observation.id}`} className="panel">
-              <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> ·{' '}
-              {observation.report?.late ? 'Received late' : 'Received'} ·{' '}
-              {observation.counted ? (
-                'Counted'
-              ) : (
-                <>
-                  Not counted —{' '}
-                  {observation.notCountedReason === 'older_than_current'
-                    ? 'older than the newest report'
-                    : notCountedReasonWords(observation.notCountedReason ?? '')}
-                </>
-              )}{' '}
-              ·{' '}
-              <time dateTime={observation.completedAt}>
-                {formatLocalWithOffset(new Date(observation.completedAt))}
-              </time>
-              {observation.report?.runId ? <> · Run ID: {observation.report.runId}</> : null}
-              {observation.report?.message ? <> · {observation.report.message}</> : null}
-            </li>
-          ))}
+          {visible.map((item) =>
+            item.kind === 'deployment' ? (
+              <li key={`deployment-${item.marker.id}`} className="panel">
+                <Link to="/applications">{item.application.name}</Link> · Deployment{' '}
+                {item.marker.version} ·{' '}
+                <time dateTime={item.marker.reportedAt}>
+                  {formatLocalWithOffset(new Date(item.marker.reportedAt))}
+                </time>
+                {item.marker.description ? <> · {item.marker.description}</> : null}
+              </li>
+            ) : (
+              <li key={`${item.monitor.id}-${item.observation.id}`} className="panel">
+                <Link to={`/monitors/${encodeURIComponent(item.monitor.id)}`}>
+                  {item.monitor.name}
+                </Link>{' '}
+                · {item.observation.report?.late ? 'Received late' : 'Received'} ·{' '}
+                {item.observation.counted ? (
+                  'Counted'
+                ) : (
+                  <>
+                    Not counted —{' '}
+                    {item.observation.notCountedReason === 'older_than_current'
+                      ? 'older than the newest report'
+                      : notCountedReasonWords(item.observation.notCountedReason ?? '')}
+                  </>
+                )}
+                {' · '}
+                <time dateTime={item.observation.completedAt}>
+                  {formatLocalWithOffset(new Date(item.observation.completedAt))}
+                </time>
+                {item.observation.report?.runId ? (
+                  <> · Run ID: {item.observation.report.runId}</>
+                ) : null}
+                {item.observation.report?.message ? (
+                  <> · {item.observation.report.message}</>
+                ) : null}
+              </li>
+            ),
+          )}
         </ul>
       )}
     </section>

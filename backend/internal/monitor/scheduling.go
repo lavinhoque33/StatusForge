@@ -60,17 +60,25 @@ func apiTime(value string) string {
 
 func (m Monitor) MarshalJSON() ([]byte, error) {
 	type raw Monitor
+	if m.Kind == "" {
+		m.Kind = "http"
+	}
+	var applicationID *string
+	if m.ApplicationID != "" {
+		applicationID = &m.ApplicationID
+	}
 	if m.Kind != "heartbeat" {
-		if m.Kind == "" {
-			m.Kind = "http"
-		}
-		return json.Marshal(raw(m))
+		return json.Marshal(struct {
+			raw
+			ApplicationID *string `json:"applicationId"`
+		}{raw(m), applicationID})
 	}
 	return json.Marshal(struct {
 		raw
-		Check           any `json:"check"`
-		IntervalSeconds any `json:"intervalSeconds"`
-	}{raw(m), nil, nil})
+		ApplicationID   *string `json:"applicationId"`
+		Check           any     `json:"check"`
+		IntervalSeconds any     `json:"intervalSeconds"`
+	}{raw(m), applicationID, nil, nil})
 }
 
 func (o Observation) MarshalJSON() ([]byte, error) {

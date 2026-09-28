@@ -43,14 +43,19 @@ type (
 		at     time.Time
 	}
 	heartbeatLimiters struct {
-		mu       sync.Mutex
-		monitors map[string]bucket
-		remote   map[string]bucket
+		mu           sync.Mutex
+		monitors     map[string]bucket
+		applications map[string]bucket
+		remote       map[string]bucket
 	}
 )
 
 func newHeartbeatLimiters() *heartbeatLimiters {
-	return &heartbeatLimiters{monitors: map[string]bucket{}, remote: map[string]bucket{}}
+	return &heartbeatLimiters{
+		monitors:     map[string]bucket{},
+		applications: map[string]bucket{},
+		remote:       map[string]bucket{},
+	}
 }
 
 func (l *heartbeatLimiters) allow(collection map[string]bucket, key string, now time.Time) bool {

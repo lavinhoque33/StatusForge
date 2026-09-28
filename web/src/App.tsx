@@ -2,6 +2,7 @@ import { AttentionBanner } from './components/AttentionBanner';
 import { IncidentDetailPage } from './pages/IncidentDetailPage';
 import { IncidentsPage } from './pages/IncidentsPage';
 import { ActivityPage } from './pages/ActivityPage';
+import { ApplicationsPage } from './pages/ApplicationsPage';
 import { BackendStatus } from './components/BackendStatus';
 import { MonitorCreatePage } from './pages/MonitorCreatePage';
 import { MonitorDetailPage } from './pages/MonitorDetailPage';
@@ -45,6 +46,14 @@ export default function App() {
                 Activity
               </Link>
             </li>
+            <li>
+              <Link
+                to="/applications"
+                aria-current={route.name === 'applications' ? 'page' : undefined}
+              >
+                Applications
+              </Link>
+            </li>
           </ul>
         </nav>
         <BackendStatus />
@@ -59,6 +68,7 @@ export default function App() {
         ) : null}
         {route.name === 'incidents' ? <IncidentsPage /> : null}
         {route.name === 'activity' ? <ActivityPage /> : null}
+        {route.name === 'applications' ? <ApplicationsPage /> : null}
         {route.name === 'incident-detail' ? (
           <IncidentDetailPage
             key={`${route.monitorId}:${route.incidentId}`}

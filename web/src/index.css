@@ -380,6 +380,12 @@ textarea:focus-visible {
     content: attr(data-label) ': ';
     font-weight: 600;
   }
+  /* Desktop nowrap columns and explanations must wrap in stacked rows. */
+  .observations td[data-label],
+  .observations .outcome {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 .attention-banner,
 .incident-alert {
@@ -434,6 +440,47 @@ textarea:focus-visible {
 }
 .activity-list li {
   overflow-wrap: anywhere;
+}
+.application-card form {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin: 1rem 0;
+}
+.application-card input,
+.application-card select,
+#new-application-name,
+#monitor-application {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 32rem;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.4rem;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.application-card input[aria-invalid='true'] {
+  border: 2px solid var(--fail);
+}
+.application-card .field,
+.application-members li {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.application-card .field label {
+  display: block;
+}
+.application-members,
+.application-markers {
+  padding-left: 1.25rem;
+}
+.application-members li {
+  margin-bottom: 0.5rem;
 }
 @media (prefers-reduced-motion: reduce) {
   * {

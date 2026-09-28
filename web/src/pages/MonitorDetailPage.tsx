@@ -22,6 +22,7 @@ import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
 import { TimelineTable } from '../components/TimelineTable';
 import { HeartbeatTokenSection } from '../components/HeartbeatTokenSection';
+import { MonitorApplicationSection } from '../components/MonitorApplicationSection';
 import { MaintenanceSection } from '../components/MaintenanceSection';
 import { describeApiError } from '../lib/errors';
 import {
@@ -463,6 +464,14 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         <Link to="/">Back to monitors</Link>
       </p>
 
+      <MonitorApplicationSection
+        monitor={monitor}
+        onChange={(updated) =>
+          setLoad((current) =>
+            current.name === 'ready' ? { ...current, monitor: updated } : current,
+          )
+        }
+      />
       <section className="panel" aria-labelledby="monitor-configuration-heading">
         <h3 id="monitor-configuration-heading">Configuration</h3>
         <dl className="config-list">

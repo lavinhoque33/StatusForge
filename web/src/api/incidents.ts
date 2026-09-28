@@ -1,5 +1,6 @@
 import { ApiInvalidResponseError, requestJson } from './http';
 import type { CheckOutcome, Gap } from './monitors';
+import { parseNearbyDeployment, type NearbyDeployment } from './applications';
 /** Maximum attention rows available from one API read; a full page may hide more. */
 export const ATTENTION_LIMIT = 200;
 
@@ -41,6 +42,7 @@ export type Evidence = {
 export type Incident = {
   id: string;
   monitorId: string;
+  applicationId: string | null;
   monitorName: string;
   state: IncidentState;
   resolution: IncidentResolution | null;
@@ -94,6 +96,7 @@ export type IncidentDetail = {
   events: IncidentEvent[];
   gaps: Gap[];
   notifications: Notification[];
+  nearbyDeployments: NearbyDeployment[];
 };
 
 function invalid(): never {
@@ -157,6 +160,7 @@ export function parseIncident(value: unknown): Incident {
   return {
     id: string(v.id),
     monitorId: string(v.monitorId),
+    applicationId: v.applicationId === null ? null : string(v.applicationId),
     monitorName: string(v.monitorName),
     state: choice(v.state, ['open', 'resolved']),
     resolution:
@@ -314,6 +318,7 @@ export function getIncident(
         events: array(v.events, event),
         gaps: array(v.gaps, gap),
         notifications: array(v.notifications, parseNotification),
+        nearbyDeployments: array(v.nearbyDeployments, parseNearbyDeployment),
       };
     },
     { signal },

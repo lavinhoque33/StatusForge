@@ -23,6 +23,7 @@ const evidence: Evidence = {
 const incident: Incident = {
   id: 'incident-1',
   monitorId: 'monitor-1',
+  applicationId: null,
   monitorName: 'Sample',
   state: 'open',
   resolution: null,
@@ -68,6 +69,19 @@ const detail = {
   events: [{ type: 'opened', at, details: {} }],
   gaps: [],
   notifications: [note],
+  nearbyDeployments: [],
+};
+const marker = {
+  id: 'deployment-1',
+  applicationId: 'app-1',
+  version: '1.2.3',
+  description: '<img src=x onerror=alert(1)>',
+  link: 'https://example.invalid/release',
+  deployedAt: null,
+  deploymentId: null,
+  source: 'manual',
+  reportedAt: at,
+  offsetSeconds: -90,
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -151,4 +165,32 @@ describe('incident presentation', () => {
     expect(await screen.findByRole('heading', { name: 'Opened — delivered' })).toHaveFocus();
     expect(screen.queryByRole('button', { name: 'Retry delivery' })).not.toBeInTheDocument();
   });
+});
+it('shows nearby deployments before, after, and at opening without attributing cause or rendering HTML', async () => {
+  stubApi({
+    [path]: () =>
+      jsonResponse({
+        ...detail,
+        nearbyDeployments: [
+          marker,
+          { ...marker, id: 'deployment-2', version: '1.2.4', offsetSeconds: 0 },
+          { ...marker, id: 'deployment-3', version: '1.2.5', offsetSeconds: 60 },
+        ],
+      }),
+  });
+  render(<IncidentDetailPage monitorId="monitor-1" incidentId="incident-1" />);
+  expect(
+    await screen.findByText(/Deployment 1.2.3 reported 90 s before this incident opened/),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/Deployment 1.2.4 reported 0 s after it opened/)).toBeInTheDocument();
+  expect(screen.getByText(/Deployment 1.2.5 reported 1 min after it opened/)).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      'Context only — a deployment near an incident does not show it caused the incident.',
+    ),
+  ).toBeInTheDocument();
+  expect(document.querySelector('img')).toBeNull();
+  expect(
+    screen.getAllByRole('link', { name: 'https://example.invalid/release' })[0],
+  ).toHaveAttribute('rel', 'noopener noreferrer');
 });

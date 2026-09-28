@@ -113,11 +113,15 @@ export function MonitorCreatePage() {
           onSubmit={submit}
         />
       ) : (
-        <HeartbeatTokenPanel
-          token={issued.token}
-          ingestPath={issued.ingestPath}
-          onDismiss={() => navigate(`/monitors/${encodeURIComponent(issued.id)}`)}
-        />
+        <>
+          <p role="status">Heartbeat created. Token shown once.</p>
+          <HeartbeatTokenPanel
+            token={issued.token}
+            focusOnShow
+            ingestPath={issued.ingestPath}
+            onDismiss={() => navigate(`/monitors/${encodeURIComponent(issued.id)}`)}
+          />
+        </>
       )}
       <p>
         <Link to="/">Back to monitors</Link>

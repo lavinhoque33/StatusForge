@@ -18,6 +18,8 @@ export type ApiErrorCode =
   | 'version_conflict'
   | 'archived'
   | 'invalid_transition'
+  | 'duplicate_name'
+  | 'duplicate_deployment'
   | 'check_in_progress'
   | 'incident_not_found'
   | 'notification_not_found'
@@ -118,7 +120,7 @@ async function readJson(response: Response): Promise<unknown | undefined> {
 }
 
 type JsonRequestInit = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
 };

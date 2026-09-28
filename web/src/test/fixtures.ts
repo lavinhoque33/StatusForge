@@ -30,6 +30,7 @@ export function checkFixture(overrides: Partial<CheckConfig> = {}): CheckConfig 
 export function monitorFixture(overrides: Partial<Monitor> = {}): Monitor {
   return {
     id: 'monitor-1',
+    applicationId: null,
     name: 'Sample target',
     lifecycle: 'active',
     configVersion: 1,

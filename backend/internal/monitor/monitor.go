@@ -22,6 +22,7 @@ type Check struct {
 }
 type Monitor struct {
 	ID               string                   `json:"id"                   dynamodbav:"monitorId"`
+	ApplicationID    string                   `json:"applicationId"        dynamodbav:"applicationId,omitempty"`
 	Name             string                   `json:"name"                 dynamodbav:"name"`
 	Lifecycle        string                   `json:"lifecycle"            dynamodbav:"lifecycle"`
 	ConfigVersion    int                      `json:"configVersion"        dynamodbav:"configVersion"`

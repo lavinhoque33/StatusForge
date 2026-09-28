@@ -27,6 +27,7 @@ var (
 type Incident struct {
 	ID                          string              `json:"id"                          dynamodbav:"incidentId"`
 	MonitorID                   string              `json:"monitorId"                   dynamodbav:"monitorId"`
+	ApplicationID               *string             `json:"applicationId"               dynamodbav:"applicationId,omitempty"`
 	MonitorName                 string              `json:"monitorName"                 dynamodbav:"monitorName"`
 	State                       string              `json:"state"                       dynamodbav:"state"`
 	Resolution                  *string             `json:"resolution"                  dynamodbav:"resolution,omitempty"`

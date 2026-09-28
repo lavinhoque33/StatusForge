@@ -173,6 +173,14 @@ func Generate() (string, error) {
 	return "sfh_" + base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]), nil
 }
 
+func GenerateDeployment() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "sfd_" + base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]), nil
+}
+
 func Hash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])

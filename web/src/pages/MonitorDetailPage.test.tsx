@@ -24,6 +24,7 @@ function stubApi(handlers: Parameters<typeof stubFetch>[0]) {
   return stubFetch({
     [INCIDENTS_GET]: () => jsonResponse({ incidents: [] }),
     [MAINTENANCE_GET]: () => jsonResponse({ windows: [] }),
+    'GET /api/applications': () => jsonResponse({ applications: [] }),
     ...handlers,
   });
 }

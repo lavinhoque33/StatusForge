@@ -34,7 +34,7 @@
 //	POST /control/run     report once now with the current mode (stop: 409)
 //	POST /control/replay  resend the last report verbatim (duplicate runId)
 //
-// The M4b deploy control is deliberately absent from this slice.
+//	POST /control/deploy  post a deployment marker with the application token
 package samplejob
 
 import (
@@ -54,6 +54,8 @@ const (
 	EnvReportURL       = "STATUSFORGE_SAMPLE_JOB_REPORT_URL"
 	EnvToken           = "STATUSFORGE_SAMPLE_JOB_TOKEN"
 	EnvIntervalSeconds = "STATUSFORGE_SAMPLE_JOB_INTERVAL_SECONDS"
+	EnvDeployURL       = "STATUSFORGE_SAMPLE_JOB_DEPLOY_URL"
+	EnvDeployToken     = "STATUSFORGE_SAMPLE_JOB_DEPLOY_TOKEN"
 
 	// DefaultAddr is the fixture's loopback-only default listen address.
 	DefaultAddr = "127.0.0.1:8092"
@@ -89,10 +91,12 @@ const (
 // URL or token starts normally but sends no report until both are set; see
 // Reporting.
 type Config struct {
-	Addr      string
-	ReportURL string
-	Token     string
-	Interval  time.Duration
+	Addr        string
+	ReportURL   string
+	Token       string
+	DeployURL   string
+	DeployToken string
+	Interval    time.Duration
 
 	// Now and NewTicker are injectable for tests; New substitutes the real
 	// clock and ticker when they are nil.
@@ -138,6 +142,12 @@ func LoadConfig(getenv func(string) (string, bool)) (Config, error) {
 	if value, ok := getenv(EnvToken); ok && strings.TrimSpace(value) != "" {
 		cfg.Token = strings.TrimSpace(value)
 	}
+	if value, ok := getenv(EnvDeployURL); ok && strings.TrimSpace(value) != "" {
+		cfg.DeployURL = strings.TrimSpace(value)
+	}
+	if value, ok := getenv(EnvDeployToken); ok && strings.TrimSpace(value) != "" {
+		cfg.DeployToken = strings.TrimSpace(value)
+	}
 	if value, ok := getenv(EnvIntervalSeconds); ok && strings.TrimSpace(value) != "" {
 		seconds, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil {
@@ -158,6 +168,11 @@ func (c Config) Validate() error {
 	}
 	if c.ReportURL != "" {
 		if err := ValidateReportURL(c.ReportURL); err != nil {
+			return err
+		}
+	}
+	if c.DeployURL != "" {
+		if err := ValidateReportURL(c.DeployURL); err != nil {
 			return err
 		}
 	}
