@@ -1,6 +1,13 @@
 /** Fixtures and a boundary-level `fetch` stub shared by the web tests. */
 import { vi, type Mock } from 'vitest';
-import type { CheckConfig, Monitor, Observation } from '../api/monitors';
+import type {
+  CheckConfig,
+  Gap,
+  Monitor,
+  MonitorRecord,
+  MonitorStatus,
+  Observation,
+} from '../api/monitors';
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -26,10 +33,34 @@ export function monitorFixture(overrides: Partial<Monitor> = {}): Monitor {
     name: 'Sample target',
     lifecycle: 'active',
     configVersion: 1,
+    intervalSeconds: 300,
     check: checkFixture(),
     createdAt: '2026-09-27T10:00:00.000Z',
     updatedAt: '2026-09-27T10:00:00.000Z',
     ...overrides,
+  };
+}
+
+/** A presented status; defaults to `unknown`/`no_checks`. */
+export function monitorStatusFixture(overrides: Partial<MonitorStatus> = {}): MonitorStatus {
+  return {
+    state: 'unknown',
+    reason: 'no_checks',
+    observation: null,
+    freshUntil: null,
+    evaluatedAt: '2026-09-27T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A monitor record: the monitor plus its presented status. */
+export function monitorRecordFixture(
+  overrides: Partial<MonitorRecord> = {},
+  statusOverrides: Partial<MonitorStatus> = {},
+): MonitorRecord {
+  return {
+    ...monitorFixture(overrides),
+    status: monitorStatusFixture(statusOverrides),
   };
 }
 
@@ -39,6 +70,10 @@ export function observationFixture(overrides: Partial<Observation> = {}): Observ
     monitorId: 'monitor-1',
     configVersion: 1,
     initiatedBy: 'manual',
+    trigger: null,
+    dueAt: null,
+    counted: false,
+    notCountedReason: null,
     request: checkFixture(),
     startedAt: '2026-09-27T10:15:30.000Z',
     completedAt: '2026-09-27T10:15:30.012Z',
@@ -48,6 +83,20 @@ export function observationFixture(overrides: Partial<Observation> = {}): Observ
     observedStatus: 200,
     bodyBytesRead: 0,
     bodyTruncated: false,
+    ...overrides,
+  };
+}
+
+/** A missed-slot range. */
+export function gapFixture(overrides: Partial<Gap> = {}): Gap {
+  return {
+    id: 'gap-1',
+    monitorId: 'monitor-1',
+    fromDueAt: '2026-09-27T10:05:00.000Z',
+    toDueAt: '2026-09-27T10:20:00.000Z',
+    missedCount: 4,
+    reason: 'not_scheduled',
+    recordedAt: '2026-09-27T10:25:00.000Z',
     ...overrides,
   };
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
+	"github.com/lavinhoque33/statusforge/backend/internal/store"
 	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
 )
 
@@ -21,6 +22,7 @@ type fakeMonitorStore struct {
 	mu           sync.Mutex
 	m            monitor.Monitor
 	observations []monitor.Observation
+	busy         bool
 }
 
 func (f *fakeMonitorStore) Create(_ context.Context, m monitor.Monitor) error {
@@ -33,14 +35,37 @@ func (f *fakeMonitorStore) Create(_ context.Context, m monitor.Monitor) error {
 func (f *fakeMonitorStore) Get(_ context.Context, id string) (monitor.Monitor, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.m.ID != id {
+		return monitor.Monitor{}, store.ErrNotFound
+	}
 	return f.m, nil
 }
 
-func (f *fakeMonitorStore) PutObservation(_ context.Context, o monitor.Observation) error {
+func (f *fakeMonitorStore) ClaimManual(
+	_ context.Context,
+	_ string,
+	_ time.Time,
+) (monitor.Monitor, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.busy {
+		return f.m, "", store.ErrLeaseHeld
+	}
+	f.busy = true
+	return f.m, "token", nil
+}
+
+func (f *fakeMonitorStore) RecordResult(
+	_ context.Context,
+	o monitor.Observation,
+	_ string,
+) (monitor.Observation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	o.Counted = true
 	f.observations = append(f.observations, o)
-	return nil
+	f.busy = false
+	return o, nil
 }
 
 func (f *fakeMonitorStore) Observations(
@@ -51,6 +76,10 @@ func (f *fakeMonitorStore) Observations(
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]monitor.Observation{}, f.observations...), nil
+}
+
+func (f *fakeMonitorStore) Gaps(context.Context, string, int) ([]monitor.Gap, error) {
+	return []monitor.Gap{}, nil
 }
 
 type waitingRunner struct {

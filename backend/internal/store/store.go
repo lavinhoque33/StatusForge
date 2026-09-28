@@ -24,15 +24,19 @@ var (
 	ErrArchived          = errors.New("archived")
 	ErrDuplicate         = errors.New("duplicate_observation")
 	ErrUnavailable       = errors.New("store_unavailable")
+	ErrLeaseHeld         = errors.New("check_in_progress")
+	ErrNotEligible       = errors.New("not_eligible")
 )
 
 type Store struct {
-	db      *dynamodb.Client
-	table   string
-	mu      sync.Mutex
-	ready   bool
-	now     func() time.Time
-	timeout time.Duration
+	db                 *dynamodb.Client
+	table              string
+	mu                 sync.Mutex
+	ready              bool
+	now                func() time.Time
+	timeout            time.Duration
+	lastSuccessfulTick map[string]time.Time
+	needsRecovery      map[string]bool
 }
 
 func New(
@@ -44,7 +48,14 @@ func New(
 	if now == nil {
 		now = time.Now
 	}
-	return &Store{db: client.DynamoDB(), table: table, timeout: timeout * 5, now: now}
+	return &Store{
+		db:                 client.DynamoDB(),
+		table:              table,
+		timeout:            timeout * 5,
+		now:                now,
+		lastSuccessfulTick: make(map[string]time.Time),
+		needsRecovery:      make(map[string]bool),
+	}
 }
 func (s *Store) Initialize(ctx context.Context) error { return s.ensure(ctx) }
 func (s *Store) ensure(ctx context.Context) error {
@@ -102,20 +113,42 @@ func (s *Store) Create(ctx context.Context, m monitor.Monitor) error {
 	if err := s.ensure(ctx); err != nil {
 		return err
 	}
-	item, err := attributevalue.MarshalMap(m)
+	now, _ := time.Parse(time.RFC3339Nano, m.CreatedAt)
+	m.ScheduledThrough = slotStamp(m.ID, m.IntervalSeconds, now)
+	item, err := monitorItem(m)
 	if err != nil {
-		return ErrUnavailable
+		return err
 	}
-	item["PK"] = &types.AttributeValueMemberS{Value: "MONITORS"}
-	item["SK"] = &types.AttributeValueMemberS{Value: "MON#" + m.ID}
-	item["entityType"] = &types.AttributeValueMemberS{Value: "monitor"}
-	_, err = s.db.PutItem(
-		ctx,
-		&dynamodb.PutItemInput{
-			TableName:           aws.String(s.table),
-			Item:                item,
-			ConditionExpression: aws.String("attribute_not_exists(PK)"),
+	work, err := workItem(
+		Work{
+			MonitorID:     m.ID,
+			DueAt:         workStamp(now),
+			Trigger:       "create",
+			ConfigVersion: m.ConfigVersion,
+			State:         "pending",
 		},
+	)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.TransactWriteItems(
+		ctx,
+		&dynamodb.TransactWriteItemsInput{TransactItems: []types.TransactWriteItem{
+			{
+				Put: &types.Put{
+					TableName:           aws.String(s.table),
+					Item:                item,
+					ConditionExpression: aws.String("attribute_not_exists(PK)"),
+				},
+			},
+			{
+				Put: &types.Put{
+					TableName:           aws.String(s.table),
+					Item:                work,
+					ConditionExpression: aws.String("attribute_not_exists(PK)"),
+				},
+			},
+		}},
 	)
 	if err != nil {
 		return ErrUnavailable
@@ -144,6 +177,10 @@ func (s *Store) Get(ctx context.Context, id string) (monitor.Monitor, error) {
 	var m monitor.Monitor
 	if attributevalue.UnmarshalMap(out.Item, &m) != nil {
 		return monitor.Monitor{}, ErrUnavailable
+	}
+	m, err = s.initializeLegacyCursor(ctx, m)
+	if err != nil {
+		return monitor.Monitor{}, err
 	}
 	return m, nil
 }
@@ -176,6 +213,10 @@ func (s *Store) List(ctx context.Context) ([]monitor.Monitor, error) {
 			if attributevalue.UnmarshalMap(item, &m) != nil {
 				return nil, ErrUnavailable
 			}
+			m, err = s.initializeLegacyCursor(ctx, m)
+			if err != nil {
+				return nil, err
+			}
 			result = append(result, m)
 		}
 		if len(out.LastEvaluatedKey) == 0 {
@@ -197,27 +238,49 @@ func (s *Store) save(
 	m monitor.Monitor,
 	condition string,
 	values map[string]types.AttributeValue,
+	trigger string,
+	now time.Time,
 ) error {
-	item, err := attributevalue.MarshalMap(m)
-	if err != nil {
-		return ErrUnavailable
+	values[":name"] = &types.AttributeValueMemberS{Value: m.Name}
+	values[":check"] = mustAV(m.Check)
+	values[":nextVersion"] = &types.AttributeValueMemberN{Value: fmt.Sprint(m.ConfigVersion)}
+	values[":nextUpdated"] = &types.AttributeValueMemberS{Value: m.UpdatedAt}
+	values[":nextLifecycle"] = &types.AttributeValueMemberS{Value: m.Lifecycle}
+	values[":interval"] = &types.AttributeValueMemberN{Value: fmt.Sprint(m.IntervalSeconds)}
+	values[":through"] = &types.AttributeValueMemberS{Value: m.ScheduledThrough}
+	expr := "SET #name = :name, #check = :check, configVersion = :nextVersion, updatedAt = :nextUpdated, lifecycle = :nextLifecycle, intervalSeconds = :interval, scheduledThrough = :through"
+	if m.Lifecycle == "paused" {
+		values[":paused"] = &types.AttributeValueMemberS{Value: m.PausedAt}
+		expr += ", pausedAt = :paused"
 	}
-	item["PK"] = &types.AttributeValueMemberS{Value: "MONITORS"}
-	item["SK"] = &types.AttributeValueMemberS{Value: "MON#" + m.ID}
-	item["entityType"] = &types.AttributeValueMemberS{Value: "monitor"}
-	_, err = s.db.PutItem(
-		ctx,
-		&dynamodb.PutItemInput{
-			TableName:                 aws.String(s.table),
-			Item:                      item,
-			ConditionExpression:       aws.String(condition),
-			ExpressionAttributeValues: values,
-			ExpressionAttributeNames:  map[string]string{"#name": "name"},
-		},
-	)
+	if m.Lifecycle == "archived" {
+		values[":archivedAt"] = &types.AttributeValueMemberS{Value: m.ArchivedAt}
+		expr += ", archivedAt = :archivedAt"
+	}
+	if m.Lifecycle != "paused" {
+		expr += " REMOVE pausedAt"
+	}
+	input := &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(s.table),
+		Key:                       key("MONITORS", "MON#"+m.ID),
+		ConditionExpression:       aws.String(condition),
+		UpdateExpression:          aws.String(expr),
+		ExpressionAttributeValues: values,
+		ExpressionAttributeNames:  map[string]string{"#name": "name", "#check": "check"},
+	}
+	var err error
+	if trigger == "" {
+		_, err = s.db.UpdateItem(ctx, input)
+	} else {
+		work, _ := workItem(Work{MonitorID: m.ID, DueAt: workStamp(now), Trigger: trigger, ConfigVersion: m.ConfigVersion, State: "pending"})
+		_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: []types.TransactWriteItem{
+			{Update: &types.Update{TableName: input.TableName, Key: input.Key, ConditionExpression: input.ConditionExpression, UpdateExpression: input.UpdateExpression, ExpressionAttributeValues: input.ExpressionAttributeValues, ExpressionAttributeNames: input.ExpressionAttributeNames}},
+			{Put: &types.Put{TableName: aws.String(s.table), Item: work, ConditionExpression: aws.String("attribute_not_exists(PK)")}},
+		}})
+	}
 	if err != nil {
 		var conflict *types.ConditionalCheckFailedException
-		if errors.As(err, &conflict) {
+		if errors.As(err, &conflict) || cancelled(err, 0) {
 			return ErrVersionConflict
 		}
 		return ErrUnavailable
@@ -233,6 +296,18 @@ func (s *Store) Patch(
 	check *monitor.Check,
 	now time.Time,
 ) (monitor.Monitor, error) {
+	return s.PatchInterval(ctx, id, expected, name, check, nil, now)
+}
+
+func (s *Store) PatchInterval(
+	ctx context.Context,
+	id string,
+	expected int,
+	name *string,
+	check *monitor.Check,
+	interval *int,
+	now time.Time,
+) (monitor.Monitor, error) {
 	m, err := s.Get(ctx, id)
 	if err != nil {
 		return m, err
@@ -244,16 +319,27 @@ func (s *Store) Patch(
 		return m, ErrVersionConflict
 	}
 	next := m.Patch(name, check, now)
+	trigger := ""
+	if next.ConfigVersion != m.ConfigVersion {
+		trigger = "config_change"
+	}
+	if interval != nil && *interval != m.IntervalSeconds {
+		next.IntervalSeconds = *interval
+		next.ScheduledThrough = slotStamp(id, *interval, now)
+	}
 	err = s.save(
 		ctx,
 		next,
-		"attribute_exists(PK) AND configVersion = :version AND lifecycle <> :archived AND updatedAt = :updated AND #name = :previousName",
+		"attribute_exists(PK) AND configVersion = :version AND lifecycle <> :archived AND updatedAt = :updated AND #name = :previousName AND scheduledThrough = :previousCursor",
 		map[string]types.AttributeValue{
-			":version":      &types.AttributeValueMemberN{Value: fmt.Sprint(expected)},
-			":archived":     &types.AttributeValueMemberS{Value: "archived"},
-			":updated":      &types.AttributeValueMemberS{Value: m.UpdatedAt},
-			":previousName": &types.AttributeValueMemberS{Value: m.Name},
+			":version":        &types.AttributeValueMemberN{Value: fmt.Sprint(expected)},
+			":archived":       &types.AttributeValueMemberS{Value: "archived"},
+			":updated":        &types.AttributeValueMemberS{Value: m.UpdatedAt},
+			":previousName":   &types.AttributeValueMemberS{Value: m.Name},
+			":previousCursor": &types.AttributeValueMemberS{Value: m.ScheduledThrough},
 		},
+		trigger,
+		now,
 	)
 	if err == ErrVersionConflict {
 		current, e := s.Get(ctx, id)
@@ -280,15 +366,23 @@ func (s *Store) Lifecycle(
 	if !ok {
 		return m, ErrInvalidTransition
 	}
+	trigger := ""
+	if action == "resume" {
+		next.ScheduledThrough = slotStamp(id, next.IntervalSeconds, now)
+		trigger = "resume"
+	}
 	err = s.save(
 		ctx,
 		next,
-		"attribute_exists(PK) AND lifecycle = :from AND updatedAt = :updated AND #name = :previousName",
+		"attribute_exists(PK) AND lifecycle = :from AND updatedAt = :updated AND #name = :previousName AND scheduledThrough = :previousCursor",
 		map[string]types.AttributeValue{
-			":from":         &types.AttributeValueMemberS{Value: m.Lifecycle},
-			":updated":      &types.AttributeValueMemberS{Value: m.UpdatedAt},
-			":previousName": &types.AttributeValueMemberS{Value: m.Name},
+			":from":           &types.AttributeValueMemberS{Value: m.Lifecycle},
+			":updated":        &types.AttributeValueMemberS{Value: m.UpdatedAt},
+			":previousName":   &types.AttributeValueMemberS{Value: m.Name},
+			":previousCursor": &types.AttributeValueMemberS{Value: m.ScheduledThrough},
 		},
+		trigger,
+		now,
 	)
 	if err == ErrVersionConflict {
 		current, e := s.Get(ctx, id)
@@ -372,6 +466,9 @@ func (s *Store) Observations(
 			var o monitor.Observation
 			if attributevalue.UnmarshalMap(item, &o) != nil {
 				return nil, ErrUnavailable
+			}
+			if o.InitiatedBy == "" {
+				o.InitiatedBy = "manual"
 			}
 			expires, ok := item["expiresAt"].(*types.AttributeValueMemberN)
 			if !ok {

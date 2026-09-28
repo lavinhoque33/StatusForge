@@ -129,9 +129,21 @@ func Log(logger *slog.Logger, o monitor.Observation) {
 		slog.Int64("duration_ms", o.DurationMs),
 		slog.Int("body_bytes_read", o.BodyBytesRead),
 		slog.Bool("body_truncated", o.BodyTruncated),
+		slog.String("initiated_by", o.InitiatedBy),
+		slog.Bool("counted", o.Counted),
 	}
 	if o.ObservedStatus != nil {
 		attrs = append(attrs, slog.Int("observed_status", *o.ObservedStatus))
 	}
-	logger.LogAttrs(context.Background(), level, "manual check", attrs...)
+	if o.Trigger != nil {
+		attrs = append(attrs, slog.String("trigger", *o.Trigger))
+	} else {
+		attrs = append(attrs, slog.Any("trigger", nil))
+	}
+	if o.NotCountedReason != nil {
+		attrs = append(attrs, slog.String("not_counted_reason", *o.NotCountedReason))
+	} else {
+		attrs = append(attrs, slog.Any("not_counted_reason", nil))
+	}
+	logger.LogAttrs(context.Background(), level, "check", attrs...)
 }

@@ -1,16 +1,24 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { jsonResponse, monitorFixture, stubApi } from '../test/fixtures';
+import { callsTo, jsonResponse, monitorRecordFixture, stubApi } from '../test/fixtures';
 import { MonitorCreatePage } from './MonitorCreatePage';
+
+const INTERVALS_GET = 'GET /api/intervals';
+
+const INTERVALS_OK = {
+  [INTERVALS_GET]: () =>
+    jsonResponse({ intervalSeconds: [60, 300, 600, 900], defaultIntervalSeconds: 300 }),
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
   window.history.pushState(null, '', '/');
+  vi.useRealTimers();
 });
 
 describe('MonitorCreatePage', () => {
   it('prefills the sample target and the contract defaults', () => {
-    stubApi({});
+    stubApi({ ...INTERVALS_OK });
 
     render(<MonitorCreatePage />);
 
@@ -20,25 +28,61 @@ describe('MonitorCreatePage', () => {
     expect(screen.getByLabelText('Deadline (seconds)')).toHaveValue(10);
   });
 
-  it('sends seconds as deadlineMs and opens the created monitor', async () => {
+  it('offers the backend intervals with the default selected', async () => {
+    stubApi({ ...INTERVALS_OK });
+
+    render(<MonitorCreatePage />);
+
+    const selector = await screen.findByLabelText('Check every');
+    expect(selector).toHaveValue('300');
+    const labels = Array.from(selector.querySelectorAll('option')).map((o) => o.textContent);
+    expect(labels).toEqual(['1 min', '5 min', '10 min', '15 min']);
+  });
+
+  it('sends seconds as deadlineMs, the chosen interval, and opens the created monitor', async () => {
     const fetchMock = stubApi({
-      'POST /api/monitors': () => jsonResponse(monitorFixture({ id: 'monitor-9' }), 201),
+      ...INTERVALS_OK,
+      'POST /api/monitors': () => jsonResponse(monitorRecordFixture({ id: 'monitor-9' }), 201),
+    });
+
+    render(<MonitorCreatePage />);
+    const selector = await screen.findByLabelText('Check every');
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local health' } });
+    fireEvent.change(screen.getByLabelText('Deadline (seconds)'), { target: { value: '1.5' } });
+    fireEvent.change(selector, { target: { value: '60' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Create monitor' }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(window.location.pathname).toBe('/monitors/monitor-9'));
+    expect(JSON.parse(String(callsTo(fetchMock, 'POST', '/api/monitors')[0]?.[1]?.body))).toEqual({
+      name: 'Local health',
+      check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 1500 },
+      intervalSeconds: 60,
+    });
+  });
+
+  it('sends no interval when /api/intervals is unavailable, letting the backend default apply', async () => {
+    const fetchMock = stubApi({
+      [INTERVALS_GET]: () => jsonResponse({ error: 'store_unavailable' }, 503),
+      'POST /api/monitors': () => jsonResponse(monitorRecordFixture({ id: 'monitor-9' }), 201),
     });
 
     render(<MonitorCreatePage />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local health' } });
-    fireEvent.change(screen.getByLabelText('Deadline (seconds)'), { target: { value: '1.5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create monitor' }));
 
     await waitFor(() => expect(window.location.pathname).toBe('/monitors/monitor-9'));
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(callsTo(fetchMock, 'POST', '/api/monitors')[0]?.[1]?.body))).toEqual({
       name: 'Local health',
-      check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 1500 },
+      check: { url: 'http://127.0.0.1:8090/', expectedStatus: 200, deadlineMs: 10_000 },
     });
   });
 
   it('renders validation_failed errors next to the inputs they belong to', async () => {
     stubApi({
+      ...INTERVALS_OK,
       'POST /api/monitors': () =>
         jsonResponse(
           {
@@ -73,6 +117,7 @@ describe('MonitorCreatePage', () => {
 
   it('shows validation errors that belong to no input as a form message', async () => {
     stubApi({
+      ...INTERVALS_OK,
       'POST /api/monitors': () =>
         jsonResponse(
           {
@@ -93,7 +138,10 @@ describe('MonitorCreatePage', () => {
   });
 
   it('keeps the entered values when the store is unavailable', async () => {
-    stubApi({ 'POST /api/monitors': () => jsonResponse({ error: 'store_unavailable' }, 503) });
+    stubApi({
+      ...INTERVALS_OK,
+      'POST /api/monitors': () => jsonResponse({ error: 'store_unavailable' }, 503),
+    });
 
     render(<MonitorCreatePage />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Local health' } });

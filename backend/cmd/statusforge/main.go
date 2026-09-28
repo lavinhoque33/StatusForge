@@ -16,6 +16,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/config"
 	"github.com/lavinhoque33/statusforge/backend/internal/httpapi"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
+	"github.com/lavinhoque33/statusforge/backend/internal/scheduler"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 	"github.com/lavinhoque33/statusforge/backend/internal/targetpolicy"
 )
@@ -74,6 +75,7 @@ func run() error {
 			persistence,
 			runner,
 			policy,
+			cfg.MinIntervalSeconds,
 		),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -108,6 +110,19 @@ func run() error {
 	tableCancel()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	schedulerDone := make(chan struct{})
+	if cfg.SchedulerEnabled {
+		go func() {
+			defer close(schedulerDone)
+			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger}).Run(
+				schedulerCtx,
+			)
+		}()
+	} else {
+		close(schedulerDone)
+	}
+	defer func() { stopScheduler(); <-schedulerDone }()
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- server.Serve(listener) }()
 	select {
@@ -124,6 +139,8 @@ func run() error {
 		}
 		<-serveErrors
 	}
+	stopScheduler()
+	<-schedulerDone
 	logger.Info("stopped")
 	return nil
 }

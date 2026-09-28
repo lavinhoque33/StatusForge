@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiValidationError, isAbortError, type FieldIssue } from '../api/http';
-import { createMonitor } from '../api/monitors';
+import { createMonitor, listIntervals, type Intervals } from '../api/monitors';
 import { MonitorForm } from '../components/MonitorForm';
 import { describeApiError } from '../lib/errors';
+import { intervalChoice, type IntervalChoice } from '../lib/intervalChoice';
 import {
   DEFAULT_MONITOR_FIELDS,
   MONITOR_FIELD_PATHS,
@@ -13,18 +14,41 @@ import {
 import { navigate } from '../router/history';
 import { Link } from '../router/Link';
 
-/** Create form for a new monitor. */
+/**
+ * Create form for a new monitor. The interval defaults to the
+ * backend's `defaultIntervalSeconds` once `/api/intervals` answers; submitting
+ * without an answer omits `intervalSeconds`, so the backend applies its own
+ * default.
+ */
 export function MonitorCreatePage() {
   const [fields, setFields] = useState<MonitorFormFields>(DEFAULT_MONITOR_FIELDS);
+  const [intervals, setIntervals] = useState<Intervals | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, FieldIssue>>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const choice = useRef<IntervalChoice>(intervalChoice());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listIntervals(controller.signal)
+      .then((loaded) => {
+        if (!controller.signal.aborted) setIntervals(loaded);
+      })
+      .catch(() => {
+        // The selector stays empty and the backend default applies on submit.
+      });
+    return () => controller.abort();
+  }, []);
 
   const submit = () => {
     setPending(true);
     setFieldErrors({});
     setFormMessage(null);
-    createMonitor({ name: fields.name, check: checkInputFromFields(fields) })
+    createMonitor({
+      name: fields.name,
+      check: checkInputFromFields(fields),
+      intervalSeconds: choice.current.current ?? intervals?.defaultIntervalSeconds,
+    })
       .then((monitor) => {
         setPending(false);
         navigate(`/monitors/${encodeURIComponent(monitor.id)}`);
@@ -46,7 +70,7 @@ export function MonitorCreatePage() {
     <section aria-labelledby="create-monitor-heading">
       <h2 id="create-monitor-heading">New monitor</h2>
       <p>
-        A monitor checks one loopback http target when you ask for a check. Only hosts listed in
+        A monitor checks one loopback http target on a schedule you choose. Only hosts listed in
         STATUSFORGE_ALLOWED_TARGETS are accepted.
       </p>
       <MonitorForm
@@ -55,6 +79,10 @@ export function MonitorCreatePage() {
         fieldErrors={fieldErrors}
         formMessage={formMessage}
         pending={pending}
+        intervals={intervals}
+        onIntervalChange={(seconds) => {
+          choice.current.current = seconds;
+        }}
         submitLabel="Create monitor"
         onSubmit={submit}
       />

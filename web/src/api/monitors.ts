@@ -1,22 +1,48 @@
 /**
- * Typed client for the M1 monitor routes.
+ * Typed client for the monitor routes.
  *
  * Responses are validated property by property before they reach the interface:
- * an unknown lifecycle or outcome is a protocol violation and is reported as an
- * unexpected response rather than guessed at. Reason codes stay strings so a
- * vocabulary addition cannot break rendering; the presentation layer maps known
- * codes to words.
+ * an unknown lifecycle, outcome, or presented status state is a protocol
+ * violation and is reported as an unexpected response rather than guessed at.
+ * Reason codes stay strings so a vocabulary addition cannot break rendering;
+ * the presentation layer maps known codes to words.
  */
 import { ApiInvalidResponseError, requestJson } from './http';
 
-/** Observation limit requested by the detail page (contract default is 50). */
+/** Observation window requested by the detail page (contract default is 50). */
 export const OBSERVATION_LIMIT = 50;
+
+/** Gap window requested by the detail page. */
+export const GAP_LIMIT = 50;
 
 const MONITORS_PATH = '/api/monitors';
 
 export type Lifecycle = 'active' | 'paused' | 'archived';
 
 export type CheckOutcome = 'healthy' | 'failing' | 'checker_problem';
+
+/** The presented status states. */
+export type StatusState =
+  'healthy' | 'failing' | 'checker_problem' | 'stale' | 'unknown' | 'paused' | 'archived';
+
+/**
+ * The state the interface presents: the backend state, with a local switch to
+ * `stale` when `freshUntil` has passed.
+ */
+export type MonitorStatusEffective = StatusState;
+
+/** Why a monitor has no current status. */
+export type StatusUnknownReason = 'no_checks' | 'config_changed';
+
+/** The status computed on every read, with the observation it is based on. */
+export type MonitorStatus = {
+  state: StatusState;
+  reason: StatusUnknownReason | null;
+  observation: Observation | null;
+  /** The instant after which the web presents the monitor as stale. */
+  freshUntil: string | null;
+  evaluatedAt: string;
+};
 
 /** The request settings stored on a monitor and copied onto an observation. */
 export type CheckConfig = {
@@ -32,6 +58,8 @@ export type Monitor = {
   name: string;
   lifecycle: Lifecycle;
   configVersion: number;
+  /** Seconds between scheduled checks. */
+  intervalSeconds: number;
   check: CheckConfig;
   createdAt: string;
   updatedAt: string;
@@ -44,6 +72,13 @@ export type Observation = {
   monitorId: string;
   configVersion: number;
   initiatedBy: string;
+  /** Why the check ran; null for manual checks. */
+  trigger: string | null;
+  /** The work item's due time; null for manual checks. */
+  dueAt: string | null;
+  /** Whether this observation updated current status (ADR 0003 D5). */
+  counted: boolean;
+  notCountedReason: string | null;
   request: CheckConfig;
   startedAt: string;
   completedAt: string;
@@ -55,8 +90,28 @@ export type Observation = {
   bodyTruncated: boolean;
 };
 
-/** A list row: the monitor plus its newest non-expired observation. */
-export type MonitorListItem = Monitor & { lastObservation: Observation | null };
+/** A range of missed schedule slots. */
+export type Gap = {
+  id: string;
+  monitorId: string;
+  fromDueAt: string;
+  toDueAt: string;
+  missedCount: number;
+  reason: string;
+  recordedAt: string;
+};
+
+/** The intervals this backend process offers. */
+export type Intervals = {
+  intervalSeconds: number[];
+  defaultIntervalSeconds: number;
+};
+
+/**
+ * A `Monitor` response: every monitor payload carries its presented status
+ *, in the list and on its own.
+ */
+export type MonitorRecord = Monitor & { status: MonitorStatus };
 
 export type CheckInput = {
   url: string;
@@ -67,18 +122,25 @@ export type CheckInput = {
 export type CreateMonitorInput = {
   name: string;
   check: CheckInput;
+  intervalSeconds?: number;
 };
 
 export type UpdateMonitorInput = {
   expectedConfigVersion: number;
   name: string;
   check: CheckInput;
+  intervalSeconds?: number;
 };
 
 export type LifecycleAction = 'pause' | 'resume' | 'archive';
 
 function invalid(): never {
   throw new ApiInvalidResponseError();
+}
+
+/** `value.prop` on a narrowed `object` loses the key; a cast keeps it. */
+function prop(value: object, key: string): unknown {
+  return (value as Record<string, unknown>)[key];
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -99,6 +161,22 @@ function isLifecycle(value: unknown): value is Lifecycle {
 
 function isOutcome(value: unknown): value is CheckOutcome {
   return value === 'healthy' || value === 'failing' || value === 'checker_problem';
+}
+
+function isStatusState(value: unknown): value is StatusState {
+  return (
+    value === 'healthy' ||
+    value === 'failing' ||
+    value === 'checker_problem' ||
+    value === 'stale' ||
+    value === 'unknown' ||
+    value === 'paused' ||
+    value === 'archived'
+  );
+}
+
+function isStatusUnknownReason(value: unknown): value is StatusUnknownReason {
+  return value === 'no_checks' || value === 'config_changed';
 }
 
 /** Parse the `check` object of a monitor or the `request` object of an observation. */
@@ -129,6 +207,13 @@ export function parseMonitor(value: unknown): Monitor {
   if (!('configVersion' in value) || !isInteger(value.configVersion) || value.configVersion < 1) {
     invalid();
   }
+  if (
+    !('intervalSeconds' in value) ||
+    !isInteger(value.intervalSeconds) ||
+    value.intervalSeconds < 1
+  ) {
+    invalid();
+  }
   if (!('check' in value)) invalid();
   if (!('createdAt' in value) || !isTimestamp(value.createdAt)) invalid();
   if (!('updatedAt' in value) || !isTimestamp(value.updatedAt)) invalid();
@@ -138,6 +223,7 @@ export function parseMonitor(value: unknown): Monitor {
     name: value.name,
     lifecycle: value.lifecycle,
     configVersion: value.configVersion,
+    intervalSeconds: value.intervalSeconds,
     check: parseCheckConfig(value.check),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
@@ -153,7 +239,11 @@ export function parseMonitor(value: unknown): Monitor {
   return monitor;
 }
 
-/** Parse an `Observation` payload; `unknown` is never accepted as an outcome. */
+/**
+ * Parse a `Monitor` payload; `unknown` is never accepted as an outcome, and an
+ * unknown presented status state or unknown reason is a protocol violation
+ *, never reinterpreted.
+ */
 export function parseObservation(value: unknown): Observation {
   if (typeof value !== 'object' || value === null) invalid();
   if (!('id' in value) || !isNonEmptyString(value.id)) invalid();
@@ -162,6 +252,7 @@ export function parseObservation(value: unknown): Observation {
     invalid();
   }
   if (!('initiatedBy' in value) || !isNonEmptyString(value.initiatedBy)) invalid();
+  if (!('counted' in value) || typeof value.counted !== 'boolean') invalid();
   if (!('request' in value)) invalid();
   if (!('startedAt' in value) || !isTimestamp(value.startedAt)) invalid();
   if (!('completedAt' in value) || !isTimestamp(value.completedAt)) invalid();
@@ -173,11 +264,31 @@ export function parseObservation(value: unknown): Observation {
   }
   if (!('bodyTruncated' in value) || typeof value.bodyTruncated !== 'boolean') invalid();
 
+  let trigger: string | null = null;
+  if (prop(value, 'trigger') !== null && prop(value, 'trigger') !== undefined) {
+    if (!isNonEmptyString(prop(value, 'trigger'))) invalid();
+    trigger = prop(value, 'trigger') as string;
+  }
+  let dueAt: string | null = null;
+  if (prop(value, 'dueAt') !== null && prop(value, 'dueAt') !== undefined) {
+    if (!isTimestamp(prop(value, 'dueAt'))) invalid();
+    dueAt = prop(value, 'dueAt') as string;
+  }
+  let notCountedReason: string | null = null;
+  if (prop(value, 'notCountedReason') !== null && prop(value, 'notCountedReason') !== undefined) {
+    if (!isNonEmptyString(prop(value, 'notCountedReason'))) invalid();
+    notCountedReason = prop(value, 'notCountedReason') as string;
+  }
+
   const observation: Observation = {
     id: value.id,
     monitorId: value.monitorId,
     configVersion: value.configVersion,
     initiatedBy: value.initiatedBy,
+    trigger,
+    dueAt,
+    counted: value.counted,
+    notCountedReason,
     request: parseCheckConfig(value.request),
     startedAt: value.startedAt,
     completedAt: value.completedAt,
@@ -198,23 +309,49 @@ export function parseObservation(value: unknown): Observation {
   return observation;
 }
 
-function parseMonitorListItem(value: unknown): MonitorListItem {
-  const monitor = parseMonitor(value);
+/**
+ * Parse the presented `status`. The state vocabulary is
+ * closed here, like outcomes and lifecycles: an unexpected state or reason is
+ * an unexpected response, never a guessed-at status.
+ */
+export function parseMonitorStatus(value: unknown): MonitorStatus {
   if (typeof value !== 'object' || value === null) invalid();
-  if (
-    !('lastObservation' in value) ||
-    value.lastObservation === null ||
-    value.lastObservation === undefined
-  ) {
-    return { ...monitor, lastObservation: null };
+  if (!('state' in value) || !isStatusState(prop(value, 'state'))) invalid();
+  if (!('evaluatedAt' in value) || !isTimestamp(prop(value, 'evaluatedAt'))) invalid();
+
+  let reason: StatusUnknownReason | null = null;
+  if (prop(value, 'reason') !== null && prop(value, 'reason') !== undefined) {
+    if (!isStatusUnknownReason(prop(value, 'reason'))) invalid();
+    reason = prop(value, 'reason') as StatusUnknownReason;
   }
-  return { ...monitor, lastObservation: parseObservation(value.lastObservation) };
+  let observation: Observation | null = null;
+  if (prop(value, 'observation') !== null && prop(value, 'observation') !== undefined) {
+    observation = parseObservation(prop(value, 'observation'));
+  }
+  let freshUntil: string | null = null;
+  if (prop(value, 'freshUntil') !== null && prop(value, 'freshUntil') !== undefined) {
+    if (!isTimestamp(prop(value, 'freshUntil'))) invalid();
+    freshUntil = prop(value, 'freshUntil') as string;
+  }
+  return {
+    state: prop(value, 'state') as MonitorStatus['state'],
+    reason,
+    observation,
+    freshUntil,
+    evaluatedAt: prop(value, 'evaluatedAt') as string,
+  };
 }
 
-function parseMonitorList(body: unknown): MonitorListItem[] {
+function parseMonitorRecord(value: unknown): MonitorRecord {
+  if (typeof value !== 'object' || value === null) invalid();
+  if (!('status' in value)) invalid();
+  return { ...parseMonitor(value), status: parseMonitorStatus(prop(value, 'status')) };
+}
+
+function parseMonitorList(body: unknown): MonitorRecord[] {
   if (typeof body !== 'object' || body === null) invalid();
   if (!('monitors' in body) || !Array.isArray(body.monitors)) invalid();
-  return body.monitors.map(parseMonitorListItem);
+  return body.monitors.map(parseMonitorRecord);
 }
 
 function parseObservationList(body: unknown): Observation[] {
@@ -223,19 +360,74 @@ function parseObservationList(body: unknown): Observation[] {
   return body.observations.map(parseObservation);
 }
 
+function parseGap(value: unknown): Gap {
+  if (typeof value !== 'object' || value === null) invalid();
+  if (!('id' in value) || !isNonEmptyString(value.id)) invalid();
+  if (!('monitorId' in value) || !isNonEmptyString(value.monitorId)) invalid();
+  if (!('fromDueAt' in value) || !isTimestamp(value.fromDueAt)) invalid();
+  if (!('toDueAt' in value) || !isTimestamp(value.toDueAt)) invalid();
+  if (!('missedCount' in value) || !isInteger(value.missedCount) || value.missedCount < 1)
+    invalid();
+  if (!('reason' in value) || !isNonEmptyString(value.reason)) invalid();
+  if (!('recordedAt' in value) || !isTimestamp(value.recordedAt)) invalid();
+  return {
+    id: value.id,
+    monitorId: value.monitorId,
+    fromDueAt: value.fromDueAt,
+    toDueAt: value.toDueAt,
+    missedCount: value.missedCount,
+    reason: value.reason,
+    recordedAt: value.recordedAt,
+  };
+}
+
+function parseGapList(body: unknown): Gap[] {
+  if (typeof body !== 'object' || body === null) invalid();
+  if (!('gaps' in body) || !Array.isArray(body.gaps)) invalid();
+  return body.gaps.map(parseGap);
+}
+
+/** Parse `GET /api/intervals`. */
+export function parseIntervals(value: unknown): Intervals {
+  if (typeof value !== 'object' || value === null) invalid();
+  if (
+    !('intervalSeconds' in value) ||
+    !Array.isArray(value.intervalSeconds) ||
+    value.intervalSeconds.length === 0
+  ) {
+    invalid();
+  }
+  const intervalSeconds: number[] = [];
+  for (const entry of value.intervalSeconds) {
+    if (!isInteger(entry) || entry < 1) invalid();
+    intervalSeconds.push(entry);
+  }
+  if (
+    !('defaultIntervalSeconds' in value) ||
+    !isInteger(value.defaultIntervalSeconds) ||
+    value.defaultIntervalSeconds < 1
+  ) {
+    invalid();
+  }
+  return { intervalSeconds, defaultIntervalSeconds: value.defaultIntervalSeconds };
+}
+
 /** `GET /api/monitors` — every lifecycle, oldest first (server order). */
-export function listMonitors(signal?: AbortSignal): Promise<MonitorListItem[]> {
+export function listMonitors(signal?: AbortSignal): Promise<MonitorRecord[]> {
   return requestJson(MONITORS_PATH, parseMonitorList, { signal });
 }
 
 /** `POST /api/monitors` (201 `Monitor`). */
-export function createMonitor(input: CreateMonitorInput, signal?: AbortSignal): Promise<Monitor> {
-  return requestJson(MONITORS_PATH, parseMonitor, { method: 'POST', body: input, signal });
+export function createMonitor(
+  input: CreateMonitorInput,
+  signal?: AbortSignal,
+): Promise<MonitorRecord> {
+  return requestJson(MONITORS_PATH, parseMonitorRecord, { method: 'POST', body: input, signal });
 }
 
 /** `GET /api/monitors/{id}`. */
-export function getMonitor(id: string, signal?: AbortSignal): Promise<Monitor> {
-  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}`, parseMonitor, { signal });
+export function getMonitor(id: string, signal?: AbortSignal): Promise<MonitorRecord> {
+  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}`, parseMonitorRecord, { signal });
 }
 
 /** `PATCH /api/monitors/{id}` guarded by `expectedConfigVersion`. */
@@ -243,8 +435,8 @@ export function updateMonitor(
   id: string,
   input: UpdateMonitorInput,
   signal?: AbortSignal,
-): Promise<Monitor> {
-  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}`, parseMonitor, {
+): Promise<MonitorRecord> {
+  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}`, parseMonitorRecord, {
     method: 'PATCH',
     body: input,
     signal,
@@ -256,8 +448,8 @@ export function changeLifecycle(
   id: string,
   action: LifecycleAction,
   signal?: AbortSignal,
-): Promise<Monitor> {
-  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}/lifecycle`, parseMonitor, {
+): Promise<MonitorRecord> {
+  return requestJson(`${MONITORS_PATH}/${encodeURIComponent(id)}/lifecycle`, parseMonitorRecord, {
     method: 'POST',
     body: { action },
     signal,
@@ -283,4 +475,18 @@ export function listObservations(
     parseObservationList,
     { signal },
   );
+}
+
+/** `GET /api/monitors/{id}/gaps?limit=N` — newest `fromDueAt` first (server order). */
+export function listGaps(id: string, limit = GAP_LIMIT, signal?: AbortSignal): Promise<Gap[]> {
+  return requestJson(
+    `${MONITORS_PATH}/${encodeURIComponent(id)}/gaps?limit=${limit}`,
+    parseGapList,
+    { signal },
+  );
+}
+
+/** `GET /api/intervals` — the intervals this process offers, ascending. */
+export function listIntervals(signal?: AbortSignal): Promise<Intervals> {
+  return requestJson('/api/intervals', parseIntervals, { signal });
 }

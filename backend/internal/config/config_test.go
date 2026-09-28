@@ -23,7 +23,8 @@ func TestLoadDefaults(t *testing.T) {
 		cfg.LogLevel != "info" ||
 		cfg.LogFormat != "text" ||
 		cfg.ShutdownTimeout != 10*time.Second ||
-		cfg.ReadinessTimeout != 2*time.Second {
+		cfg.ReadinessTimeout != 2*time.Second ||
+		cfg.Workers != 4 || cfg.MinIntervalSeconds != 60 || !cfg.SchedulerEnabled {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
@@ -80,6 +81,12 @@ func TestLoadInvalidSettings(t *testing.T) {
 		{"STATUSFORGE_SHUTDOWN_TIMEOUT", "0s"},
 		{"STATUSFORGE_READINESS_TIMEOUT", "oops"},
 		{"STATUSFORGE_READINESS_TIMEOUT", "-1s"},
+		{"STATUSFORGE_WORKERS", "0"},
+		{"STATUSFORGE_WORKERS", "17"},
+		{"STATUSFORGE_WORKERS", "NaN"},
+		{"STATUSFORGE_MIN_INTERVAL_SECONDS", "20"},
+		{"STATUSFORGE_MIN_INTERVAL_SECONDS", "5"},
+		{"STATUSFORGE_SCHEDULER_ENABLED", "yes"},
 	} {
 		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
 			_, err := Load(

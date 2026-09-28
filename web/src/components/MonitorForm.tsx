@@ -1,5 +1,7 @@
 import type { FormEvent } from 'react';
 import type { FieldIssue } from '../api/http';
+import type { Intervals } from '../api/monitors';
+import { IntervalField } from './IntervalField';
 import { fieldErrorMessage } from '../lib/errors';
 import type { MonitorFormFields } from '../lib/monitorForm';
 
@@ -10,6 +12,12 @@ type MonitorFormProps = {
   formMessage: string | null;
   pending: boolean;
   disabled?: boolean;
+  /** The intervals the backend offers; null while loading (no selector yet). */
+  intervals: Intervals | null;
+  /** The stored interval, so a no-longer-offered value stays visible. */
+  storedIntervalSeconds?: number;
+  /** Receives the user's interval choice; the page sends it on submit. */
+  onIntervalChange?: (seconds: number) => void;
   submitLabel: string;
   onSubmit: () => void;
 };
@@ -92,6 +100,9 @@ export function MonitorForm({
   formMessage,
   pending,
   disabled = false,
+  intervals,
+  storedIntervalSeconds,
+  onIntervalChange,
   submitLabel,
   onSubmit,
 }: MonitorFormProps) {
@@ -146,6 +157,13 @@ export function MonitorForm({
         value={fields.deadlineSeconds}
         onChange={(deadlineSeconds) => onFieldsChange({ ...fields, deadlineSeconds })}
         error={fieldErrors['check.deadlineMs']}
+        disabled={disabled}
+      />
+      <IntervalField
+        id="monitor-interval"
+        intervals={intervals}
+        storedSeconds={storedIntervalSeconds}
+        onChange={(seconds) => onIntervalChange?.(seconds)}
         disabled={disabled}
       />
       {formMessage === null ? null : (

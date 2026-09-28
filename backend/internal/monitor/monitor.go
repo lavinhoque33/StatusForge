@@ -18,34 +18,41 @@ type Check struct {
 	MaxBodyBytes   int    `json:"maxBodyBytes"   dynamodbav:"maxBodyBytes"`
 }
 type Monitor struct {
-	ID            string `json:"id"                   dynamodbav:"monitorId"`
-	Name          string `json:"name"                 dynamodbav:"name"`
-	Lifecycle     string `json:"lifecycle"            dynamodbav:"lifecycle"`
-	ConfigVersion int    `json:"configVersion"        dynamodbav:"configVersion"`
-	Check         Check  `json:"check"                dynamodbav:"check"`
-	CreatedAt     string `json:"createdAt"            dynamodbav:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"            dynamodbav:"updatedAt"`
-	PausedAt      string `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
-	ArchivedAt    string `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
+	ID               string    `json:"id"                   dynamodbav:"monitorId"`
+	Name             string    `json:"name"                 dynamodbav:"name"`
+	Lifecycle        string    `json:"lifecycle"            dynamodbav:"lifecycle"`
+	ConfigVersion    int       `json:"configVersion"        dynamodbav:"configVersion"`
+	IntervalSeconds  int       `json:"intervalSeconds"      dynamodbav:"intervalSeconds"`
+	ScheduledThrough string    `json:"-"                    dynamodbav:"scheduledThrough,omitempty"`
+	LegacyCursor     bool      `json:"-"                    dynamodbav:"-"`
+	Lease            *Lease    `json:"-"                    dynamodbav:"lease,omitempty"`
+	LastClaimAt      string    `json:"-"                    dynamodbav:"lastClaimAt,omitempty"`
+	Evidence         *Evidence `json:"-"                    dynamodbav:"status,omitempty"`
+	Status           Status    `json:"status"               dynamodbav:"-"`
+	Check            Check     `json:"check"                dynamodbav:"check"`
+	CreatedAt        string    `json:"createdAt"            dynamodbav:"createdAt"`
+	UpdatedAt        string    `json:"updatedAt"            dynamodbav:"updatedAt"`
+	PausedAt         string    `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
+	ArchivedAt       string    `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
 }
 type Observation struct {
-	ID             string `json:"id"                       dynamodbav:"observationId"`
-	MonitorID      string `json:"monitorId"                dynamodbav:"monitorId"`
-	ConfigVersion  int    `json:"configVersion"            dynamodbav:"configVersion"`
-	InitiatedBy    string `json:"initiatedBy"              dynamodbav:"initiatedBy"`
-	Request        Check  `json:"request"                  dynamodbav:"request"`
-	StartedAt      string `json:"startedAt"                dynamodbav:"startedAt"`
-	CompletedAt    string `json:"completedAt"              dynamodbav:"completedAt"`
-	DurationMs     int64  `json:"durationMs"               dynamodbav:"durationMs"`
-	Outcome        string `json:"outcome"                  dynamodbav:"outcome"`
-	Reason         string `json:"reason"                   dynamodbav:"reason"`
-	ObservedStatus *int   `json:"observedStatus,omitempty" dynamodbav:"observedStatus,omitempty"`
-	BodyBytesRead  int    `json:"bodyBytesRead"            dynamodbav:"bodyBytesRead"`
-	BodyTruncated  bool   `json:"bodyTruncated"            dynamodbav:"bodyTruncated"`
-}
-type ListItem struct {
-	Monitor
-	LastObservation *Observation `json:"lastObservation"`
+	ID               string  `json:"id"                       dynamodbav:"observationId"`
+	MonitorID        string  `json:"monitorId"                dynamodbav:"monitorId"`
+	ConfigVersion    int     `json:"configVersion"            dynamodbav:"configVersion"`
+	InitiatedBy      string  `json:"initiatedBy"              dynamodbav:"initiatedBy"`
+	Trigger          *string `json:"trigger"                  dynamodbav:"trigger,omitempty"`
+	DueAt            *string `json:"dueAt"                    dynamodbav:"dueAt,omitempty"`
+	Counted          bool    `json:"counted"                  dynamodbav:"counted"`
+	NotCountedReason *string `json:"notCountedReason"         dynamodbav:"notCountedReason,omitempty"`
+	Request          Check   `json:"request"                  dynamodbav:"request"`
+	StartedAt        string  `json:"startedAt"                dynamodbav:"startedAt"`
+	CompletedAt      string  `json:"completedAt"              dynamodbav:"completedAt"`
+	DurationMs       int64   `json:"durationMs"               dynamodbav:"durationMs"`
+	Outcome          string  `json:"outcome"                  dynamodbav:"outcome"`
+	Reason           string  `json:"reason"                   dynamodbav:"reason"`
+	ObservedStatus   *int    `json:"observedStatus,omitempty" dynamodbav:"observedStatus,omitempty"`
+	BodyBytesRead    int     `json:"bodyBytesRead"            dynamodbav:"bodyBytesRead"`
+	BodyTruncated    bool    `json:"bodyTruncated"            dynamodbav:"bodyTruncated"`
 }
 type FieldError struct {
 	Code    string `json:"code"`
@@ -95,13 +102,14 @@ func ValidateCheck(c *Check, fields Fields) {
 func New(name string, c Check, now time.Time) Monitor {
 	stamp := Stamp(now)
 	return Monitor{
-		ID:            rand.Text(),
-		Name:          name,
-		Lifecycle:     "active",
-		ConfigVersion: 1,
-		Check:         c,
-		CreatedAt:     stamp,
-		UpdatedAt:     stamp,
+		ID:              rand.Text(),
+		Name:            name,
+		Lifecycle:       "active",
+		ConfigVersion:   1,
+		Check:           c,
+		CreatedAt:       stamp,
+		UpdatedAt:       stamp,
+		IntervalSeconds: 300,
 	}
 }
 

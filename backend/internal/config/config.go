@@ -24,6 +24,9 @@ type Config struct {
 	ReadinessTimeout        time.Duration
 	AllowedTargets          string
 	DynamoDBTable           string
+	Workers                 int
+	MinIntervalSeconds      int
+	SchedulerEnabled        bool
 }
 
 func Load(lookup func(string) (string, bool)) (Config, error) {
@@ -43,6 +46,9 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		LogFormat:               get("STATUSFORGE_LOG_FORMAT", "text"),
 		AllowedTargets:          get("STATUSFORGE_ALLOWED_TARGETS", "127.0.0.1:8090"),
 		DynamoDBTable:           get("STATUSFORGE_DYNAMODB_TABLE", "statusforge"),
+		Workers:                 4,
+		MinIntervalSeconds:      60,
+		SchedulerEnabled:        true,
 	}
 	if err := validateTargets(cfg.AllowedTargets); err != nil {
 		return Config{}, err
@@ -88,6 +94,20 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	cfg.ReadinessTimeout, err = time.ParseDuration(get("STATUSFORGE_READINESS_TIMEOUT", "2s"))
 	if err != nil || cfg.ReadinessTimeout <= 0 {
 		return Config{}, fmt.Errorf("STATUSFORGE_READINESS_TIMEOUT: must be a positive duration")
+	}
+	cfg.Workers, err = strconv.Atoi(get("STATUSFORGE_WORKERS", "4"))
+	if err != nil || cfg.Workers < 1 || cfg.Workers > 16 {
+		return Config{}, fmt.Errorf("STATUSFORGE_WORKERS: must be an integer 1–16")
+	}
+	cfg.MinIntervalSeconds, err = strconv.Atoi(get("STATUSFORGE_MIN_INTERVAL_SECONDS", "60"))
+	if err != nil || (cfg.MinIntervalSeconds != 10 && cfg.MinIntervalSeconds != 15 &&
+		cfg.MinIntervalSeconds != 30 && cfg.MinIntervalSeconds != 60) {
+		return Config{}, fmt.Errorf("STATUSFORGE_MIN_INTERVAL_SECONDS: must be 10, 15, 30, or 60")
+	}
+	cfg.SchedulerEnabled, err = strconv.ParseBool(get("STATUSFORGE_SCHEDULER_ENABLED", "true"))
+	if err != nil || (get("STATUSFORGE_SCHEDULER_ENABLED", "true") != "true" &&
+		get("STATUSFORGE_SCHEDULER_ENABLED", "true") != "false") {
+		return Config{}, fmt.Errorf("STATUSFORGE_SCHEDULER_ENABLED: must be true or false")
 	}
 	return cfg, nil
 }

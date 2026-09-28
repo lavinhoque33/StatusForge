@@ -1,20 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError, ApiValidationError, isAbortError, type FieldIssue } from '../api/http';
 import {
   OBSERVATION_LIMIT,
   changeLifecycle,
   getMonitor,
+  listGaps,
+  listIntervals,
   listObservations,
   runCheck,
   updateMonitor,
+  type Gap,
+  type Intervals,
   type LifecycleAction,
-  type Monitor,
+  type MonitorRecord,
   type Observation,
 } from '../api/monitors';
 import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
-import { ObservationsTable } from '../components/ObservationsTable';
+import { TimelineTable } from '../components/TimelineTable';
 import { describeApiError } from '../lib/errors';
 import {
   MONITOR_FIELD_PATHS,
@@ -23,13 +27,17 @@ import {
   splitFieldErrors,
   type MonitorFormFields,
 } from '../lib/monitorForm';
+import { notUpdatedText, updatedText } from '../lib/refresh';
+import { intervalChoice, type IntervalChoice } from '../lib/intervalChoice';
+import { intervalLabel } from '../lib/intervals';
 import { formatDeadlineSeconds, formatLocalWithOffset } from '../lib/time';
-import { useNow } from '../lib/useNow';
+import { usePolling } from '../lib/usePolling';
+import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
 import { Link } from '../router/Link';
 
 type LoadState =
   | { name: 'loading' }
-  | { name: 'ready'; monitor: Monitor; observations: Observation[] }
+  | { name: 'ready'; monitor: MonitorRecord; observations: Observation[]; gaps: Gap[] }
   | { name: 'not-found' }
   | { name: 'error'; message: string };
 
@@ -40,15 +48,42 @@ type RunState =
 
 type EditNotice = { kind: 'saved' } | { kind: 'conflict' } | { kind: 'message'; text: string };
 
+type Freshness =
+  | { name: 'none' }
+  | { name: 'updated'; at: number }
+  | { name: 'failed'; reason: string; at: number };
+
+/** True when the form fields match what the monitor stores (nothing unsaved). */
+function fieldsEqual(fields: MonitorFormFields, stored: MonitorFormFields): boolean {
+  return (
+    fields.name === stored.name &&
+    fields.url === stored.url &&
+    fields.expectedStatus === stored.expectedStatus &&
+    fields.deadlineSeconds === stored.deadlineSeconds
+  );
+}
+
+/**
+ * The interval to send on save: the selector's choice, or nothing when the
+ * selector was never touched (PATCH omits `intervalSeconds` then, so the
+ * backend keeps the stored interval).
+ */
+function selectedIntervalForMonitor(choice: IntervalChoice): number | undefined {
+  return choice.current ?? undefined;
+}
+
 /**
  * Detail page: configuration (with its version), lifecycle actions, one manual
- * check, and the observation history for this monitor.
+ * check, and the merged observation/gap timeline.
  *
  * Mutations are one request each; a `409` is surfaced with its contract message
- * and the monitor is re-read, never retried automatically.
+ * and the monitor is re-read, never retried automatically. The 15 s poll
+ * refreshes only the read-only data and pauses while the edit form holds
+ * unsaved changes, so a poll can never clobber what the user is typing.
  */
 export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const [load, setLoad] = useState<LoadState>({ name: 'loading' });
+  const [freshness, setFreshness] = useState<Freshness>({ name: 'none' });
   const [reloadToken, setReloadToken] = useState(0);
   const [fields, setFields] = useState<MonitorFormFields | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, FieldIssue>>({});
@@ -58,32 +93,137 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const [lifecycleNotice, setLifecycleNotice] = useState<string | null>(null);
   const [lifecyclePending, setLifecyclePending] = useState<LifecycleAction | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
-  const now = useNow();
+  const [intervals, setIntervals] = useState<Intervals | null>(null);
+  const choice = useRef<IntervalChoice>(intervalChoice());
+  const now = useNow(
+    FRESHNESS_REFRESH_MS,
+    load.name === 'ready' &&
+      (load.monitor.status.state === 'healthy' ||
+        load.monitor.status.state === 'failing' ||
+        load.monitor.status.state === 'checker_problem') &&
+      load.monitor.status.freshUntil !== null
+      ? Date.parse(load.monitor.status.freshUntil)
+      : null,
+  );
   const checkController = useRef<AbortController | null>(null);
+  const loadRef = useRef(load);
+  const fieldsRef = useRef(fields);
+  // Focus sinks for lifecycle transitions (D8): after Pause/Resume, and after
+  // cancelling the archive confirm, focus lands on the replacement control.
+  // The focus call must run after React commits the swapped buttons, so the
+  // pending action is stored and applied in an effect. The effect is
+  // idempotent and retries until it lands: a racing poll re-render can commit
+  // a new button node between the state commit and the passive-effect pass,
+  // in which case the next flush focuses the fresh node.
+  const [focusTarget, setFocusTarget] = useState<'pause' | 'resume' | 'archive' | null>(null);
+  const [focusSeq, setFocusSeq] = useState(0);
+  const resumeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pauseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const archiveButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([
-      getMonitor(monitorId, controller.signal),
-      listObservations(monitorId, OBSERVATION_LIMIT, controller.signal),
-    ])
-      .then(([monitor, observations]) => {
-        if (controller.signal.aborted) return;
-        setLoad({ name: 'ready', monitor, observations });
-        setFields((current) => current ?? monitorFormFields(monitor));
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
+    if (focusTarget === null) return;
+    const target =
+      focusTarget === 'pause'
+        ? pauseButtonRef.current
+        : focusTarget === 'resume'
+          ? resumeButtonRef.current
+          : archiveButtonRef.current;
+    if (target === null || document.activeElement === target) {
+      if (target !== null) setFocusTarget(null);
+      return;
+    }
+    target.focus();
+    if (document.activeElement !== target) {
+      // The node was replaced mid-flush; run once more after it settles.
+      const timer = window.setTimeout(() => setFocusSeq((seq) => seq + 1), 0);
+      return () => window.clearTimeout(timer);
+    }
+    setFocusTarget(null);
+  }, [focusSeq, focusTarget]);
+  const requestFocus = (target: 'pause' | 'resume' | 'archive') => {
+    setFocusTarget(target);
+    setFocusSeq((seq) => seq + 1);
+  };
+
+  const fetchData = useCallback(
+    async (signal: AbortSignal, options: { silent: boolean }) => {
+      try {
+        const [monitor, observations, gaps] = await Promise.all([
+          getMonitor(monitorId, signal),
+          listObservations(monitorId, OBSERVATION_LIMIT, signal),
+          listGaps(monitorId, OBSERVATION_LIMIT, signal),
+        ]);
+        if (signal.aborted) return;
+        // A silent poll never touches the form; while the form holds unsaved
+        // changes the fresh monitor only replaces the read-only data. The
+        // dirty check compares the latest typed fields with the monitor the
+        // page last showed (loadRef), not the one just fetched.
+        const storedFields =
+          fieldsRef.current !== null && loadRef.current.name === 'ready'
+            ? monitorFormFields(loadRef.current.monitor)
+            : null;
+        const dirtyNow = storedFields !== null && !fieldsEqual(fieldsRef.current!, storedFields);
+        if (!options.silent && !dirtyNow) {
+          setFields((existing) => existing ?? monitorFormFields(monitor));
+        }
+        setLoad({ name: 'ready', monitor, observations, gaps });
+        setFreshness({ name: 'updated', at: Date.now() });
+      } catch (error: unknown) {
+        if (signal.aborted || isAbortError(error)) return;
         if (error instanceof ApiRequestError && error.code === 'monitor_not_found') {
           setLoad({ name: 'not-found' });
           return;
         }
+        if (options.silent && loadRef.current.name === 'ready') {
+          // A failed silent poll keeps the last data and marks it not updated
+          // instead of tearing the page down to the error state.
+          setFreshness({ name: 'failed', reason: describeApiError(error), at: Date.now() });
+          return;
+        }
         setLoad({ name: 'error', message: describeApiError(error) });
-      });
+      }
+    },
+    [monitorId],
+  );
+
+  useEffect(() => {
+    loadRef.current = load;
+    fieldsRef.current = fields;
+  }, [load, fields]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // Deferred to a microtask so the effect body itself performs no
+    // synchronous state updates; the fetch sets state after its await.
+    Promise.resolve().then(() => {
+      if (!controller.signal.aborted) fetchData(controller.signal, { silent: false });
+    });
     return () => controller.abort();
-  }, [monitorId, reloadToken]);
+  }, [fetchData, reloadToken]);
 
   useEffect(() => () => checkController.current?.abort(), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listIntervals(controller.signal)
+      .then((loaded) => {
+        if (!controller.signal.aborted) setIntervals(loaded);
+      })
+      .catch(() => {
+        // The selector stays empty; saving keeps the stored interval.
+      });
+    return () => controller.abort();
+  }, []);
+
+  // While the edit form holds unsaved changes a poll must not touch the form
+  // fields (the stored name/url differ from what the user typed), so silent
+  // polls only refresh the read-only data; the form is left as-is.
+  const poll = useCallback(async () => {
+    await fetchData(new AbortController().signal, { silent: true });
+  }, [fetchData]);
+
+  usePolling({ refresh: poll });
 
   const reload = () => {
     setReloadToken((token) => token + 1);
@@ -107,6 +247,9 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             ? { ...current, observations: [observation, ...current.observations] }
             : current,
         );
+        // The headline follows the presented status, which only a poll
+        // recomputes; refresh immediately instead of waiting up to 15 s.
+        void fetchData(new AbortController().signal, { silent: true });
       })
       .catch((error: unknown) => {
         if (checkController.current !== controller || isAbortError(error)) return;
@@ -155,6 +298,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       expectedConfigVersion: monitor.configVersion,
       name: fields.name,
       check: checkInputFromFields(fields),
+      intervalSeconds: selectedIntervalForMonitor(choice.current),
     })
       .then((updated) => {
         setSavePending(false);
@@ -202,6 +346,10 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
               ? 'Monitor resumed.'
               : 'Monitor archived. Observations stay available.',
         );
+        // Keyboard users keep a stable anchor: focus the control that
+        // replaced the one they activated (applied after React commits).
+        if (action === 'pause') requestFocus('resume');
+        else if (action === 'resume') requestFocus('pause');
       })
       .catch((error: unknown) => {
         if (isAbortError(error)) return;
@@ -242,7 +390,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     );
   }
 
-  const { monitor, observations } = load;
+  const { monitor, observations, gaps } = load;
   const archived = monitor.lifecycle === 'archived';
   const newestObservation = observations.length === 0 ? null : observations[0];
   const driftNote =
@@ -257,7 +405,18 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         <LifecycleBadge lifecycle={monitor.lifecycle} />
         <span className="version">v{monitor.configVersion}</span>
       </p>
-      <MonitorHeadline lastObservation={newestObservation} now={now} />
+      <MonitorHeadline
+        status={monitor.status}
+        intervalSeconds={monitor.intervalSeconds}
+        now={now}
+      />
+      <p className="updated-at" role="status">
+        {freshness.name === 'failed'
+          ? notUpdatedText(freshness.reason)
+          : freshness.name === 'updated'
+            ? updatedText(freshness.at, now)
+            : null}
+      </p>
       {archived ? (
         <p className="note">Archived monitors are read-only. Observations stay available.</p>
       ) : null}
@@ -283,6 +442,10 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           <div>
             <dt>Deadline</dt>
             <dd>{formatDeadlineSeconds(monitor.check.deadlineMs)}</dd>
+          </div>
+          <div>
+            <dt>Interval</dt>
+            <dd>{intervalLabel(monitor.intervalSeconds)}</dd>
           </div>
           <div>
             <dt>Body limit</dt>
@@ -329,6 +492,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             }
             pending={savePending}
             disabled={archived}
+            intervals={intervals}
+            storedIntervalSeconds={monitor.intervalSeconds}
+            onIntervalChange={(seconds) => {
+              choice.current.current = seconds;
+            }}
             submitLabel="Save changes"
             onSubmit={saveConfiguration}
           />
@@ -357,6 +525,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
                 className="button"
                 onClick={() => applyLifecycle('pause')}
                 disabled={lifecyclePending !== null}
+                ref={pauseButtonRef}
               >
                 Pause
               </button>
@@ -366,6 +535,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
                 className="button"
                 onClick={() => applyLifecycle('resume')}
                 disabled={lifecyclePending !== null}
+                ref={resumeButtonRef}
               >
                 Resume
               </button>
@@ -385,7 +555,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
                 <button
                   type="button"
                   className="button"
-                  onClick={() => setArchiveConfirm(false)}
+                  onClick={() => {
+                    setArchiveConfirm(false);
+                    // Back where the confirm flow started (after commit).
+                    requestFocus('archive');
+                  }}
                   disabled={lifecyclePending !== null}
                 >
                   Cancel
@@ -397,6 +571,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
                 className="button"
                 onClick={() => setArchiveConfirm(true)}
                 disabled={lifecyclePending !== null}
+                ref={archiveButtonRef}
               >
                 Archive
               </button>
@@ -424,8 +599,8 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             : 'Run check now'}
         </button>
         <p className="note">
-          The check runs once, now, and is stored as a manual observation. There is no scheduler in
-          M1.
+          The check runs once, now, and is stored as a manual observation. Scheduled checks run on
+          their own; this never changes the schedule.
         </p>
         {runState.name === 'notice' ? (
           <div className="notice">
@@ -446,10 +621,10 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         ) : null}
       </section>
 
-      <section className="panel" aria-labelledby="monitor-observations-heading">
-        <h3 id="monitor-observations-heading">Observations</h3>
+      <section className="panel" aria-labelledby="monitor-timeline-heading">
+        <h3 id="monitor-timeline-heading">Checks and gaps</h3>
         {driftNote === null ? null : <p className="drift-note">{driftNote}</p>}
-        <ObservationsTable observations={observations} />
+        <TimelineTable observations={observations} gaps={gaps} />
       </section>
     </article>
   );
