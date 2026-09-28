@@ -110,9 +110,9 @@ it('preserves a mid-history cursor across a poll and never re-arms exhausted obs
   await waitFor(() =>
     expect(vi.mocked(getObservationPage).mock.calls.at(-1)?.[3]).toBe('tail-cursor'),
   );
-  expect(await screen.findByText('End of observations history.')).toHaveFocus();
+  expect(await screen.findByText(/No older checks.*90 days/)).toHaveFocus();
   fireEvent.click(screen.getByRole('button', { name: 'Load older gaps' }));
-  expect(await screen.findByText('End of gaps history.')).toHaveFocus();
+  await waitFor(() => expect(screen.getByText(/No older gaps.*90 days/)).toHaveFocus());
   await act(async () => {
     fireEvent(document, new Event('visibilitychange'));
     await Promise.resolve();

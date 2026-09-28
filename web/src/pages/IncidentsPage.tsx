@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { listApplications, type Application } from '../api/applications';
 import {
   ATTENTION_LIMIT,
   incidentLink,
@@ -14,22 +15,26 @@ import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
 import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
+import { ApplicationReference } from '../components/ApplicationReference';
 
 export function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
   const [attention, setAttention] = useState<AttentionNotification[] | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<number | null>(null);
   const initialHashHandled = useRef(false);
   const now = useNow(1000);
   const load = useCallback(async (signal: AbortSignal) => {
     try {
-      const [nextIncidents, nextAttention] = await Promise.all([
+      const [nextIncidents, nextAttention, nextApplications] = await Promise.all([
         listIncidents('all', 50, signal),
         listAttention(ATTENTION_LIMIT, signal),
+        listApplications(signal),
       ]);
       if (signal.aborted) return;
       setIncidents(nextIncidents);
+      setApplications(nextApplications);
       setAttention(nextAttention);
       setUpdated(Date.now());
       setError(null);
@@ -100,6 +105,12 @@ export function IncidentsPage() {
               {incident.monitoringPaused ? <p>Monitoring paused</p> : null}
               {incident.inMaintenance ? <p>In maintenance</p> : null}
               <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
+              {incident.applicationId !== null ? (
+                <p>
+                  Application:{' '}
+                  <ApplicationReference id={incident.applicationId} applications={applications} />
+                </p>
+              ) : null}
               <p>
                 Notifications: {incident.notificationSummary.delivered} delivered ·{' '}
                 {incident.notificationSummary.pending} pending ·{' '}
@@ -128,6 +139,12 @@ export function IncidentsPage() {
                 ; duration {durationWords(incident, now)}. {incident.failureCount} failed checks.
               </p>
               <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
+              {incident.applicationId !== null ? (
+                <p>
+                  Application:{' '}
+                  <ApplicationReference id={incident.applicationId} applications={applications} />
+                </p>
+              ) : null}
               <p>
                 Notifications: {incident.notificationSummary.delivered} delivered ·{' '}
                 {incident.notificationSummary.pending} pending ·{' '}

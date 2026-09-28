@@ -2,12 +2,26 @@ import { render, screen, act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Overview } from '../api/dailyUse';
 import { getOverview } from '../api/dailyUse';
+import { listApplications } from '../api/applications';
 import type { Incident } from '../api/incidents';
 import { monitorStatusFixture } from '../test/fixtures';
 import { groupByApplication } from '../lib/applicationGroups';
 import { OverviewPage } from './OverviewPage';
 
 vi.mock('../api/dailyUse', () => ({ getOverview: vi.fn() }));
+vi.mock('../api/applications', () => ({ listApplications: vi.fn() }));
+vi.mocked(listApplications).mockResolvedValue([
+  {
+    id: 'billing',
+    name: 'Billing',
+    token: null,
+    members: [],
+    createdAt: '2026-09-28T12:00:00.000Z',
+    updatedAt: '2026-09-28T12:00:00.000Z',
+    archivedAt: null,
+    deletion: null,
+  },
+]);
 const data: Overview = {
   evaluatedAt: '2026-09-28T12:00:00.000Z',
   receiveOutages: [],
@@ -210,4 +224,19 @@ describe('Overview', () => {
     });
     expect(getOverview).toHaveBeenCalledTimes(2);
   });
+});
+
+it('labels an application ID missing from the application list as deleted', async () => {
+  vi.mocked(getOverview).mockResolvedValue({
+    ...data,
+    failingWithoutIncident: [
+      {
+        monitor: { ...monitor, applicationId: 'gone', applicationName: 'Old name' },
+        status: monitorStatusFixture({ state: 'failing', reason: null }),
+      },
+    ],
+  });
+  render(<OverviewPage />);
+  expect(await screen.findByRole('heading', { name: 'Deleted application' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Old name' })).not.toBeInTheDocument();
 });

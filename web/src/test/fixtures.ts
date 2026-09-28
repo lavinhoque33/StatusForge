@@ -42,6 +42,7 @@ export function monitorFixture(overrides: Partial<Monitor> = {}): Monitor {
     incidentPolicy: { openAfter: 2, recoverAfter: 2 },
     openIncident: null,
     maintenance: { active: null, next: null },
+    deletion: null,
     createdAt: '2026-09-27T10:00:00.000Z',
     updatedAt: '2026-09-27T10:00:00.000Z',
     ...overrides,

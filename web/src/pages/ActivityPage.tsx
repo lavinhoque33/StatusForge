@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { isAbortError } from '../api/http';
 import { listMonitors, listObservations, type MonitorRecord } from '../api/monitors';
 import { listApplications, listMarkers, type Application } from '../api/applications';
+import { ApplicationReference } from '../components/ApplicationReference';
 import { describeApiError } from '../lib/errors';
 import { mergeActivity, mergeActivityItems, type ActivityItem } from '../lib/activity';
 import { notCountedReasonWords } from '../lib/reasons';
@@ -63,6 +64,7 @@ export function ActivityPage() {
         Recent heartbeat reports and deployments, newest first. Up to 50 observations per heartbeat
         and 50 markers per application, then the 100 newest entries.
       </p>
+      <p className="note">Deployment markers are kept for 365 days.</p>
       {error ? <p role="alert">{error}</p> : null}
       {updated === null && error === null ? <p role="status">Loading activity…</p> : null}
       {updated !== null ? (
@@ -132,6 +134,15 @@ export function ActivityPage() {
                 <Link to={`/monitors/${encodeURIComponent(item.monitor.id)}`}>
                   {item.monitor.name}
                 </Link>{' '}
+                {item.monitor.applicationId !== null ? (
+                  <>
+                    Application:{' '}
+                    <ApplicationReference
+                      id={item.monitor.applicationId}
+                      applications={applications}
+                    />{' '}
+                  </>
+                ) : null}
                 · {item.observation.report?.late ? 'Received late' : 'Received'} ·{' '}
                 {item.observation.counted ? (
                   'Counted'

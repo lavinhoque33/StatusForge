@@ -299,7 +299,7 @@ export function MonitorHistory({
           ) : null}
           {observations.olderLoaded && observations.nextCursor === null ? (
             <p ref={observationEnd} tabIndex={-1}>
-              End of observations history.
+              No older checks. Checks and gap records are kept for 90 days.
             </p>
           ) : null}
           {gaps.nextCursor ? (
@@ -314,7 +314,7 @@ export function MonitorHistory({
           ) : null}
           {gaps.olderLoaded && gaps.nextCursor === null ? (
             <p ref={gapEnd} tabIndex={-1}>
-              End of gaps history.
+              No older gaps. Checks and gap records are kept for 90 days.
             </p>
           ) : null}
         </>

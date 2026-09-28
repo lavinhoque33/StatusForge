@@ -70,6 +70,7 @@ it('marks a full attention page as 200+ in both banner and list', async () => {
   stubApi({
     'GET /api/notifications/attention?limit=200': () => jsonResponse({ notifications }),
     'GET /api/incidents?state=all&limit=50': () => jsonResponse({ incidents: [] }),
+    'GET /api/applications': () => jsonResponse({ applications: [] }),
   });
   render(
     <>
@@ -95,6 +96,7 @@ it('focuses and scrolls to the attention heading after initial hash navigation l
       'GET /api/notifications/attention?limit=200': () =>
         jsonResponse({ notifications: [received] }),
       'GET /api/incidents?state=all&limit=50': () => jsonResponse({ incidents: [] }),
+      'GET /api/applications': () => jsonResponse({ applications: [] }),
     });
     render(<IncidentsPage />);
     const heading = await screen.findByRole('heading', {

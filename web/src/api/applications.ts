@@ -1,5 +1,6 @@
 import { ApiInvalidResponseError, requestJson, requestNoContent } from './http';
 import { requestApplicationMembership, type MonitorRecord } from './monitors';
+import { parseDeletion, type DeletionStatus } from './deletion';
 
 export type Application = {
   id: string;
@@ -9,6 +10,7 @@ export type Application = {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  deletion: DeletionStatus | null;
 };
 export type Marker = {
   id: string;
@@ -67,6 +69,7 @@ export function parseApplication(value: unknown): Application {
     createdAt: time(v.createdAt),
     updatedAt: time(v.updatedAt),
     archivedAt: optionalTime(v.archivedAt),
+    deletion: parseDeletion(v.deletion),
   };
 }
 export function parseMarker(value: unknown): Marker {

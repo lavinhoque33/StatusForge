@@ -20,6 +20,13 @@ type Check struct {
 	DeadlineMs     int    `json:"deadlineMs"     dynamodbav:"deadlineMs"`
 	MaxBodyBytes   int    `json:"maxBodyBytes"   dynamodbav:"maxBodyBytes"`
 }
+type Deletion struct {
+	State        string `json:"state"        dynamodbav:"state"`
+	RequestedAt  string `json:"requestedAt"  dynamodbav:"requestedAt"`
+	UpdatedAt    string `json:"updatedAt"    dynamodbav:"updatedAt"`
+	RemovedItems int    `json:"removedItems" dynamodbav:"removedItems"`
+}
+
 type Monitor struct {
 	ID               string                   `json:"id"                   dynamodbav:"monitorId"`
 	ApplicationID    string                   `json:"applicationId"        dynamodbav:"applicationId,omitempty"`
@@ -45,6 +52,7 @@ type Monitor struct {
 	UpdatedAt        string                   `json:"updatedAt"            dynamodbav:"updatedAt"`
 	PausedAt         string                   `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
 	ArchivedAt       string                   `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
+	Deletion         *Deletion                `json:"deletion"             dynamodbav:"deletion,omitempty"`
 }
 type Observation struct {
 	Kind                string            `json:"kind"                     dynamodbav:"kind,omitempty"`

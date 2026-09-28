@@ -90,6 +90,9 @@ export function MonitorListPage() {
   return (
     <section aria-labelledby="monitor-list-heading">
       <h2 id="monitor-list-heading">Monitors</h2>
+      {typeof window.history.state?.deletedMonitor === 'string' ? (
+        <p role="status">{window.history.state.deletedMonitor} was deleted permanently.</p>
+      ) : null}
 
       {state.name === 'loading' ? <p role="status">Loading monitors…</p> : null}
 
@@ -131,6 +134,7 @@ export function MonitorListPage() {
                 </h3>
                 <p className="monitor-meta">
                   <LifecycleBadge lifecycle={monitor.lifecycle} />
+                  {monitor.deletion !== null ? <span className="lifecycle">Deleting</span> : null}
                   {monitor.kind === 'heartbeat' ? (
                     <span className="type-label">Heartbeat</span>
                   ) : null}

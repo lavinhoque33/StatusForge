@@ -130,6 +130,7 @@ func (s *Store) evaluationItems(
 			return next, open, nil, e
 		}
 		tx = append(tx, notes...)
+		tx = append(tx, s.retentionJob(m.ID, open.ID))
 		open = nil
 	}
 	return next, open, tx, nil

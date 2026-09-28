@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { listApplications, type Application } from '../api/applications';
 import { getOverview, type Overview } from '../api/dailyUse';
 import { incidentLink } from '../api/incidents';
 import { isAbortError } from '../api/http';
@@ -15,14 +16,16 @@ function When({ at }: { at: string }) {
 }
 export function OverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const now = useNow(1000);
   const load = useCallback(async (signal: AbortSignal) => {
     try {
-      const result = await getOverview(signal);
+      const [result, apps] = await Promise.all([getOverview(signal), listApplications(signal)]);
       if (signal.aborted) return;
       setData(result);
+      setApplications(apps);
       setUpdatedAt(Date.now());
       setError(null);
     } catch (failure) {
@@ -37,6 +40,7 @@ export function OverviewPage() {
     return () => controller.abort();
   }, [load]);
   usePolling({ refresh: () => load(new AbortController().signal) });
+  const applicationNames = new Map(applications.map((app) => [app.id, app.name]));
   return (
     <section className="overview" aria-labelledby="overview-heading">
       <h2 id="overview-heading">Overview</h2>
@@ -94,7 +98,7 @@ export function OverviewPage() {
           {data.openIncidents.length > 0 ? (
             <section aria-labelledby="overview-incidents-heading">
               <h3 id="overview-incidents-heading">Open incidents</h3>
-              {groupByApplication(data.openIncidents).map((group) => (
+              {groupByApplication(data.openIncidents, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
                   <ul className="overview-list">
@@ -117,7 +121,7 @@ export function OverviewPage() {
           {data.failingWithoutIncident.length > 0 ? (
             <section aria-labelledby="failing-heading">
               <h3 id="failing-heading">Failing — incident not open yet</h3>
-              {groupByApplication(data.failingWithoutIncident).map((group) => (
+              {groupByApplication(data.failingWithoutIncident, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
                   <ul className="overview-list">
@@ -137,7 +141,7 @@ export function OverviewPage() {
           {data.coverageProblems.length > 0 ? (
             <section aria-labelledby="coverage-problems-heading">
               <h3 id="coverage-problems-heading">Coverage problems</h3>
-              {groupByApplication(data.coverageProblems).map((group) => (
+              {groupByApplication(data.coverageProblems, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
                   <ul className="overview-list">
@@ -178,7 +182,7 @@ export function OverviewPage() {
                 {data.notifications.count === 1 ? '' : 's'} (newest {data.limits.notifications}{' '}
                 shown).
               </p>
-              {groupByApplication(data.notifications.items).map((group) => (
+              {groupByApplication(data.notifications.items, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
                   <ul className="overview-list">
@@ -205,7 +209,7 @@ export function OverviewPage() {
           {data.recentRecoveries.length > 0 ? (
             <section aria-labelledby="recoveries-heading">
               <h3 id="recoveries-heading">Recovered in the last 24 hours</h3>
-              {groupByApplication(data.recentRecoveries).map((group) => (
+              {groupByApplication(data.recentRecoveries, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
                   <ul className="overview-list">

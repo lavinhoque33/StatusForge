@@ -1,0 +1,97 @@
+{
+  "applications": [
+    {
+      "id": "X34PL3YRR4SIKQMJUNVXQUFQTP",
+      "markerIds": [
+        "AHQXLNPSEFRZX7BLQ5MMF5OQT3",
+        "WXATUAZOL6VL2EIWI5GHEIDUNB"
+      ],
+      "name": "M5 service"
+    }
+  ],
+  "milestone": 5,
+  "monitors": [
+    {
+      "gapCount": 1,
+      "id": "MXU723IFJ4OYHBICEU4JA6KFT5",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M5 checks",
+      "observationCount": 5
+    },
+    {
+      "gapCount": 1,
+      "id": "GJO577G4ISDU7YA3NEEWFXGMMQ",
+      "incidents": [
+        {
+          "id": "20260928T192010561Z-onbcfw",
+          "notificationStates": [
+            "delivered",
+            "failed"
+          ],
+          "resolution": "recovered",
+          "state": "resolved"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M5 incident",
+      "observationCount": 6
+    },
+    {
+      "gapCount": 1,
+      "id": "XLUIPZXCFUML5MYQBPZ73XUTWT",
+      "incidents": [
+        {
+          "id": "20260928T192014817Z-upiksk",
+          "notificationStates": [
+            "delivered"
+          ],
+          "resolution": null,
+          "state": "open"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M5 open",
+      "observationCount": 4
+    },
+    {
+      "gapCount": 0,
+      "id": "22THRULX4B7HKSKFI4BL55Z67P",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "paused",
+      "name": "M5 paused",
+      "observationCount": 0
+    },
+    {
+      "gapCount": 0,
+      "id": "JMXDLGGXSIZJTGAE4B27XZFDGQ",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "archived",
+      "name": "M5 archived",
+      "observationCount": 0
+    },
+    {
+      "gapCount": 1,
+      "id": "IIU2VZANYCQ5X2S25VSUVI77JK",
+      "incidents": [
+        {
+          "id": "20260928T192031506Z-adin34",
+          "notificationStates": [
+            "delivered"
+          ],
+          "resolution": null,
+          "state": "open"
+        }
+      ],
+      "kind": "heartbeat",
+      "lifecycle": "active",
+      "name": "M5 heartbeat",
+      "observationCount": 2
+    }
+  ]
+}

@@ -29,9 +29,9 @@ export function usePathname(): string {
 }
 
 /** Push a same-origin path and notify subscribers (`pushState` is silent). */
-export function navigate(to: string): void {
-  if (to !== window.location.pathname) {
-    window.history.pushState(null, '', to);
+export function navigate(to: string, state: unknown = null): void {
+  if (to !== window.location.pathname || state !== null) {
+    window.history.pushState(state, '', to);
   }
   for (const listener of listeners) listener();
 }

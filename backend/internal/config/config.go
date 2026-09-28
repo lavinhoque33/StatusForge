@@ -14,25 +14,26 @@ import (
 )
 
 type Config struct {
-	HTTPAddr                string
-	DynamoDBEndpoint        string
-	DynamoDBRegion          string
-	DynamoDBAccessKeyID     string
-	DynamoDBSecretAccessKey string
-	LogLevel                string
-	LogFormat               string
-	ShutdownTimeout         time.Duration
-	ReadinessTimeout        time.Duration
-	AllowedTargets          string
-	DynamoDBTable           string
-	Workers                 int
-	MinIntervalSeconds      int
-	SchedulerEnabled        bool
-	NotifyURL               string
-	DeliveryWorkers         int
-	DeliveryRetrySchedule   []time.Duration
-	ReminderIntervalSeconds int
-	LivenessIntervalSeconds int
+	HTTPAddr                    string
+	DynamoDBEndpoint            string
+	DynamoDBRegion              string
+	DynamoDBAccessKeyID         string
+	DynamoDBSecretAccessKey     string
+	LogLevel                    string
+	LogFormat                   string
+	ShutdownTimeout             time.Duration
+	ReadinessTimeout            time.Duration
+	AllowedTargets              string
+	DynamoDBTable               string
+	Workers                     int
+	MinIntervalSeconds          int
+	SchedulerEnabled            bool
+	NotifyURL                   string
+	DeliveryWorkers             int
+	DeliveryRetrySchedule       []time.Duration
+	ReminderIntervalSeconds     int
+	LivenessIntervalSeconds     int
+	HousekeepingIntervalSeconds int
 }
 
 func Load(lookup func(string) (string, bool)) (Config, error) {
@@ -106,6 +107,14 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil || cfg.LivenessIntervalSeconds < 2 || cfg.LivenessIntervalSeconds > 60 {
 		return Config{}, fmt.Errorf(
 			"STATUSFORGE_LIVENESS_INTERVAL_SECONDS: must be an integer 2–60",
+		)
+	}
+	cfg.HousekeepingIntervalSeconds, err = strconv.Atoi(
+		get("STATUSFORGE_HOUSEKEEPING_INTERVAL_SECONDS", "60"),
+	)
+	if err != nil || cfg.HousekeepingIntervalSeconds < 2 || cfg.HousekeepingIntervalSeconds > 3600 {
+		return Config{}, fmt.Errorf(
+			"STATUSFORGE_HOUSEKEEPING_INTERVAL_SECONDS: must be an integer 2–3600",
 		)
 	}
 	if err := validateTargets(cfg.AllowedTargets); err != nil {
@@ -194,6 +203,14 @@ func validateTargets(raw string) error {
 		if err != nil || n < 1 || n > 65535 {
 			return fmt.Errorf("STATUSFORGE_ALLOWED_TARGETS: port must be 1–65535")
 		}
+	}
+	return nil
+}
+
+// ValidateTable applies the same local table-name restriction to CLI overrides.
+func ValidateTable(name string) error {
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{3,255}$`).MatchString(name) {
+		return fmt.Errorf("table: must be 3–255 characters [A-Za-z0-9_.-]")
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
+	"github.com/lavinhoque33/statusforge/backend/internal/retention"
 )
 
 var ErrDuplicateDeployment = errors.New("duplicate_deployment")
@@ -48,6 +49,8 @@ func (s *Store) PutDeployment(
 	item["PK"] = mustAV("APP#" + id)
 	item["SK"] = mustAV("DEP#" + marker.ReportedAt + "#" + marker.ID)
 	item["entityType"] = mustAV("deployment")
+	expiry := retention.History(parseStamp(marker.ReportedAt))
+	item["expiresAt"] = mustAV(expiry)
 	condition := &types.ConditionCheck{
 		TableName: aws.String(s.table),
 		Key:       appKey(id),
@@ -77,13 +80,18 @@ func (s *Store) PutDeployment(
 	if marker.DeploymentID != nil {
 		guard := key("APP#"+id, "DEPID#"+*marker.DeploymentID)
 		guard["markerId"] = mustAV(marker.ID)
+		guard["reportedAt"] = mustAV(marker.ReportedAt)
+		guard["expiresAt"] = mustAV(expiry)
 		tx = append(
 			tx,
 			types.TransactWriteItem{
 				Put: &types.Put{
 					TableName:           aws.String(s.table),
 					Item:                guard,
-					ConditionExpression: aws.String("attribute_not_exists(PK)"),
+					ConditionExpression: aws.String("attribute_not_exists(PK) OR expiresAt < :now"),
+					ExpressionAttributeValues: map[string]types.AttributeValue{
+						":now": mustAV(s.now().Unix()),
+					},
 				},
 			},
 		)
@@ -161,6 +169,9 @@ func (s *Store) NearbyDeployments(
 		return nil, ErrUnavailable
 	}
 	for _, item := range out.Items {
+		if expiredAt(item, now) {
+			continue
+		}
 		var m Marker
 		if attributevalue.UnmarshalMap(item, &m) != nil {
 			return nil, ErrUnavailable

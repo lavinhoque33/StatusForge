@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
 	"github.com/lavinhoque33/statusforge/backend/internal/config"
 	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
+	"github.com/lavinhoque33/statusforge/backend/internal/housekeeping"
 	"github.com/lavinhoque33/statusforge/backend/internal/httpapi"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/notify"
@@ -24,8 +26,12 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := command(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		var usage usageError
+		if errors.As(err, &usage) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
@@ -68,6 +74,19 @@ func run() error {
 	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
 	heartbeat.SetLivenessInterval(cfg.LivenessIntervalSeconds)
 	persistence.SetReminderInterval(time.Duration(cfg.ReminderIntervalSeconds) * time.Second)
+	delays := make([]string, len(cfg.DeliveryRetrySchedule))
+	for i, delay := range cfg.DeliveryRetrySchedule {
+		delays[i] = delay.String()
+	}
+	persistence.ConfigureSystem(store.SystemLimits{
+		Workers: cfg.Workers, MinIntervalSeconds: cfg.MinIntervalSeconds,
+		DeliveryWorkers: cfg.DeliveryWorkers, DeliveryRetrySchedule: delays,
+		ReminderIntervalSeconds: cfg.ReminderIntervalSeconds,
+		LivenessIntervalSeconds: cfg.LivenessIntervalSeconds,
+		AllowedTargets:          cfg.AllowedTargets, NotifyURL: cfg.NotifyURL,
+		HistoryScanBound: 2000, SummaryObservationLimit: 20000,
+		SummaryGapLimit: 5000, SummaryWindows: []int{86400, 604800},
+	}, cfg.HousekeepingIntervalSeconds)
 	notifyPolicy, err := notify.PolicyForURL(cfg.NotifyURL)
 	if err != nil {
 		return err
@@ -90,11 +109,6 @@ func run() error {
 		WriteTimeout:      40 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	listener, err := net.Listen("tcp", cfg.HTTPAddr)
-	if err != nil {
-		return fmt.Errorf("listen: %w", err)
-	}
-	defer listener.Close()
 	logger.Info(
 		"starting",
 		"addr",
@@ -112,10 +126,20 @@ func run() error {
 	}
 	cancel()
 	tableCtx, tableCancel := context.WithTimeout(context.Background(), cfg.ReadinessTimeout*5)
-	if err := persistence.Initialize(tableCtx); err != nil {
-		logger.Warn("initial table creation degraded", "reason", "dependency_failure")
+	if initErr := persistence.Initialize(tableCtx); initErr != nil {
+		if errors.Is(initErr, store.ErrNewerFormat) ||
+			errors.Is(initErr, store.ErrIncompatibleTTL) {
+			tableCancel()
+			return fmt.Errorf("initialize table %s: %w", cfg.DynamoDBTable, initErr)
+		}
+		logger.Warn("initial table initialization degraded", "reason", "dependency_failure")
 	}
 	tableCancel()
+	listener, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer listener.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
@@ -141,12 +165,39 @@ func run() error {
 		)
 	}()
 	defer func() { stopDelivery(); <-deliveryDone }()
+	fatalErrors := make(chan error, 1)
+	housekeepingCtx, stopHousekeeping := context.WithCancel(context.Background())
+	housekeepingDone := make(chan struct{})
+	go func() {
+		defer close(housekeepingDone)
+		(housekeeping.Worker{
+			Store: persistence, Interval: time.Duration(cfg.HousekeepingIntervalSeconds) * time.Second,
+			Logger: logger, Fatal: func(err error) bool {
+				if !errors.Is(err, store.ErrNewerFormat) && !errors.Is(err, store.ErrIncompatibleTTL) {
+					return false
+				}
+				logger.Error("fatal_table_format", "error", err)
+				fatalErrors <- err
+				return true
+			},
+		}).Run(housekeepingCtx)
+	}()
+	defer func() { stopHousekeeping(); <-housekeepingDone }()
 	go func() { serveErrors <- server.Serve(listener) }()
+	var fatalError error
 	select {
 	case err := <-serveErrors:
 		if err != nil && err != http.ErrServerClosed {
 			return fmt.Errorf("serve: %w", err)
 		}
+	case fatalError = <-fatalErrors:
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+		}
+		<-serveErrors
+		return fatalError
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()

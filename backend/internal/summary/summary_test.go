@@ -206,3 +206,17 @@ func TestPauseAndTruncation(t *testing.T) {
 		t.Fatalf("pause/truncation: %+v", r)
 	}
 }
+
+func TestRetainedResumeClosesPauseStartedBeforeHistory(t *testing.T) {
+	to := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	from := to.Add(-24 * time.Hour)
+	resumed := from.Add(3 * time.Hour)
+	r := Compute(Input{
+		Window: "24h", To: to, Lifecycle: "active",
+		Events: []LifecycleEvent{{Action: "resumed", At: stamp(resumed)}},
+	})
+	if r.Coverage.PausedSeconds != 3*3600 || r.LifecycleHistoryFrom == nil ||
+		*r.LifecycleHistoryFrom != stamp(resumed) {
+		t.Fatalf("retained resume must preserve window's paused time: %+v", r)
+	}
+}

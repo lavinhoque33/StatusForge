@@ -25,6 +25,8 @@ export type ApiErrorCode =
   | 'notification_not_found'
   | 'not_failed'
   | 'not_supported'
+  | 'not_archived'
+  | 'deleting'
   | 'store_unavailable';
 
 /** One field problem inside a `validation_failed` response. */

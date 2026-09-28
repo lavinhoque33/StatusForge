@@ -12,6 +12,7 @@ import {
 
 const FIELD_MESSAGES: Record<string, string> = {
   required: 'This value is required.',
+  mismatch: 'Type the exact current name, including capitalization.',
   too_long: 'This value is too long.',
   too_short: 'This value is too short.',
   out_of_range: 'This value is out of range.',
@@ -53,6 +54,10 @@ export function describeApiError(error: unknown): string {
         return 'This monitor changed; review and try again.';
       case 'archived':
         return 'This monitor is archived; it cannot be changed.';
+      case 'not_archived':
+        return 'Archive this item before deleting it permanently.';
+      case 'deleting':
+        return 'This item is being deleted; changes are no longer allowed.';
       case 'check_in_progress':
         return 'A check is already running.';
       case 'invalid_transition':

@@ -20,7 +20,7 @@ func (s *Store) initializeLegacyCursor(
 	if m.IntervalSeconds == 0 {
 		m.IntervalSeconds = monitor.DefaultIntervalSeconds
 	}
-	if m.ScheduledThrough == "" {
+	if m.ScheduledThrough == "" && m.Deletion == nil {
 		cursor := slotStamp(m.ID, m.IntervalSeconds, s.now())
 		_, err := s.db.UpdateItem(
 			ctx,
@@ -30,7 +30,9 @@ func (s *Store) initializeLegacyCursor(
 				UpdateExpression: aws.String(
 					"SET scheduledThrough = :cursor, intervalSeconds = if_not_exists(intervalSeconds, :interval)",
 				),
-				ConditionExpression: aws.String("attribute_not_exists(scheduledThrough)"),
+				ConditionExpression: aws.String(
+					"attribute_exists(PK) AND attribute_not_exists(deletion) AND attribute_not_exists(scheduledThrough)",
+				),
 				ExpressionAttributeValues: map[string]types.AttributeValue{
 					":cursor":   mustAV(cursor),
 					":interval": mustAV(m.IntervalSeconds),

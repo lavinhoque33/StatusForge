@@ -11,7 +11,7 @@ export function MonitorApplicationSection({
   monitor: MonitorRecord;
   onChange: (monitor: MonitorRecord) => void;
 }) {
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<Application[] | null>(null);
   const [selection, setSelection] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
@@ -24,6 +24,10 @@ export function MonitorApplicationSection({
       });
     return () => controller.abort();
   }, []);
+  const missing =
+    applications !== null &&
+    monitor.applicationId !== null &&
+    !applications.some((app) => app.id === monitor.applicationId);
   const save = async () => {
     setPending(true);
     setMessage('');
@@ -47,15 +51,27 @@ export function MonitorApplicationSection({
       <h3 id="monitor-application-heading">Application</h3>
       <p>Membership is context only. It does not change the monitor configuration or health.</p>
       <label htmlFor="monitor-application">Application</label>
+      {missing ? <p>Deleted application</p> : null}
       <select
         id="monitor-application"
         value={selection ?? monitor.applicationId ?? ''}
-        disabled={pending || monitor.lifecycle === 'archived'}
+        disabled={
+          pending ||
+          applications === null ||
+          monitor.lifecycle === 'archived' ||
+          monitor.deletion !== null
+        }
         onChange={(event) => setSelection(event.target.value)}
       >
         <option value="">No application</option>
+        {missing && monitor.applicationId !== null ? (
+          <option value={monitor.applicationId}>Deleted application</option>
+        ) : null}
+        {applications === null && monitor.applicationId !== null ? (
+          <option value={monitor.applicationId}>Application list unavailable</option>
+        ) : null}
         {applications
-          .filter((app) => !app.archivedAt || app.id === monitor.applicationId)
+          ?.filter((app) => !app.archivedAt || app.id === monitor.applicationId)
           .map((app) => (
             <option key={app.id} value={app.id}>
               {app.name}
@@ -69,8 +85,9 @@ export function MonitorApplicationSection({
         onClick={() => void save()}
         disabled={
           pending ||
+          applications === null ||
           monitor.lifecycle === 'archived' ||
-          selection === null ||
+          monitor.deletion !== null ||
           selection === (monitor.applicationId ?? '')
         }
       >

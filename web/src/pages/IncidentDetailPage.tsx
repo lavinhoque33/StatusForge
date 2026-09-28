@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { listApplications, type Application } from '../api/applications';
 import {
   getIncident,
   retryNotification,
@@ -21,6 +22,7 @@ import { formatLocalWithOffset } from '../lib/time';
 import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
+import { ApplicationReference } from '../components/ApplicationReference';
 
 function EvidenceList({ items }: { items: Evidence[] }) {
   return (
@@ -43,6 +45,7 @@ export function IncidentDetailPage({
   incidentId: string;
 }) {
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -53,10 +56,14 @@ export function IncidentDetailPage({
   const load = useCallback(
     async (signal: AbortSignal) => {
       try {
-        const next = await getIncident(monitorId, incidentId, signal);
+        const [next, apps] = await Promise.all([
+          getIncident(monitorId, incidentId, signal),
+          listApplications(signal),
+        ]);
         if (signal.aborted) return;
         setDetail(next);
         setError(null);
+        setApplications(apps);
         setNotFound(false);
       } catch (failure) {
         if (signal.aborted || isAbortError(failure)) return;
@@ -167,9 +174,21 @@ export function IncidentDetailPage({
       )}
       {incident.monitoringPaused ? <p>Monitoring paused</p> : null}
       {incident.inMaintenance ? <p>In maintenance</p> : null}
+      {incident.applicationId !== null ? (
+        <p>
+          Application:{' '}
+          <ApplicationReference id={incident.applicationId} applications={applications} />
+        </p>
+      ) : null}
       {error === null ? null : (
         <p role="alert">Could not refresh: {error}. Showing last available data.</p>
       )}
+      {now - Date.parse(incident.openedAt) > 90 * 24 * 60 * 60 * 1000 ? (
+        <p className="note">
+          Checks and gap records from this period are no longer kept; the evidence below was stored
+          with the incident.
+        </p>
+      ) : null}
       <section className="panel" aria-labelledby="opening-heading">
         <h3 id="opening-heading">Opening evidence</h3>
         <EvidenceList items={incident.openingEvidence} />

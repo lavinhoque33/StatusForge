@@ -9,6 +9,7 @@
  */
 import { ApiInvalidResponseError, requestJson, requestNoContent } from './http';
 import { parseWindow, type Window } from './maintenance';
+import { parseDeletion, type DeletionStatus } from './deletion';
 
 /** Observation window requested by the detail page (contract default is 50). */
 export const OBSERVATION_LIMIT = 50;
@@ -84,6 +85,7 @@ export type Monitor = {
   updatedAt: string;
   pausedAt?: string;
   archivedAt?: string;
+  deletion: DeletionStatus | null;
 };
 
 export type Observation = {
@@ -392,6 +394,7 @@ export function parseMonitor(value: unknown): Monitor {
     },
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    deletion: parseDeletion(prop(value, 'deletion')),
   };
   if ('pausedAt' in value && value.pausedAt !== undefined && value.pausedAt !== null) {
     if (!isTimestamp(value.pausedAt)) invalid();

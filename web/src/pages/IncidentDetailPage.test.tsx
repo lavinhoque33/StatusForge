@@ -6,8 +6,14 @@ import {
   mergeIncidentTimeline,
   resolutionWords,
 } from '../lib/incidentPresentation';
-import { gapFixture, jsonResponse, stubApi, callsTo } from '../test/fixtures';
+import { gapFixture, jsonResponse, stubApi as stubFetch, callsTo } from '../test/fixtures';
 import { IncidentDetailPage } from './IncidentDetailPage';
+function stubApi(handlers: Parameters<typeof stubFetch>[0]) {
+  return stubFetch({
+    'GET /api/applications': () => jsonResponse({ applications: [] }),
+    ...handlers,
+  });
+}
 
 const at = '2026-09-27T10:00:00.000Z';
 const evidence: Evidence = {
@@ -193,4 +199,32 @@ it('shows nearby deployments before, after, and at opening without attributing c
   expect(
     screen.getAllByRole('link', { name: 'https://example.invalid/release' })[0],
   ).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
+it('shows the incident evidence retention caveat only past the 90-day boundary', async () => {
+  const now = Date.now();
+  const boundary = 90 * 24 * 60 * 60 * 1000;
+  let openedAt = new Date(now - boundary + 60_000).toISOString();
+  stubApi({ [path]: () => jsonResponse({ ...detail, incident: { ...incident, openedAt } }) });
+  const view = render(<IncidentDetailPage monitorId="monitor-1" incidentId="incident-1" />);
+  await screen.findByRole('heading', { name: 'Opening evidence' });
+  expect(
+    screen.queryByText(/Checks and gap records from this period are no longer kept/),
+  ).not.toBeInTheDocument();
+  view.unmount();
+  openedAt = new Date(now - boundary - 60_000).toISOString();
+  render(<IncidentDetailPage monitorId="monitor-1" incidentId="incident-1" />);
+  expect(
+    await screen.findByText(/Checks and gap records from this period are no longer kept/),
+  ).toBeInTheDocument();
+});
+
+it('labels a missing application without linking to a nonexistent item', async () => {
+  stubApi({
+    [path]: () =>
+      jsonResponse({ ...detail, incident: { ...incident, applicationId: 'deleted-app' } }),
+  });
+  render(<IncidentDetailPage monitorId="monitor-1" incidentId="incident-1" />);
+  const reference = await screen.findByText(/Application: Deleted application/);
+  expect(reference.querySelector('a')).toBeNull();
 });

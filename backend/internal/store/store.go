@@ -17,6 +17,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
+	"github.com/lavinhoque33/statusforge/backend/internal/retention"
 )
 
 var (
@@ -31,15 +32,21 @@ var (
 )
 
 type Store struct {
-	db                 *dynamodb.Client
-	table              string
-	mu                 sync.Mutex
-	ready              bool
-	now                func() time.Time
-	timeout            time.Duration
-	lastSuccessfulTick map[string]time.Time
-	needsRecovery      map[string]bool
-	reminderInterval   time.Duration
+	db                   *dynamodb.Client
+	table                string
+	mu                   sync.Mutex
+	ready                bool
+	now                  func() time.Time
+	timeout              time.Duration
+	lastSuccessfulTick   map[string]time.Time
+	needsRecovery        map[string]bool
+	reminderInterval     time.Duration
+	housekeepingMu       sync.Mutex
+	lastHousekeepingRun  *string
+	housekeepingInterval int
+	systemLimits         SystemLimits
+	retentionJobCursor   map[string]types.AttributeValue
+	deletionJobCursors   map[string]map[string]types.AttributeValue
 }
 
 func New(
@@ -59,6 +66,7 @@ func New(
 		lastSuccessfulTick: make(map[string]time.Time),
 		reminderInterval:   6 * time.Hour,
 		needsRecovery:      make(map[string]bool),
+		deletionJobCursors: make(map[string]map[string]types.AttributeValue),
 	}
 }
 func (s *Store) Initialize(ctx context.Context) error { return s.ensure(ctx) }
@@ -102,6 +110,12 @@ func (s *Store) ensure(ctx context.Context) error {
 	if err := waiter.Wait(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(s.table)}, s.timeout); err != nil {
 		return ErrUnavailable
 	}
+	if _, _, err := s.ttl(ctx); err != nil {
+		return err
+	}
+	if err := s.marker(ctx); err != nil {
+		return err
+	}
 	s.ready = true
 	return nil
 }
@@ -125,6 +139,7 @@ func (s *Store) lifecycleEvent(id, action string, at time.Time) types.TransactWr
 	item["entityType"] = mustAV("lifecycle")
 	item["PK"] = mustAV("MON#" + id)
 	item["SK"] = mustAV("LIFE#" + workStamp(at) + "#" + action)
+	item["expiresAt"] = mustAV(retention.History(at))
 	return putItem(s.table, item)
 }
 
@@ -367,9 +382,11 @@ func (s *Store) save(
 		}
 	}
 	input := &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(s.table),
-		Key:                       key("MONITORS", "MON#"+m.ID),
-		ConditionExpression:       aws.String(condition),
+		TableName: aws.String(s.table),
+		Key:       key("MONITORS", "MON#"+m.ID),
+		ConditionExpression: aws.String(
+			condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+		),
 		UpdateExpression:          aws.String(expr),
 		ExpressionAttributeValues: values,
 		ExpressionAttributeNames:  map[string]string{"#name": "name", "#check": "check"},
@@ -457,6 +474,7 @@ func (s *Store) save(
 				return noteErr
 			}
 			tx = append(tx, notes...)
+			tx = append(tx, s.retentionJob(m.ID, in.ID))
 		}
 	}
 	_, err := s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
@@ -661,17 +679,20 @@ func (s *Store) PutObservation(ctx context.Context, o monitor.Observation) error
 	item["expiresAt"] = &types.AttributeValueMemberN{
 		Value: fmt.Sprint(started.Add(90 * 24 * time.Hour).Unix()),
 	}
-	_, err = s.db.PutItem(
-		ctx,
-		&dynamodb.PutItemInput{
-			TableName:           aws.String(s.table),
-			Item:                item,
-			ConditionExpression: aws.String("attribute_not_exists(PK)"),
+	_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+		TransactItems: []types.TransactWriteItem{
+			{ConditionCheck: &types.ConditionCheck{
+				TableName: aws.String(s.table),
+				Key:       key("MONITORS", "MON#"+o.MonitorID),
+				ConditionExpression: aws.String(
+					"attribute_exists(PK) AND attribute_not_exists(deletion)",
+				),
+			}},
+			putItem(s.table, item),
 		},
-	)
+	})
 	if err != nil {
-		var duplicate *types.ConditionalCheckFailedException
-		if errors.As(err, &duplicate) {
+		if cancelled(err, 1) {
 			return ErrDuplicate
 		}
 		return ErrUnavailable

@@ -12,8 +12,13 @@ const app = {
   createdAt: at,
   updatedAt: at,
   archivedAt: null,
+  deletion: null,
 };
-afterEach(() => vi.unstubAllGlobals());
+const archived = { ...app, archivedAt: at, token: null };
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 it('shows member state, incident count, and latest deployment age from bounded existing reads', async () => {
   const marker = {
     id: 'd1',
@@ -282,4 +287,57 @@ it('clears prior marker success before displaying duplicate deployment error', a
     await screen.findByText('This deployment ID was already recorded for this application.'),
   ).toBeInTheDocument();
   expect(screen.queryByText('Deployment marker recorded.')).not.toBeInTheDocument();
+});
+
+it('keeps an archived application read-only during deletion and removes its card when the job finishes', async () => {
+  let removed = false;
+  let deletion = false;
+  const fetchMock = stubApi({
+    'GET /api/applications': () =>
+      jsonResponse({
+        applications: removed
+          ? []
+          : [
+              {
+                ...archived,
+                deletion: deletion
+                  ? { state: 'deleting', requestedAt: at, updatedAt: at, removedItems: 3 }
+                  : null,
+              },
+            ],
+      }),
+    'GET /api/monitors': () => jsonResponse({ monitors: [] }),
+    'GET /api/applications/app-1/deployments?limit=50': () => jsonResponse({ deployments: [] }),
+    'POST /api/applications/app-1/deletion': () => {
+      deletion = true;
+      return jsonResponse(
+        { state: 'deleting', requestedAt: at, updatedAt: at, removedItems: 3 },
+        202,
+      );
+    },
+    'GET /api/applications/app-1/deletion': () => {
+      removed = true;
+      return jsonResponse({ error: 'not_found' }, 404);
+    },
+  });
+  render(<ApplicationsPage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete permanently' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Type Payments to delete permanently' }), {
+    target: { value: 'Payments' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm permanent deletion' }));
+  expect(await screen.findByText('Deleting — 3 records removed')).toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('heading', { name: 'Payments — Archived — Deleting' }),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole('button', { name: 'Archive application' })).not.toBeInTheDocument();
+  expect(
+    await screen.findByText('Payments was deleted permanently.', {}, { timeout: 5000 }),
+  ).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.queryByRole('heading', { name: /Payments — Archived/ })).not.toBeInTheDocument(),
+  );
+  expect(callsTo(fetchMock, 'POST', '/api/applications/app-1/deletion')).toHaveLength(1);
 });

@@ -926,3 +926,45 @@ describe('MonitorDetailPage', () => {
     expect(screen.getByRole('row', { name: /Healthy.*Maintenance/ })).toBeInTheDocument();
   });
 });
+
+it('navigates to the monitor list with the deleted name after asynchronous completion', async () => {
+  window.history.pushState(null, '', '/monitors/monitor-1');
+  const monitor = monitorRecordFixture({
+    lifecycle: 'archived',
+    archivedAt: '2026-09-27T10:00:00.000Z',
+  });
+  stubApi({
+    ...baseStubs({ monitor }),
+    'POST /api/monitors/monitor-1/deletion': () =>
+      jsonResponse(
+        {
+          state: 'deleting',
+          requestedAt: '2026-09-27T10:00:00.000Z',
+          updatedAt: '2026-09-27T10:00:00.000Z',
+          removedItems: 1,
+        },
+        202,
+      ),
+    'GET /api/monitors/monitor-1/deletion': () => jsonResponse({ error: 'monitor_not_found' }, 404),
+  });
+  const view = render(<MonitorDetailPage monitorId="monitor-1" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete permanently' }));
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Type Sample target to delete permanently' }),
+    { target: { value: 'Sample target' } },
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm permanent deletion' }));
+  await waitFor(() => expect(window.history.state?.deletedMonitor).toBe('Sample target'), {
+    timeout: 5000,
+  });
+  expect(window.location.pathname).toBe('/monitors');
+  view.unmount();
+  window.history.pushState(null, '', '/');
+});
+
+it('shows a deleted application without a link on monitor detail', async () => {
+  stubApi(baseStubs({ monitor: monitorRecordFixture({ applicationId: 'missing-app' }) }));
+  render(<MonitorDetailPage monitorId="monitor-1" />);
+  const label = await screen.findByText('Deleted application', { selector: 'p' });
+  expect(label.closest('a')).toBeNull();
+});

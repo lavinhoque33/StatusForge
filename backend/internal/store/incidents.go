@@ -233,7 +233,13 @@ func (s *Store) query(
 	if err != nil {
 		return nil, ErrUnavailable
 	}
-	return out.Items, nil
+	live := out.Items[:0]
+	for _, item := range out.Items {
+		if !s.expired(item) {
+			live = append(live, item)
+		}
+	}
+	return live, nil
 }
 
 func (s *Store) incident(ctx context.Context, mid, id string) (Incident, error) {
@@ -248,7 +254,7 @@ func (s *Store) incident(ctx context.Context, mid, id string) (Incident, error) 
 	if err != nil {
 		return Incident{}, ErrUnavailable
 	}
-	if len(out.Item) == 0 {
+	if len(out.Item) == 0 || s.expired(out.Item) {
 		return Incident{}, ErrIncidentNotFound
 	}
 	var v Incident
@@ -270,7 +276,7 @@ func (s *Store) notification(ctx context.Context, mid, id, nk string) (Notificat
 	if err != nil {
 		return Notification{}, ErrUnavailable
 	}
-	if len(out.Item) == 0 {
+	if len(out.Item) == 0 || s.expired(out.Item) {
 		return Notification{}, ErrNotificationNotFound
 	}
 	var n Notification
@@ -716,7 +722,7 @@ func (s *Store) ClaimDelivery(
 		}
 	}
 	if maintenanceMonitor != nil {
-		condition, values := indexCondition(*maintenanceMonitor)
+		condition, values := maintenanceCondition(*maintenanceMonitor)
 		tx = append(tx, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
 			TableName:                 aws.String(s.table),
 			Key:                       key("MONITORS", "MON#"+d.MonitorID),
@@ -878,7 +884,7 @@ func (s *Store) RetryNotification(
 				Key:                 key(incidentPK(mid), noteSK(id, nk)),
 				ConditionExpression: aws.String("#state = :failed"),
 				UpdateExpression: aws.String(
-					"SET #state = :pending, nextAttemptAt = :now, manualRetry = :manual REMOVE failedAt",
+					"SET #state = :pending, nextAttemptAt = :now, manualRetry = :manual REMOVE failedAt, expiresAt",
 				),
 				ExpressionAttributeNames: map[string]string{"#state": "state"},
 				ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -896,6 +902,18 @@ func (s *Store) RetryNotification(
 			},
 		},
 		putItem(s.table, pointer(dueSK(at, mid, id, nk))),
+		{Update: &types.Update{
+			TableName: aws.String(s.table), Key: key(incidentPK(mid), "INC#"+id),
+			ConditionExpression: aws.String("attribute_exists(PK)"),
+			UpdateExpression:    aws.String("REMOVE expiresAt"),
+		}},
+		s.retentionJob(mid, id),
+		{ConditionCheck: &types.ConditionCheck{
+			TableName: aws.String(s.table), Key: key("MONITORS", "MON#"+mid),
+			ConditionExpression: aws.String(
+				"attribute_exists(PK) AND attribute_not_exists(deletion)",
+			),
+		}},
 	}
 	_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
 	if err != nil {
@@ -923,6 +941,9 @@ func (s *Store) Attention(ctx context.Context, limit int) ([]Notification, error
 			continue
 		}
 		n, e := s.notification(ctx, parts[0], parts[1], parts[2])
+		if errors.Is(e, ErrNotificationNotFound) {
+			continue
+		}
 		if e != nil {
 			return nil, e
 		}

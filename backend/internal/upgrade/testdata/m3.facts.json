@@ -1,0 +1,70 @@
+{
+  "applications": [],
+  "milestone": 3,
+  "monitors": [
+    {
+      "gapCount": 3,
+      "id": "IKTF3UCWT7GCPVQIABGBYLEC7I",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M3 checks",
+      "observationCount": 1
+    },
+    {
+      "gapCount": 2,
+      "id": "5WBVT6MA4B5DSSBC5A56ZAUDJD",
+      "incidents": [
+        {
+          "id": "20260928T191843813Z-ovllju",
+          "notificationStates": [
+            "delivered",
+            "failed"
+          ],
+          "resolution": "recovered",
+          "state": "resolved"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M3 incident",
+      "observationCount": 2
+    },
+    {
+      "gapCount": 1,
+      "id": "6S2JONEHOYWC7O3KLVZBYTEO63",
+      "incidents": [
+        {
+          "id": "20260928T191848051Z-hcla3h",
+          "notificationStates": [
+            "delivered"
+          ],
+          "resolution": null,
+          "state": "open"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M3 open",
+      "observationCount": 1
+    },
+    {
+      "gapCount": 0,
+      "id": "I5B4R26ZKJZDUZJNQ2KDXPXONJ",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "paused",
+      "name": "M3 paused",
+      "observationCount": 0
+    },
+    {
+      "gapCount": 0,
+      "id": "6U6JMNUO2PC5XY2LHUYM6CZDN7",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "archived",
+      "name": "M3 archived",
+      "observationCount": 0
+    }
+  ]
+}

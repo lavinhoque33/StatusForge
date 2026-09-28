@@ -96,13 +96,29 @@ nav a[aria-current='page'] {
   text-decoration-thickness: 2px;
 }
 
+.retention-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.retention-table {
+  border-collapse: collapse;
+  min-width: 35rem;
+  text-align: left;
+}
+.retention-table th,
+.retention-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
 /* Focus and controls */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
-.summary-plot svg[tabindex='0']:focus-visible {
+.summary-plot svg[tabindex='0']:focus-visible,
+.retention-scroll:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
@@ -135,6 +151,14 @@ textarea:focus-visible,
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
+}
+.confirm-step input {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0.5rem;
+  font: inherit;
 }
 
 /* Monitor summaries: text carries the meaning, colour is an accent */

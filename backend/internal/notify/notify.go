@@ -169,6 +169,10 @@ func (w *Worker) Run(ctx context.Context) {
 				if state == "failed" {
 					level = slog.LevelWarn
 				}
+				var httpStatus any
+				if status != nil {
+					httpStatus = *status
+				}
 				logger.Log(
 					context.Background(),
 					level,
@@ -184,7 +188,7 @@ func (w *Worker) Run(ctx context.Context) {
 					"result",
 					result,
 					"http_status",
-					status,
+					httpStatus,
 					"duration_ms",
 					duration,
 					"next_state",

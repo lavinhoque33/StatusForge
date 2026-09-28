@@ -7,7 +7,7 @@ BACKEND := backend
 # Native applications do not read Compose's environment file themselves.
 LOAD_ENV = set -a; if [ -f .env ]; then . ./.env; fi; set +a;
 
-.PHONY: help setup doctor db-up db-down db-reset backend-dev sample-target notification-receiver sample-job web-dev backend-check web-check verify format down
+.PHONY: help setup doctor db-up db-down db-reset db-export db-import backend-dev sample-target notification-receiver sample-job web-dev backend-check web-check verify format down
 
 help:
 	@printf '%s\n' \
@@ -16,6 +16,8 @@ help:
 	  '  doctor         Check native tools and Docker access' \
 	  '  db-up/db-down  Start/wait for or stop DynamoDB Local on 127.0.0.1; data is retained' \
 	  '  db-reset       DESTRUCTIVE: remove DynamoDB Local containers and data volume (CONFIRM=yes)' \
+	  '  db-export      Export private DynamoDB JSONL data (TABLE= optional, FILE= optional)' \
+	  '  db-import      Import validated JSONL into empty table (FILE= and TABLE= required)' \
 	  '  backend-dev    Run the API on 127.0.0.1:8080 with root .env configuration' \
 	  '  sample-target  Run the controlled sample target fixture on 127.0.0.1:8090' \
 	  '  notification-receiver  Run the local notification receiver on 127.0.0.1:8091' \
@@ -47,6 +49,13 @@ db-reset:
 	@if [ "$(CONFIRM)" != "yes" ]; then \
 	  printf '%s\n' 'Refusing: this deletes all local DynamoDB data. Re-run as: make db-reset CONFIRM=yes'; exit 1; fi
 	docker compose down --volumes
+
+db-export: .env
+	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/statusforge export $(if $(TABLE),--table $(TABLE),) $(if $(FILE),--out $(abspath $(FILE)),--out ../.local/exports/$(or $(TABLE),statusforge)-$$(date -u +%Y%m%dT%H%M%SZ).jsonl)
+
+db-import: .env
+	@if [ -z "$(FILE)" ] || [ -z "$(TABLE)" ]; then printf '%s\n' 'Specify FILE= and TABLE='; exit 2; fi
+	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/statusforge import --in $(abspath $(FILE)) --table $(TABLE)
 
 backend-dev: .env
 	@$(LOAD_ENV) cd $(BACKEND) && $(GO) run ./cmd/statusforge

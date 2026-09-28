@@ -16,6 +16,7 @@ import {
 import { ApiRequestError, ApiValidationError, isAbortError, type FieldIssue } from '../api/http';
 import { listMonitors, type MonitorRecord } from '../api/monitors';
 import { HeartbeatTokenPanel } from '../components/HeartbeatTokenPanel';
+import { PermanentDeletion } from '../components/PermanentDeletion';
 import { describeApiError, fieldErrorMessage } from '../lib/errors';
 import { heartbeatDeadlines, heartbeatState } from '../lib/heartbeatHeadline';
 import { applicationSummary } from '../lib/applicationSummary';
@@ -32,6 +33,7 @@ function ApplicationCard({
   refresh,
   initialToken,
   clearIssuedToken,
+  onDeleted,
 }: {
   application: Application;
   monitors: MonitorRecord[];
@@ -39,6 +41,7 @@ function ApplicationCard({
   refresh: () => Promise<void>;
   initialToken: string | null;
   clearIssuedToken: () => void;
+  onDeleted: (name: string) => void;
 }) {
   const [name, setName] = useState(application.name);
   const [token, setToken] = useState(initialToken);
@@ -90,6 +93,7 @@ function ApplicationCard({
     ),
   );
   const archived = application.archivedAt !== null;
+  const deleting = application.deletion !== null;
   const available = monitors.filter(
     (monitor) => monitor.lifecycle !== 'archived' && monitor.applicationId !== application.id,
   );
@@ -160,6 +164,7 @@ function ApplicationCard({
       <h3 ref={headingRef} tabIndex={-1} id={`application-${application.id}`}>
         {application.name}
         {archived ? ' — Archived' : ''}
+        {deleting ? ' — Deleting' : ''}
       </h3>
       <p>
         Created{' '}
@@ -225,8 +230,12 @@ function ApplicationCard({
           }}
         />
       ) : null}
-      {archived ? (
-        <p>Archived. Members and token removed; deployment history retained.</p>
+      {archived || deleting ? (
+        <p>
+          {deleting
+            ? 'Deleting. Changes are no longer allowed.'
+            : 'Archived. Members and token removed; deployment history retained.'}
+        </p>
       ) : (
         <>
           <form
@@ -358,6 +367,16 @@ function ApplicationCard({
           </section>
         </>
       )}
+      {archived ? (
+        <PermanentDeletion
+          resource="applications"
+          id={application.id}
+          name={application.name}
+          deletion={application.deletion}
+          onStatus={() => void refresh()}
+          onComplete={() => onDeleted(application.name)}
+        />
+      ) : null}
       <p role="status">{notice}</p>
       <section>
         <h4>Members</h4>
@@ -493,6 +512,7 @@ export function ApplicationsPage() {
   const [error, setError] = useState('');
   const [creationNotice, setCreationNotice] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [deletionNotice, setDeletionNotice] = useState('');
   const [markerRefresh, setMarkerRefresh] = useState(0);
   const [pending, setPending] = useState(false);
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -570,6 +590,7 @@ export function ApplicationsPage() {
         </button>
       </form>
       {creationNotice ? <p role="status">{creationNotice}</p> : null}
+      {deletionNotice ? <p role="status">{deletionNotice}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {!loaded ? (
         <p role="status">Loading applications…</p>
@@ -584,6 +605,10 @@ export function ApplicationsPage() {
               markerRefresh={markerRefresh}
               monitors={monitors}
               initialToken={issued[application.id] ?? null}
+              onDeleted={(deletedName) => {
+                setDeletionNotice(`${deletedName} was deleted permanently.`);
+                void refresh();
+              }}
               clearIssuedToken={() =>
                 setIssued((current) => {
                   const next = { ...current };

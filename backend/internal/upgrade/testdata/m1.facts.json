@@ -1,0 +1,30 @@
+{
+  "applications": [],
+  "milestone": 1,
+  "monitors": [
+    {
+      "id": "VH2X2KTMYIHE7F4EKIOPJP2IOF",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M1 checks",
+      "observationCount": 1
+    },
+    {
+      "id": "RZTXAWJZEKTJW3A62HASZBNIC6",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "paused",
+      "name": "M1 paused",
+      "observationCount": 0
+    },
+    {
+      "id": "G6ZFRSNL2W2XIE337ZSST2O5LZ",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "archived",
+      "name": "M1 archived",
+      "observationCount": 0
+    }
+  ]
+}

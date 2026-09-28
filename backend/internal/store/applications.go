@@ -30,6 +30,7 @@ type Application struct {
 	CreatedAt  string              `json:"createdAt"  dynamodbav:"createdAt"`
 	UpdatedAt  string              `json:"updatedAt"  dynamodbav:"updatedAt"`
 	ArchivedAt *string             `json:"archivedAt" dynamodbav:"archivedAt,omitempty"`
+	Deletion   *monitor.Deletion   `json:"deletion"   dynamodbav:"deletion,omitempty"`
 }
 
 func appKey(id string) map[string]types.AttributeValue { return key("APPLICATIONS", "APP#"+id) }
@@ -458,9 +459,11 @@ func (s *Store) SetApplication(ctx context.Context, mid, id string) (monitor.Mon
 		}
 		update := types.TransactWriteItem{
 			Update: &types.Update{
-				TableName:                 aws.String(s.table),
-				Key:                       key("MONITORS", "MON#"+mid),
-				ConditionExpression:       aws.String(condition),
+				TableName: aws.String(s.table),
+				Key:       key("MONITORS", "MON#"+mid),
+				ConditionExpression: aws.String(
+					condition + " AND attribute_not_exists(deletion)",
+				),
 				UpdateExpression:          aws.String(expr),
 				ExpressionAttributeValues: vals,
 			},
@@ -577,13 +580,15 @@ func (s *Store) ArchiveApplication(
 			if attributevalue.UnmarshalMap(item, &m) != nil {
 				return a, ErrUnavailable
 			}
-			if m.ApplicationID != id {
+			if m.ApplicationID != id || m.Deletion != nil {
 				continue
 			}
 			_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-				TableName:                 aws.String(s.table),
-				Key:                       key("MONITORS", "MON#"+m.ID),
-				ConditionExpression:       aws.String("applicationId = :id"),
+				TableName: aws.String(s.table),
+				Key:       key("MONITORS", "MON#"+m.ID),
+				ConditionExpression: aws.String(
+					"applicationId = :id AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+				),
 				UpdateExpression:          aws.String("REMOVE applicationId"),
 				ExpressionAttributeValues: map[string]types.AttributeValue{":id": mustAV(id)},
 			})

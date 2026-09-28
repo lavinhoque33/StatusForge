@@ -1,0 +1,97 @@
+{
+  "applications": [
+    {
+      "id": "XOYNFA3QDIA7BTCSGE53ZXVOF2",
+      "markerIds": [
+        "AAGIASEPZ6Q66X3M4A37NT7A2U",
+        "HCO2BPHE3TRPZDMHQL2CEZ3OUE"
+      ],
+      "name": "M4 service"
+    }
+  ],
+  "milestone": 4,
+  "monitors": [
+    {
+      "gapCount": 1,
+      "id": "S25R5SN6VAQCPCKFB4T2OF2H6Y",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M4 checks",
+      "observationCount": 6
+    },
+    {
+      "gapCount": 1,
+      "id": "M3TJDG7TUPVSNARUYHDXYI56YV",
+      "incidents": [
+        {
+          "id": "20260928T191917427Z-yloofy",
+          "notificationStates": [
+            "delivered",
+            "failed"
+          ],
+          "resolution": "recovered",
+          "state": "resolved"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M4 incident",
+      "observationCount": 7
+    },
+    {
+      "gapCount": 1,
+      "id": "LOYIAPWW24MDSD5JJACYGTOAEE",
+      "incidents": [
+        {
+          "id": "20260928T191921694Z-q54rq5",
+          "notificationStates": [
+            "delivered"
+          ],
+          "resolution": null,
+          "state": "open"
+        }
+      ],
+      "kind": "http",
+      "lifecycle": "active",
+      "name": "M4 open",
+      "observationCount": 5
+    },
+    {
+      "gapCount": 0,
+      "id": "OACNMKBOK2DFT3ORKAYDHNTWKJ",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "paused",
+      "name": "M4 paused",
+      "observationCount": 0
+    },
+    {
+      "gapCount": 0,
+      "id": "QJ4SCHWPW5ZV3UIGTTQYK33CM6",
+      "incidents": [],
+      "kind": "http",
+      "lifecycle": "archived",
+      "name": "M4 archived",
+      "observationCount": 0
+    },
+    {
+      "gapCount": 1,
+      "id": "XDFWKXLTOGMJVES74LLACHIYIY",
+      "incidents": [
+        {
+          "id": "20260928T191938392Z-5ao37j",
+          "notificationStates": [
+            "delivered"
+          ],
+          "resolution": null,
+          "state": "open"
+        }
+      ],
+      "kind": "heartbeat",
+      "lifecycle": "active",
+      "name": "M4 heartbeat",
+      "observationCount": 2
+    }
+  ]
+}

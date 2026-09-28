@@ -22,6 +22,7 @@ describe('App', () => {
           dependencies: { dynamodb: { status: 'ready' } },
         }),
       [MONITORS_GET]: () => jsonResponse({ monitors: [] }),
+      'GET /api/applications': () => jsonResponse({ applications: [] }),
       [OVERVIEW_GET]: () =>
         jsonResponse({
           evaluatedAt: '2026-09-27T12:00:00.000Z',

@@ -147,10 +147,12 @@ func (s *Store) saveHeartbeat(
 	tx := []types.TransactWriteItem{
 		{
 			Update: &types.Update{
-				TableName:           aws.String(s.table),
-				Key:                 key("MONITORS", "MON#"+m.ID),
-				ConditionExpression: aws.String(condition),
-				UpdateExpression:    aws.String(expr),
+				TableName: aws.String(s.table),
+				Key:       key("MONITORS", "MON#"+m.ID),
+				ConditionExpression: aws.String(
+					condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+				),
+				UpdateExpression: aws.String(expr),
 				ExpressionAttributeNames: map[string]string{
 					"#name":  "name",
 					"#token": "token",
@@ -221,6 +223,7 @@ func (s *Store) saveHeartbeat(
 				return e
 			}
 			tx = append(tx, notes...)
+			tx = append(tx, s.retentionJob(m.ID, inc.ID))
 		}
 	}
 	_, e := s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
@@ -282,10 +285,12 @@ func (s *Store) HeartbeatToken(
 		_, e = s.db.UpdateItem(
 			ctx,
 			&dynamodb.UpdateItemInput{
-				TableName:           aws.String(s.table),
-				Key:                 key("MONITORS", "MON#"+id),
-				ConditionExpression: aws.String(condition),
-				UpdateExpression:    aws.String(expr),
+				TableName: aws.String(s.table),
+				Key:       key("MONITORS", "MON#"+id),
+				ConditionExpression: aws.String(
+					condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+				),
+				UpdateExpression: aws.String(expr),
 				ExpressionAttributeNames: map[string]string{
 					"#kind":  "kind",
 					"#token": "token",
@@ -504,9 +509,11 @@ func (s *Store) RecordHeartbeat(
 			tx,
 			types.TransactWriteItem{
 				Update: &types.Update{
-					TableName:                 aws.String(s.table),
-					Key:                       key("MONITORS", "MON#"+id),
-					ConditionExpression:       aws.String(condition),
+					TableName: aws.String(s.table),
+					Key:       key("MONITORS", "MON#"+id),
+					ConditionExpression: aws.String(
+						condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+					),
 					UpdateExpression:          aws.String(expr),
 					ExpressionAttributeNames:  names,
 					ExpressionAttributeValues: expected,
@@ -735,9 +742,11 @@ func (s *Store) Deadline(
 	condition := "expectation.dueAt = :due AND lifecycle = :active AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
 	update := types.TransactWriteItem{
 		Update: &types.Update{
-			TableName:                 aws.String(s.table),
-			Key:                       key("MONITORS", "MON#"+m.ID),
-			ConditionExpression:       aws.String(condition),
+			TableName: aws.String(s.table),
+			Key:       key("MONITORS", "MON#"+m.ID),
+			ConditionExpression: aws.String(
+				condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+			),
 			UpdateExpression:          aws.String(expr),
 			ExpressionAttributeValues: values,
 			ExpressionAttributeNames:  names,

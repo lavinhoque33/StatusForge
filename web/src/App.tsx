@@ -8,6 +8,7 @@ import { MonitorCreatePage } from './pages/MonitorCreatePage';
 import { MonitorDetailPage } from './pages/MonitorDetailPage';
 import { MonitorListPage } from './pages/MonitorListPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { Link } from './router/Link';
 import { usePathname } from './router/history';
 import { matchRoute } from './router/routes';
@@ -67,6 +68,11 @@ export default function App() {
                 Applications
               </Link>
             </li>
+            <li>
+              <Link to="/settings" aria-current={route.name === 'settings' ? 'page' : undefined}>
+                Settings
+              </Link>
+            </li>
           </ul>
         </nav>
         <BackendStatus />
@@ -83,6 +89,7 @@ export default function App() {
         {route.name === 'incidents' ? <IncidentsPage /> : null}
         {route.name === 'activity' ? <ActivityPage /> : null}
         {route.name === 'applications' ? <ApplicationsPage /> : null}
+        {route.name === 'settings' ? <SettingsPage /> : null}
         {route.name === 'incident-detail' ? (
           <IncidentDetailPage
             key={`${route.monitorId}:${route.incidentId}`}

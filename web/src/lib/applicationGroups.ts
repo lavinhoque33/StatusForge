@@ -6,6 +6,7 @@ export type ApplicationItem = {
 
 export function groupByApplication<T extends ApplicationItem>(
   items: T[],
+  names?: Map<string, string>,
 ): { name: string; items: T[] }[] {
   const groups: { name: string; id: string | null; items: T[] }[] = [];
   for (const item of items) {
@@ -14,7 +15,12 @@ export function groupByApplication<T extends ApplicationItem>(
     if (!group) {
       group = {
         id,
-        name: item.monitor?.applicationName ?? item.applicationName ?? 'No application',
+        name:
+          id === null
+            ? 'No application'
+            : names
+              ? (names.get(id) ?? 'Deleted application')
+              : (item.monitor?.applicationName ?? item.applicationName ?? 'Deleted application'),
         items: [],
       };
       groups.push(group);

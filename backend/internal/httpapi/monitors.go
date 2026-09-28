@@ -76,6 +76,7 @@ func NewMonitorRouter(
 		minInterval = minIntervals[0]
 	}
 	mux := newMux(logger, now)
+	mux.Use(deletionGuard(s))
 	mux.Get("/api/health/live", handleLive)
 	mux.Get("/api/health/ready", handleReady(logger, deps, readinessTimeout, now))
 	mux.Get("/api/system/liveness", func(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +90,21 @@ func NewMonitorRouter(
 			}
 		}
 		apiError(w, 503, "store_unavailable")
+	})
+	mux.Get("/api/system", func(w http.ResponseWriter, r *http.Request) {
+		v, ok := s.(interface {
+			System(context.Context) (store.SystemStatus, error)
+		})
+		if !ok {
+			apiError(w, 503, "store_unavailable")
+			return
+		}
+		status, err := v.System(r.Context())
+		if err != nil {
+			apiError(w, 503, "store_unavailable")
+			return
+		}
+		writeJSON(w, 200, status)
 	})
 	a := &monitorAPI{
 		store:       s,
@@ -105,6 +121,8 @@ func NewMonitorRouter(
 	mux.Get("/api/applications/{id}", a.getApplication)
 	mux.Patch("/api/applications/{id}", a.renameApplication)
 	mux.Post("/api/applications/{id}/archive", a.archiveApplication)
+	mux.Get("/api/applications/{id}/deletion", a.applicationDeletion)
+	mux.Post("/api/applications/{id}/deletion", a.startApplicationDeletion)
 	mux.Post("/api/applications/{id}/token", a.applicationToken)
 	mux.Delete("/api/applications/{id}/token", a.applicationToken)
 	mux.Get("/api/applications/{id}/deployments", a.listDeployments)
@@ -118,6 +136,8 @@ func NewMonitorRouter(
 	mux.Get("/api/monitors/{id}/summary", a.summary)
 	mux.Patch("/api/monitors/{id}", a.patch)
 	mux.Post("/api/monitors/{id}/lifecycle", a.lifecycle)
+	mux.Get("/api/monitors/{id}/deletion", a.monitorDeletion)
+	mux.Post("/api/monitors/{id}/deletion", a.startMonitorDeletion)
 	mux.Post("/api/monitors/{id}/checks", a.check)
 	mux.Post("/api/monitors/{id}/heartbeat/token", a.heartbeatToken)
 	mux.Delete("/api/monitors/{id}/heartbeat/token", a.heartbeatRevoke)

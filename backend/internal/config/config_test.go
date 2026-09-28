@@ -87,6 +87,9 @@ func TestLoadInvalidSettings(t *testing.T) {
 		{"STATUSFORGE_MIN_INTERVAL_SECONDS", "20"},
 		{"STATUSFORGE_MIN_INTERVAL_SECONDS", "5"},
 		{"STATUSFORGE_SCHEDULER_ENABLED", "yes"},
+		{"STATUSFORGE_HOUSEKEEPING_INTERVAL_SECONDS", "1"},
+		{"STATUSFORGE_HOUSEKEEPING_INTERVAL_SECONDS", "3601"},
+		{"STATUSFORGE_HOUSEKEEPING_INTERVAL_SECONDS", "NaN"},
 	} {
 		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
 			_, err := Load(

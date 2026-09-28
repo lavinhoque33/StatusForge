@@ -304,3 +304,26 @@ describe('MonitorListPage', () => {
     expect(attempts).toBe(2);
   });
 });
+
+it('marks a monitor under deletion without offering mutation controls', async () => {
+  stubApi({
+    'GET /api/monitors': () =>
+      jsonResponse({
+        monitors: [
+          monitorRecordFixture({
+            lifecycle: 'archived',
+            archivedAt: '2026-09-27T10:00:00.000Z',
+            deletion: {
+              state: 'waiting_for_notifications',
+              requestedAt: '2026-09-27T10:00:00.000Z',
+              updatedAt: '2026-09-27T10:00:00.000Z',
+              removedItems: 0,
+            },
+          }),
+        ],
+      }),
+  });
+  render(<MonitorListPage />);
+  expect(await screen.findByText('Deleting')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Run check now' })).not.toBeInTheDocument();
+});

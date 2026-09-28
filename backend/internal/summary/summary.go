@@ -288,6 +288,10 @@ func Compute(in Input) Result {
 				if !paused.IsZero() {
 					addPause(&r, paused, at)
 					paused = time.Time{}
+				} else if e.Action == "resumed" && at.After(covered) {
+					// The pause began before retained lifecycle history. A retained
+					// resume proves the window was paused until this instant.
+					addPause(&r, covered, at)
 				}
 			}
 		}

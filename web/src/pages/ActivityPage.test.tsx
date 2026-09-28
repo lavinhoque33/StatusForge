@@ -86,6 +86,7 @@ it('merges deployments by report time and filters both sources by application', 
     createdAt: at,
     updatedAt: at,
     archivedAt: null,
+    deletion: null,
   };
   const other = { ...app, id: 'app-2', name: 'Search' };
   const monitor = monitorRecordFixture({

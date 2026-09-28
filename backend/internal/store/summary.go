@@ -267,7 +267,7 @@ func (s *Store) lifecycleWindow(
 	ctx context.Context, id string, from, to time.Time,
 ) ([]LifecycleEvent, error) {
 	pk := "MON#" + id
-	earliest, err := s.query(ctx, pk, "LIFE#", 1, false)
+	earliest, err := s.retainedLifecycleEdge(ctx, pk, "LIFE#", "LIFE#~", false)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +275,9 @@ func (s *Store) lifecycleWindow(
 	events := []LifecycleEvent{}
 	add := func(items []map[string]types.AttributeValue) error {
 		for _, item := range items {
+			if s.expired(item) {
+				continue
+			}
 			sk := item["SK"].(*types.AttributeValueMemberS).Value
 			if seen[sk] {
 				continue
@@ -291,19 +294,11 @@ func (s *Store) lifecycleWindow(
 	if err := add(earliest); err != nil {
 		return nil, err
 	}
-	before, err := s.db.Query(ctx, &dynamodb.QueryInput{
-		TableName: aws.String(s.table), ConsistentRead: aws.Bool(true),
-		KeyConditionExpression: aws.String("PK = :pk AND SK BETWEEN :lower AND :upper"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": mustAV(pk), ":lower": mustAV("LIFE#"),
-			":upper": mustAV("LIFE#" + workStamp(from)),
-		},
-		ScanIndexForward: aws.Bool(false), Limit: aws.Int32(1),
-	})
+	prior, err := s.retainedLifecycleEdge(ctx, pk, "LIFE#", "LIFE#"+workStamp(from), true)
 	if err != nil {
-		return nil, ErrUnavailable
+		return nil, err
 	}
-	if err := add(before.Items); err != nil {
+	if err := add(prior); err != nil {
 		return nil, err
 	}
 	var cursor map[string]types.AttributeValue
@@ -330,6 +325,37 @@ func (s *Store) lifecycleWindow(
 	}
 }
 
+func (s *Store) retainedLifecycleEdge(
+	ctx context.Context,
+	pk, lower, upper string,
+	descending bool,
+) ([]map[string]types.AttributeValue, error) {
+	var cursor map[string]types.AttributeValue
+	for {
+		out, err := s.db.Query(ctx, &dynamodb.QueryInput{
+			TableName: aws.String(s.table), ConsistentRead: aws.Bool(true),
+			KeyConditionExpression: aws.String("PK = :pk AND SK BETWEEN :lower AND :upper"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk": mustAV(pk), ":lower": mustAV(lower), ":upper": mustAV(upper),
+			},
+			Limit: aws.Int32(100), ScanIndexForward: aws.Bool(!descending),
+			ExclusiveStartKey: cursor,
+		})
+		if err != nil {
+			return nil, ErrUnavailable
+		}
+		for _, item := range out.Items {
+			if !s.expired(item) {
+				return []map[string]types.AttributeValue{item}, nil
+			}
+		}
+		if len(out.LastEvaluatedKey) == 0 {
+			return nil, nil
+		}
+		cursor = out.LastEvaluatedKey
+	}
+}
+
 func (s *Store) maintenanceWindow(
 	ctx context.Context, id string, from, to time.Time,
 ) ([]monitor.MaintenanceWindow, error) {
@@ -349,6 +375,9 @@ func (s *Store) maintenanceWindow(
 			return nil, ErrUnavailable
 		}
 		for _, item := range out.Items {
+			if s.expired(item) {
+				continue
+			}
 			var w monitor.MaintenanceWindow
 			if attributevalue.UnmarshalMap(item, &w) != nil {
 				return nil, ErrUnavailable

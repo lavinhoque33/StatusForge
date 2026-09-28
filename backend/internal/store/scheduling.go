@@ -106,6 +106,9 @@ func (s *Store) Tick(ctx context.Context, now time.Time) (int, int, int, error) 
 	}
 	active, created, gaps := 0, 0, 0
 	for _, m := range ms {
+		if m.Deletion != nil {
+			continue
+		}
 		if m.Kind == "heartbeat" {
 			continue
 		}
@@ -183,10 +186,12 @@ func (s *Store) Tick(ctx context.Context, now time.Time) (int, int, int, error) 
 					tx,
 					types.TransactWriteItem{
 						Update: &types.Update{
-							TableName:                 aws.String(s.table),
-							Key:                       key("MONITORS", "MON#"+m.ID),
-							UpdateExpression:          aws.String(updateExpr),
-							ConditionExpression:       aws.String(cond),
+							TableName:        aws.String(s.table),
+							Key:              key("MONITORS", "MON#"+m.ID),
+							UpdateExpression: aws.String(updateExpr),
+							ConditionExpression: aws.String(
+								cond + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+							),
 							ExpressionAttributeValues: vals,
 						},
 					},
@@ -503,10 +508,12 @@ func (s *Store) closeWork(ctx context.Context, w Work, reason string, now time.T
 			tx,
 			types.TransactWriteItem{
 				Update: &types.Update{
-					TableName:           aws.String(s.table),
-					Key:                 key("MONITORS", "MON#"+w.MonitorID),
-					UpdateExpression:    aws.String("SET evaluation = :next"),
-					ConditionExpression: aws.String(cond),
+					TableName:        aws.String(s.table),
+					Key:              key("MONITORS", "MON#"+w.MonitorID),
+					UpdateExpression: aws.String("SET evaluation = :next"),
+					ConditionExpression: aws.String(
+						"(" + cond + ") AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+					),
 					ExpressionAttributeValues: map[string]types.AttributeValue{
 						":next":     mustAV(incident.Clear(m.Evaluation)),
 						":revision": mustAV(m.Evaluation.Revision),
@@ -514,6 +521,14 @@ func (s *Store) closeWork(ctx context.Context, w Work, reason string, now time.T
 				},
 			},
 		)
+	}
+	if reason != "overdue" && reason != "lease_expired" {
+		tx = append(tx, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
+			TableName: aws.String(s.table), Key: key("MONITORS", "MON#"+w.MonitorID),
+			ConditionExpression: aws.String(
+				"attribute_exists(PK) AND attribute_not_exists(deletion)",
+			),
+		}})
 	}
 	_, err := s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
 	if err != nil {
@@ -595,7 +610,7 @@ func (s *Store) Claim(ctx context.Context, w Work, now time.Time) (monitor.Monit
 					Key:              key("MONITORS", "MON#"+w.MonitorID),
 					UpdateExpression: aws.String("SET lease = :lease, lastClaimAt = :now"),
 					ConditionExpression: aws.String(
-						"lifecycle = :active AND configVersion = :version AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
+						"lifecycle = :active AND attribute_exists(PK) AND attribute_not_exists(deletion) AND configVersion = :version AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
 					),
 					ExpressionAttributeNames: map[string]string{
 						"#until":   "until",
@@ -655,7 +670,7 @@ func (s *Store) ClaimManual(
 			Key:              key("MONITORS", "MON#"+id),
 			UpdateExpression: aws.String("SET lease = :lease, lastClaimAt = :now"),
 			ConditionExpression: aws.String(
-				"lifecycle <> :archived AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
+				"lifecycle <> :archived AND attribute_exists(PK) AND attribute_not_exists(deletion) AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
 			),
 			ExpressionAttributeNames:  map[string]string{"#until": "until", "#windows": "windows"},
 			ExpressionAttributeValues: indexValues,
@@ -780,7 +795,9 @@ func (s *Store) RecordResult(
 		tx := []types.TransactWriteItem{
 			{Update: &types.Update{
 				TableName: aws.String(s.table), Key: monitorKey,
-				UpdateExpression: aws.String(expr), ConditionExpression: aws.String(condition),
+				UpdateExpression: aws.String(
+					expr,
+				), ConditionExpression: aws.String(condition + " AND attribute_exists(PK) AND attribute_not_exists(deletion)"),
 				ExpressionAttributeNames: map[string]string{
 					"#status": "status",
 					"#token":  "token",
@@ -833,6 +850,9 @@ func (s *Store) RecordResult(
 	if err != nil {
 		return o, err
 	}
+	if m.Deletion != nil {
+		return o, ErrDeleting
+	}
 	reason := monitor.NotCountedOlder
 	switch {
 	case workLost || m.Lease == nil || m.Lease.Token != token || m.Lease.Until < workStamp(s.now()):
@@ -853,10 +873,12 @@ func (s *Store) RecordResult(
 			tx,
 			types.TransactWriteItem{
 				Update: &types.Update{
-					TableName:                aws.String(s.table),
-					Key:                      monitorKey,
-					UpdateExpression:         aws.String("REMOVE lease"),
-					ConditionExpression:      aws.String("lease.#token = :token"),
+					TableName:        aws.String(s.table),
+					Key:              monitorKey,
+					UpdateExpression: aws.String("REMOVE lease"),
+					ConditionExpression: aws.String(
+						"lease.#token = :token AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+					),
 					ExpressionAttributeNames: map[string]string{"#token": "token"},
 					ExpressionAttributeValues: map[string]types.AttributeValue{
 						":token": mustAV(token),
@@ -875,6 +897,14 @@ func (s *Store) RecordResult(
 			},
 		},
 	)
+	if reason == monitor.NotCountedLeaseLost {
+		tx = append(tx, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
+			TableName: aws.String(s.table), Key: monitorKey,
+			ConditionExpression: aws.String(
+				"attribute_exists(PK) AND attribute_not_exists(deletion)",
+			),
+		}})
+	}
 	if reason != monitor.NotCountedLeaseLost {
 		tx = append(tx, workUpdates()...)
 	}

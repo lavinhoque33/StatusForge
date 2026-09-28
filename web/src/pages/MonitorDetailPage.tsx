@@ -16,6 +16,7 @@ import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
 import { MonitorHistory } from '../components/MonitorHistory';
+import { PermanentDeletion } from '../components/PermanentDeletion';
 import { HeartbeatTokenSection } from '../components/HeartbeatTokenSection';
 import { MonitorApplicationSection } from '../components/MonitorApplicationSection';
 import { MaintenanceSection } from '../components/MaintenanceSection';
@@ -37,6 +38,7 @@ import { usePolling } from '../lib/usePolling';
 import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
 import { heartbeatDeadlines } from '../lib/heartbeatHeadline';
 import { Link } from '../router/Link';
+import { navigate } from '../router/history';
 
 type LoadState =
   | { name: 'loading' }
@@ -178,7 +180,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         setFreshness({ name: 'updated', at: Date.now() });
       } catch (error: unknown) {
         if (signal.aborted || isAbortError(error)) return;
-        if (error instanceof ApiRequestError && error.code === 'monitor_not_found') {
+        if (error instanceof ApiRequestError && error.status === 404) {
           setLoad({ name: 'not-found' });
           return;
         }
@@ -384,7 +386,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     return (
       <section aria-labelledby="monitor-not-found-heading">
         <h2 id="monitor-not-found-heading">Monitor not found</h2>
-        <p>No monitor exists at this address.</p>
+        <p>This monitor was deleted or does not exist.</p>
         <p>
           <Link to="/monitors">Back to monitors</Link>
         </p>
@@ -415,6 +417,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       <h2 id="monitor-detail-heading">{monitor.name}</h2>
       <p className="monitor-meta">
         <LifecycleBadge lifecycle={monitor.lifecycle} />
+        {monitor.deletion !== null ? <span className="lifecycle">Deleting</span> : null}
         {monitor.kind === 'heartbeat' ? <span className="type-label">Heartbeat</span> : null}
         <span className="version">v{monitor.configVersion}</span>
       </p>
@@ -442,7 +445,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             : null}
       </p>
       {archived ? (
-        <p className="note">Archived monitors are read-only. Observations stay available.</p>
+        <p className="note">
+          {monitor.deletion !== null
+            ? 'Deleting. Changes are no longer allowed.'
+            : 'Archived monitors are read-only. Observations stay available.'}
+        </p>
       ) : null}
       <p>
         <Link to="/monitors">Back to monitors</Link>
@@ -690,6 +697,22 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           </p>
         )}
       </section>
+      {archived ? (
+        <PermanentDeletion
+          resource="monitors"
+          id={monitor.id}
+          name={monitor.name}
+          deletion={monitor.deletion}
+          onStatus={(deletion) =>
+            setLoad((current) =>
+              current.name === 'ready'
+                ? { ...current, monitor: { ...current.monitor, deletion } }
+                : current,
+            )
+          }
+          onComplete={() => navigate('/monitors', { deletedMonitor: monitor.name })}
+        />
+      ) : null}
 
       <MaintenanceSection
         monitorId={monitor.id}

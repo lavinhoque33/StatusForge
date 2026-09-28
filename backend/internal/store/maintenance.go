@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/lavinhoque33/statusforge/backend/internal/incident"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
+	"github.com/lavinhoque33/statusforge/backend/internal/retention"
 )
 
 var (
@@ -26,11 +27,11 @@ func windowKey(id string, w monitor.MaintenanceWindow) map[string]types.Attribut
 	return key("MON#"+id, "MAINT#"+workStamp(mustTime(w.StartAt))+"#"+w.ID)
 }
 func mustTime(stamp string) time.Time { at, _ := time.Parse(time.RFC3339Nano, stamp); return at }
-func indexCondition(m monitor.Monitor) (string, map[string]types.AttributeValue) {
+func maintenanceCondition(m monitor.Monitor) (string, map[string]types.AttributeValue) {
 	values := map[string]types.AttributeValue{":revision": mustAV(m.Evaluation.Revision)}
-	cond := "evaluation.revision = :revision"
+	cond := "attribute_exists(PK) AND evaluation.revision = :revision"
 	if m.Evaluation.Revision == 0 {
-		cond = "(attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
+		cond = "attribute_exists(PK) AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
 	}
 	if m.Maintenance.Windows == nil {
 		cond += " AND (attribute_not_exists(maintenance.#windows) OR attribute_type(maintenance.#windows, :null) OR maintenance.#windows = :windows)"
@@ -41,6 +42,11 @@ func indexCondition(m monitor.Monitor) (string, map[string]types.AttributeValue)
 		values[":windows"] = mustAV(m.Maintenance.Windows)
 	}
 	return cond, values
+}
+
+func indexCondition(m monitor.Monitor) (string, map[string]types.AttributeValue) {
+	condition, values := maintenanceCondition(m)
+	return condition + " AND attribute_not_exists(deletion)", values
 }
 
 func (s *Store) ListMaintenance(
@@ -72,6 +78,9 @@ func (s *Store) ListMaintenance(
 			return nil, ErrUnavailable
 		}
 		for _, item := range out.Items {
+			if expiredAt(item, now) {
+				continue
+			}
 			var w monitor.MaintenanceWindow
 			if attributevalue.UnmarshalMap(item, &w) != nil {
 				return nil, ErrUnavailable
@@ -145,6 +154,7 @@ func (s *Store) CreateMaintenance(
 			item[k] = v
 		}
 		item["entityType"] = mustAV("maintenance")
+		item["expiresAt"] = mustAV(retention.History(end))
 		cond, vals := indexCondition(m)
 		cond += " AND lifecycle <> :archived"
 		vals[":archived"] = mustAV("archived")
@@ -265,11 +275,14 @@ func (s *Store) CancelMaintenance(
 					ConditionExpression: aws.String(
 						"attribute_not_exists(cancelledAt) AND endAt = :oldEnd",
 					),
-					UpdateExpression: aws.String("SET cancelledAt = :now, endAt = :end"),
+					UpdateExpression: aws.String(
+						"SET cancelledAt = :now, endAt = :end, expiresAt = :expires",
+					),
 					ExpressionAttributeValues: map[string]types.AttributeValue{
-						":now":    mustAV(at),
-						":end":    mustAV(w.EndAt),
-						":oldEnd": mustAV(found.EndAt),
+						":now":     mustAV(at),
+						":end":     mustAV(w.EndAt),
+						":oldEnd":  mustAV(found.EndAt),
+						":expires": mustAV(retention.History(mustTime(w.EndAt))),
 					},
 				},
 			},
