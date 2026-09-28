@@ -15,11 +15,13 @@ import {
   type MonitorRecord,
   type Observation,
 } from '../api/monitors';
+import { listMaintenance, type Window } from '../api/maintenance';
 import { incidentLink, listMonitorIncidents, type Incident } from '../api/incidents';
 import { LifecycleBadge } from '../components/LifecycleBadge';
 import { MonitorForm } from '../components/MonitorForm';
 import { MonitorHeadline } from '../components/MonitorHeadline';
 import { TimelineTable } from '../components/TimelineTable';
+import { MaintenanceSection } from '../components/MaintenanceSection';
 import { describeApiError } from '../lib/errors';
 import {
   MONITOR_FIELD_PATHS,
@@ -45,6 +47,7 @@ type LoadState =
       observations: Observation[];
       gaps: Gap[];
       incidents: Incident[];
+      windows: Window[];
     }
   | { name: 'not-found' }
   | { name: 'error'; message: string };
@@ -159,11 +162,12 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   const fetchData = useCallback(
     async (signal: AbortSignal, options: { silent: boolean }) => {
       try {
-        const [monitor, observations, gaps, incidents] = await Promise.all([
+        const [monitor, observations, gaps, incidents, windows] = await Promise.all([
           getMonitor(monitorId, signal),
           listObservations(monitorId, OBSERVATION_LIMIT, signal),
           listGaps(monitorId, OBSERVATION_LIMIT, signal),
           listMonitorIncidents(monitorId, 5, signal),
+          listMaintenance(monitorId, signal),
         ]);
         if (signal.aborted) return;
         // A silent poll never touches the form; while the form holds unsaved
@@ -178,7 +182,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         if (!options.silent && !dirtyNow) {
           setFields((existing) => existing ?? monitorFormFields(monitor));
         }
-        setLoad({ name: 'ready', monitor, observations, gaps, incidents });
+        setLoad({ name: 'ready', monitor, observations, gaps, incidents, windows });
         setFreshness({ name: 'updated', at: Date.now() });
       } catch (error: unknown) {
         if (signal.aborted || isAbortError(error)) return;
@@ -402,7 +406,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
     );
   }
 
-  const { monitor, observations, gaps, incidents } = load;
+  const { monitor, observations, gaps, incidents, windows } = load;
   const archived = monitor.lifecycle === 'archived';
   const newestObservation = observations.length === 0 ? null : observations[0];
   const driftNote =
@@ -421,6 +425,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         status={monitor.status}
         intervalSeconds={monitor.intervalSeconds}
         now={now}
+        maintenance={monitor.maintenance}
       />
       {monitor.openIncident === null ? null : (
         <p className="panel incident-alert">
@@ -614,6 +619,12 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         )}
       </section>
 
+      <MaintenanceSection
+        monitorId={monitor.id}
+        archived={archived}
+        windows={windows}
+        refresh={reload}
+      />
       <section className="panel" aria-labelledby="monitor-check-heading">
         <h3 id="monitor-check-heading">Manual check</h3>
         <button
@@ -673,7 +684,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       <section className="panel" aria-labelledby="monitor-timeline-heading">
         <h3 id="monitor-timeline-heading">Checks and gaps</h3>
         {driftNote === null ? null : <p className="drift-note">{driftNote}</p>}
-        <TimelineTable observations={observations} gaps={gaps} />
+        <TimelineTable observations={observations} gaps={gaps} windows={windows} />
       </section>
     </article>
   );

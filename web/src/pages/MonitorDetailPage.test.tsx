@@ -15,12 +15,17 @@ const MONITOR_GET = 'GET /api/monitors/monitor-1';
 const OBSERVATIONS_GET = 'GET /api/monitors/monitor-1/observations?limit=50';
 const GAPS_GET = 'GET /api/monitors/monitor-1/gaps?limit=50';
 const INCIDENTS_GET = 'GET /api/monitors/monitor-1/incidents?limit=5';
+const MAINTENANCE_GET = 'GET /api/monitors/monitor-1/maintenance';
 const INTERVALS_GET = 'GET /api/intervals';
 const CHECKS_POST = 'POST /api/monitors/monitor-1/checks';
 const MONITOR_PATCH = 'PATCH /api/monitors/monitor-1';
 const LIFECYCLE_POST = 'POST /api/monitors/monitor-1/lifecycle';
 function stubApi(handlers: Parameters<typeof stubFetch>[0]) {
-  return stubFetch({ [INCIDENTS_GET]: () => jsonResponse({ incidents: [] }), ...handlers });
+  return stubFetch({
+    [INCIDENTS_GET]: () => jsonResponse({ incidents: [] }),
+    [MAINTENANCE_GET]: () => jsonResponse({ windows: [] }),
+    ...handlers,
+  });
 }
 
 type MonitorRecordFixture = ReturnType<typeof monitorRecordFixture>;
@@ -763,5 +768,52 @@ describe('MonitorDetailPage', () => {
     });
 
     expect(screen.getByText(/Stale — last result Healthy/)).toBeInTheDocument();
+  });
+  it('refreshes active maintenance on a visible poll without clobbering a dirty schedule', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-27T11:00:00.000Z'));
+    const window = {
+      id: 'w1',
+      monitorId: 'monitor-1',
+      startAt: '2026-09-27T10:00:00.000Z',
+      endAt: '2026-09-27T12:00:00.000Z',
+      note: 'Deploy',
+      createdAt: '2026-09-27T09:00:00.000Z',
+      cancelledAt: null,
+      state: 'active' as const,
+    };
+    let reads = 0;
+    stubApi({
+      ...baseStubs({
+        observations: [observationFixture({ maintenanceWindowId: 'w1' })],
+      }),
+      [MONITOR_GET]: () =>
+        jsonResponse(
+          monitorRecordFixture({
+            maintenance: { active: reads === 0 ? null : window, next: null },
+          }),
+        ),
+      [MAINTENANCE_GET]: () => {
+        reads += 1;
+        return jsonResponse({ windows: reads === 1 ? [] : [window] });
+      },
+    });
+    render(<MonitorDetailPage monitorId="monitor-1" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-09-29T10:00' } });
+    fireEvent.change(screen.getByLabelText('Note (optional)'), {
+      target: { value: 'My unsaved note' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(reads).toBeGreaterThan(1);
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-09-29T10:00');
+    expect(screen.getByLabelText('Note (optional)')).toHaveValue('My unsaved note');
+    expect(screen.getByText(/in maintenance until/)).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Maintenance started/ })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Healthy.*Maintenance/ })).toBeInTheDocument();
   });
 });

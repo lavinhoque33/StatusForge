@@ -27,6 +27,7 @@ type Monitor struct {
 	IntervalSeconds  int                 `json:"intervalSeconds"      dynamodbav:"intervalSeconds"`
 	IncidentPolicy   incident.Policy     `json:"incidentPolicy"       dynamodbav:"incidentPolicy"`
 	Evaluation       incident.Evaluation `json:"-"                    dynamodbav:"evaluation"`
+	Maintenance      Maintenance         `json:"maintenance"          dynamodbav:"maintenance"`
 	OpenIncident     *incident.Open      `json:"openIncident"         dynamodbav:"openIncident,omitempty"`
 	ScheduledThrough string              `json:"-"                    dynamodbav:"scheduledThrough,omitempty"`
 	LegacyCursor     bool                `json:"-"                    dynamodbav:"-"`
@@ -41,23 +42,24 @@ type Monitor struct {
 	ArchivedAt       string              `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
 }
 type Observation struct {
-	ID               string  `json:"id"                       dynamodbav:"observationId"`
-	MonitorID        string  `json:"monitorId"                dynamodbav:"monitorId"`
-	ConfigVersion    int     `json:"configVersion"            dynamodbav:"configVersion"`
-	InitiatedBy      string  `json:"initiatedBy"              dynamodbav:"initiatedBy"`
-	Trigger          *string `json:"trigger"                  dynamodbav:"trigger,omitempty"`
-	DueAt            *string `json:"dueAt"                    dynamodbav:"dueAt,omitempty"`
-	Counted          bool    `json:"counted"                  dynamodbav:"counted"`
-	NotCountedReason *string `json:"notCountedReason"         dynamodbav:"notCountedReason,omitempty"`
-	Request          Check   `json:"request"                  dynamodbav:"request"`
-	StartedAt        string  `json:"startedAt"                dynamodbav:"startedAt"`
-	CompletedAt      string  `json:"completedAt"              dynamodbav:"completedAt"`
-	DurationMs       int64   `json:"durationMs"               dynamodbav:"durationMs"`
-	Outcome          string  `json:"outcome"                  dynamodbav:"outcome"`
-	Reason           string  `json:"reason"                   dynamodbav:"reason"`
-	ObservedStatus   *int    `json:"observedStatus,omitempty" dynamodbav:"observedStatus,omitempty"`
-	BodyBytesRead    int     `json:"bodyBytesRead"            dynamodbav:"bodyBytesRead"`
-	BodyTruncated    bool    `json:"bodyTruncated"            dynamodbav:"bodyTruncated"`
+	ID                  string  `json:"id"                       dynamodbav:"observationId"`
+	MonitorID           string  `json:"monitorId"                dynamodbav:"monitorId"`
+	ConfigVersion       int     `json:"configVersion"            dynamodbav:"configVersion"`
+	InitiatedBy         string  `json:"initiatedBy"              dynamodbav:"initiatedBy"`
+	Trigger             *string `json:"trigger"                  dynamodbav:"trigger,omitempty"`
+	DueAt               *string `json:"dueAt"                    dynamodbav:"dueAt,omitempty"`
+	Counted             bool    `json:"counted"                  dynamodbav:"counted"`
+	NotCountedReason    *string `json:"notCountedReason"         dynamodbav:"notCountedReason,omitempty"`
+	MaintenanceWindowID *string `json:"maintenanceWindowId"      dynamodbav:"maintenanceWindowId,omitempty"`
+	Request             Check   `json:"request"                  dynamodbav:"request"`
+	StartedAt           string  `json:"startedAt"                dynamodbav:"startedAt"`
+	CompletedAt         string  `json:"completedAt"              dynamodbav:"completedAt"`
+	DurationMs          int64   `json:"durationMs"               dynamodbav:"durationMs"`
+	Outcome             string  `json:"outcome"                  dynamodbav:"outcome"`
+	Reason              string  `json:"reason"                   dynamodbav:"reason"`
+	ObservedStatus      *int    `json:"observedStatus,omitempty" dynamodbav:"observedStatus,omitempty"`
+	BodyBytesRead       int     `json:"bodyBytesRead"            dynamodbav:"bodyBytesRead"`
+	BodyTruncated       bool    `json:"bodyTruncated"            dynamodbav:"bodyTruncated"`
 }
 type FieldError struct {
 	Code    string `json:"code"`

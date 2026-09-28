@@ -124,6 +124,31 @@ describe('TimelineTable', () => {
     expect(screen.getByRole('row', { name: /Failing/ })).toHaveTextContent('manual');
   });
 
+  it('labels observations and presents an ended window at both boundaries in time order', () => {
+    render(
+      <TimelineTable
+        observations={[observationAt('2026-09-27T10:30:00.000Z', { maintenanceWindowId: 'w1' })]}
+        gaps={[]}
+        windows={[
+          {
+            id: 'w1',
+            monitorId: 'monitor-1',
+            startAt: '2026-09-27T10:00:00.000Z',
+            endAt: '2026-09-27T11:00:00.000Z',
+            note: '',
+            createdAt: '2026-09-27T09:00:00.000Z',
+            cancelledAt: null,
+            state: 'ended',
+          },
+        ]}
+      />,
+    );
+    const rows = screen.getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('Maintenance ended');
+    expect(rows[2]).toHaveTextContent('Healthy · Maintenance');
+    expect(rows[3]).toHaveTextContent('Maintenance started');
+  });
+
   it('renders the empty state when nothing is recorded', () => {
     render(<TimelineTable observations={[]} gaps={[]} />);
 

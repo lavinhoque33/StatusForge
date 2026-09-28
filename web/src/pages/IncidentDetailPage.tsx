@@ -193,9 +193,7 @@ export function IncidentDetailPage({
             ? '.'
             : `; last at ${formatLocalWithOffset(new Date(incident.lastCheckerProblem.startedAt))}: ${evidenceWords(incident.lastCheckerProblem)}`}
         </p>
-        {incident.maintenanceObservationCount > 0 ? (
-          <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
-        ) : null}
+        <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
       </section>
       <section className="panel" aria-labelledby="incident-timeline-heading">
         <h3 id="incident-timeline-heading">Timeline</h3>

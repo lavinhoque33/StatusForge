@@ -99,6 +99,7 @@ export function IncidentsPage() {
               </p>
               {incident.monitoringPaused ? <p>Monitoring paused</p> : null}
               {incident.inMaintenance ? <p>In maintenance</p> : null}
+              <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
               <p>
                 Notifications: {incident.notificationSummary.delivered} delivered ·{' '}
                 {incident.notificationSummary.pending} pending ·{' '}
@@ -126,6 +127,7 @@ export function IncidentsPage() {
                 </time>
                 ; duration {durationWords(incident, now)}. {incident.failureCount} failed checks.
               </p>
+              <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
               <p>
                 Notifications: {incident.notificationSummary.delivered} delivered ·{' '}
                 {incident.notificationSummary.pending} pending ·{' '}

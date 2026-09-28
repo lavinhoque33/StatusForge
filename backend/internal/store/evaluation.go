@@ -18,13 +18,14 @@ func (s *Store) evaluationItems(
 	at time.Time,
 ) (incident.Evaluation, *incident.Open, []types.TransactWriteItem, error) {
 	snapshot := incident.Evidence{
-		ObservationID:  o.ID,
-		StartedAt:      o.StartedAt,
-		InitiatedBy:    o.InitiatedBy,
-		Outcome:        o.Outcome,
-		Reason:         o.Reason,
-		ObservedStatus: o.ObservedStatus,
-		ConfigVersion:  o.ConfigVersion,
+		ObservationID:       o.ID,
+		StartedAt:           o.StartedAt,
+		InitiatedBy:         o.InitiatedBy,
+		Outcome:             o.Outcome,
+		Reason:              o.Reason,
+		ObservedStatus:      o.ObservedStatus,
+		ConfigVersion:       o.ConfigVersion,
+		MaintenanceWindowID: o.MaintenanceWindowID,
 	}
 	next, t := incident.Evaluate(m.IncidentPolicy, m.Evaluation, m.OpenIncident, snapshot, at)
 	open := m.OpenIncident
@@ -79,6 +80,9 @@ func (s *Store) evaluationItems(
 		expr = "SET checkerProblemCount = checkerProblemCount + :one, lastCheckerProblem = :last"
 		values[":one"] = mustAV(1)
 		values[":last"] = mustAV(t.Last)
+	} else if t.Kind == "maintenance" {
+		expr = "ADD maintenanceObservationCount :one"
+		values[":one"] = mustAV(1)
 	} else if t.Kind == "resolved" {
 		stamp := monitor.Stamp(at)
 		expr = "SET #state = :resolved, resolution = :resolution, resolvedAt = :at, recoveryEvidence = :evidence"

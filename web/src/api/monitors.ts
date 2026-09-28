@@ -8,6 +8,7 @@
  * the presentation layer maps known codes to words.
  */
 import { ApiInvalidResponseError, requestJson } from './http';
+import { parseWindow, type Window } from './maintenance';
 
 /** Observation window requested by the detail page (contract default is 50). */
 export const OBSERVATION_LIMIT = 50;
@@ -64,6 +65,7 @@ export type Monitor = {
   check: CheckConfig;
   incidentPolicy: IncidentPolicy;
   openIncident: { id: string; openedAt: string } | null;
+  maintenance: { active: Window | null; next: Window | null };
   createdAt: string;
   updatedAt: string;
   pausedAt?: string;
@@ -82,6 +84,7 @@ export type Observation = {
   /** Whether this observation updated current status (ADR 0003 D5). */
   counted: boolean;
   notCountedReason: string | null;
+  maintenanceWindowId: string | null;
   request: CheckConfig;
   startedAt: string;
   completedAt: string;
@@ -252,6 +255,14 @@ export function parseMonitor(value: unknown): Monitor {
   )
     invalid();
 
+  if (
+    !('maintenance' in value) ||
+    typeof value.maintenance !== 'object' ||
+    value.maintenance === null
+  )
+    invalid();
+  const maintenance = value.maintenance as Record<string, unknown>;
+  if (!('active' in maintenance) || !('next' in maintenance)) invalid();
   const monitor: Monitor = {
     id: value.id,
     name: value.name,
@@ -264,6 +275,10 @@ export function parseMonitor(value: unknown): Monitor {
       openIncident === null
         ? null
         : { id: String(openIncident.id), openedAt: String(openIncident.openedAt) },
+    maintenance: {
+      active: maintenance.active === null ? null : parseWindow(maintenance.active),
+      next: maintenance.next === null ? null : parseWindow(maintenance.next),
+    },
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   };
@@ -319,6 +334,8 @@ export function parseObservation(value: unknown): Observation {
     notCountedReason = prop(value, 'notCountedReason') as string;
   }
 
+  const windowId = prop(value, 'maintenanceWindowId');
+  if (windowId !== null && !isNonEmptyString(windowId)) invalid();
   const observation: Observation = {
     id: value.id,
     monitorId: value.monitorId,
@@ -327,6 +344,7 @@ export function parseObservation(value: unknown): Observation {
     trigger,
     dueAt,
     counted: value.counted,
+    maintenanceWindowId: windowId,
     notCountedReason,
     request: parseCheckConfig(value.request),
     startedAt: value.startedAt,

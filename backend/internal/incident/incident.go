@@ -24,13 +24,14 @@ func (p Policy) Defaults() Policy {
 
 type (
 	Evidence struct {
-		ObservationID  string `json:"observationId"  dynamodbav:"observationId"`
-		StartedAt      string `json:"startedAt"      dynamodbav:"startedAt"`
-		InitiatedBy    string `json:"initiatedBy"    dynamodbav:"initiatedBy"`
-		Outcome        string `json:"outcome"        dynamodbav:"outcome"`
-		Reason         string `json:"reason"         dynamodbav:"reason"`
-		ObservedStatus *int   `json:"observedStatus" dynamodbav:"observedStatus"`
-		ConfigVersion  int    `json:"configVersion"  dynamodbav:"configVersion"`
+		ObservationID       string  `json:"observationId"  dynamodbav:"observationId"`
+		StartedAt           string  `json:"startedAt"      dynamodbav:"startedAt"`
+		InitiatedBy         string  `json:"initiatedBy"    dynamodbav:"initiatedBy"`
+		Outcome             string  `json:"outcome"        dynamodbav:"outcome"`
+		Reason              string  `json:"reason"         dynamodbav:"reason"`
+		ObservedStatus      *int    `json:"observedStatus" dynamodbav:"observedStatus"`
+		ConfigVersion       int     `json:"configVersion"  dynamodbav:"configVersion"`
+		MaintenanceWindowID *string `json:"-"              dynamodbav:"-"`
 	}
 	Evaluation struct {
 		Revision   int        `json:"revision"   dynamodbav:"revision"`
@@ -60,6 +61,12 @@ func Evaluate(
 	p := policy.Defaults()
 	next := current
 	next.Revision++
+	if evidence.MaintenanceWindowID != nil {
+		if open != nil {
+			return next, &Transition{Kind: "maintenance"}
+		}
+		return next, nil
+	}
 	if evidence.Outcome == "checker_problem" {
 		if open != nil {
 			return next, &Transition{Kind: "checker_problem", Last: &evidence}

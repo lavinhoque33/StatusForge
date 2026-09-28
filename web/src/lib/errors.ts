@@ -15,6 +15,8 @@ const FIELD_MESSAGES: Record<string, string> = {
   too_long: 'This value is too long.',
   too_short: 'This value is too short.',
   out_of_range: 'This value is out of range.',
+  overlaps: 'This window overlaps another active or scheduled window.',
+  too_many_windows: 'At most 10 active or scheduled windows are allowed.',
   invalid_value: 'This value is not accepted.',
   unknown_field: 'This field is not allowed.',
   url_invalid: 'Enter an absolute URL.',
@@ -55,6 +57,8 @@ export function describeApiError(error: unknown): string {
         return 'A check is already running.';
       case 'invalid_transition':
         return 'That change is not allowed from the current lifecycle state.';
+      case 'window_closed':
+        return 'This maintenance window is already ended or cancelled.';
       case 'invalid_json':
         return 'The backend could not read the request.';
       case 'body_too_large':

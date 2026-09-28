@@ -97,7 +97,8 @@ nav a[aria-current='page'] {
 /* Focus and controls */
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
@@ -256,6 +257,31 @@ input:focus-visible {
   background: var(--bg);
   color: inherit;
   font: inherit;
+}
+.form-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 32rem;
+  min-height: 5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+.form-field textarea[aria-invalid='true'] {
+  border: 2px solid var(--fail);
+}
+.maintenance-windows {
+  padding-left: 1.25rem;
+}
+.maintenance-window {
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+.maintenance-window .button {
+  margin: 0.5rem 0;
 }
 .form-field input[aria-invalid='true'] {
   border-color: var(--fail);

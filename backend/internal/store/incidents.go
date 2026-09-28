@@ -314,6 +314,7 @@ func (s *Store) ListIncidents(
 				continue
 			}
 			in.MonitoringPaused = in.State == "open" && m.Lifecycle == "paused"
+			in.InMaintenance = in.State == "open" && maintenanceActive(m, now)
 			notes, e := s.query(ctx, incidentPK(m.ID), "INCX#"+in.ID+"#NOTE#", 200, false)
 			if e != nil {
 				return nil, e
@@ -359,6 +360,7 @@ func (s *Store) IncidentDetail(
 		return in, nil, nil, nil, err
 	}
 	in.MonitoringPaused = in.State == "open" && m.Lifecycle == "paused"
+	in.InMaintenance = in.State == "open" && maintenanceActive(m, now)
 	items, err := s.query(ctx, incidentPK(mid), "INCX#"+id+"#", 1000, false)
 	if err != nil {
 		return in, nil, nil, nil, err
@@ -429,12 +431,42 @@ func (s *Store) Reminder(
 	}
 	opened, _ := time.Parse(time.RFC3339Nano, op.OpenedAt)
 	next := monitor.Stamp(incident.NextSlot(opened, interval, now))
+	if maintenanceActive(m, now) {
+		cond, vals := indexCondition(m)
+		vals[":active"] = mustAV("active")
+		vals[":id"] = mustAV(op.ID)
+		vals[":due"] = mustAV(op.NextReminderAt)
+		vals[":next"] = mustAV(next)
+		_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName: aws.String(s.table), Key: key("MONITORS", "MON#"+m.ID),
+			ConditionExpression: aws.String(
+				"lifecycle = :active AND openIncident.id = :id AND openIncident.nextReminderAt = :due AND " + cond,
+			),
+			UpdateExpression:          aws.String("SET openIncident.nextReminderAt = :next"),
+			ExpressionAttributeNames:  map[string]string{"#windows": "windows"},
+			ExpressionAttributeValues: vals,
+		})
+		var conflict *types.ConditionalCheckFailedException
+		if errors.As(err, &conflict) {
+			return ErrNotEligible
+		}
+		if err != nil {
+			return ErrUnavailable
+		}
+		return nil
+	}
 	seq := op.ReminderSeq + 1
 	nk := incident.ReminderKey(seq)
 	tx, e := s.intent(m, in, "reminder", nk, &seq, []incident.Evidence{in.LastFailure}, now)
 	if e != nil {
 		return e
 	}
+	condition, values := indexCondition(m)
+	values[":active"] = mustAV("active")
+	values[":id"] = mustAV(op.ID)
+	values[":due"] = mustAV(op.NextReminderAt)
+	values[":next"] = mustAV(next)
+	values[":seq"] = mustAV(seq)
 	tx = append(
 		tx,
 		types.TransactWriteItem{
@@ -442,18 +474,13 @@ func (s *Store) Reminder(
 				TableName: aws.String(s.table),
 				Key:       key("MONITORS", "MON#"+m.ID),
 				ConditionExpression: aws.String(
-					"lifecycle = :active AND openIncident.id = :id AND openIncident.nextReminderAt = :due",
+					"lifecycle = :active AND openIncident.id = :id AND openIncident.nextReminderAt = :due AND " + condition,
 				),
 				UpdateExpression: aws.String(
 					"SET openIncident.nextReminderAt = :next, openIncident.reminderSeq = :seq",
 				),
-				ExpressionAttributeValues: map[string]types.AttributeValue{
-					":active": mustAV("active"),
-					":id":     mustAV(op.ID),
-					":due":    mustAV(op.NextReminderAt),
-					":next":   mustAV(next),
-					":seq":    mustAV(seq),
-				},
+				ExpressionAttributeNames:  map[string]string{"#windows": "windows"},
+				ExpressionAttributeValues: values,
 			},
 		},
 	)
@@ -498,6 +525,17 @@ func (s *Store) ClaimDelivery(
 	n, err := s.noteAt(ctx, d)
 	if err != nil {
 		return n, Attempt{}, "", err
+	}
+	var maintenanceMonitor *monitor.Monitor
+	if n.Kind == "opened" || n.Kind == "reminder" {
+		current, e := s.Get(ctx, d.MonitorID)
+		if e != nil {
+			return n, Attempt{}, "", e
+		}
+		if maintenanceActive(current, now) {
+			return n, Attempt{}, "", ErrNotEligible
+		}
+		maintenanceMonitor = &current
 	}
 	if n.Kind != "opened" {
 		if n.Kind == "reminder" {
@@ -676,10 +714,22 @@ func (s *Store) ClaimDelivery(
 			}})
 		}
 	}
+	if maintenanceMonitor != nil {
+		condition, values := indexCondition(*maintenanceMonitor)
+		tx = append(tx, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
+			TableName:                 aws.String(s.table),
+			Key:                       key("MONITORS", "MON#"+d.MonitorID),
+			ConditionExpression:       aws.String(condition),
+			ExpressionAttributeNames:  map[string]string{"#windows": "windows"},
+			ExpressionAttributeValues: values,
+		}})
+	}
 	_, err = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
 	if err != nil {
 		if cancelled(err, 0) ||
-			(n.Kind != "opened" && (cancelled(err, len(tx)-1) || cancelled(err, len(tx)-2))) {
+			(n.Kind == "resolved" && cancelled(err, len(tx)-1)) ||
+			(n.Kind == "reminder" && (cancelled(err, len(tx)-2) || cancelled(err, len(tx)-3))) ||
+			(maintenanceMonitor != nil && cancelled(err, len(tx)-1)) {
 			return n, a, "", ErrNotEligible
 		}
 		return n, a, "", ErrUnavailable

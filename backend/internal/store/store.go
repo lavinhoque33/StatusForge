@@ -183,6 +183,9 @@ func (s *Store) Get(ctx context.Context, id string) (monitor.Monitor, error) {
 		return monitor.Monitor{}, ErrUnavailable
 	}
 	m.IncidentPolicy = m.IncidentPolicy.Defaults()
+	if err := s.presentMaintenance(ctx, &m); err != nil {
+		return monitor.Monitor{}, err
+	}
 	m, err = s.initializeLegacyCursor(ctx, m)
 	if err != nil {
 		return monitor.Monitor{}, err
@@ -219,6 +222,9 @@ func (s *Store) List(ctx context.Context) ([]monitor.Monitor, error) {
 				return nil, ErrUnavailable
 			}
 			m.IncidentPolicy = m.IncidentPolicy.Defaults()
+			if err := s.presentMaintenance(ctx, &m); err != nil {
+				return nil, err
+			}
 			m, err = s.initializeLegacyCursor(ctx, m)
 			if err != nil {
 				return nil, err
@@ -287,6 +293,16 @@ func (s *Store) save(
 			condition += " AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
 		} else {
 			condition += " AND evaluation.revision = :revision"
+		}
+	}
+	if trigger == "resume" {
+		maintenance := previous.Maintenance
+		maintenance.Windows = incident.Prune(maintenance.Windows, now)
+		maintenance.ActiveID = ""
+		values[":maintenance"] = mustAV(maintenance)
+		expr = strings.Replace(expr, " REMOVE ", ", maintenance = :maintenance REMOVE ", 1)
+		if !strings.Contains(expr, "maintenance = :maintenance") {
+			expr += ", maintenance = :maintenance"
 		}
 	}
 	if trigger == "resume" && previous.OpenIncident != nil {

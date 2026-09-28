@@ -547,7 +547,20 @@ func (s *Store) Claim(ctx context.Context, w Work, now time.Time) (monitor.Monit
 	}
 	token := rand.Text()
 	until := workStamp(now.Add(time.Duration(m.Check.DeadlineMs)*time.Millisecond + 10*time.Second))
-	lease := monitor.Lease{Token: token, Until: until, Kind: "scheduled"}
+	lease := monitor.Lease{
+		Token:     token,
+		Until:     until,
+		Kind:      "scheduled",
+		StartedAt: monitor.Stamp(now),
+	}
+	if id := incident.Active(m.Maintenance.Windows, now); id != "" {
+		lease.MaintenanceWindowID = &id
+	}
+	indexCond, indexValues := indexCondition(m)
+	indexValues[":lease"] = mustAV(lease)
+	indexValues[":active"] = mustAV("active")
+	indexValues[":version"] = mustAV(w.ConfigVersion)
+	indexValues[":now"] = mustAV(workStamp(now))
 	_, err = s.db.TransactWriteItems(
 		ctx,
 		&dynamodb.TransactWriteItemsInput{TransactItems: []types.TransactWriteItem{
@@ -576,15 +589,13 @@ func (s *Store) Claim(ctx context.Context, w Work, now time.Time) (monitor.Monit
 					Key:              key("MONITORS", "MON#"+w.MonitorID),
 					UpdateExpression: aws.String("SET lease = :lease, lastClaimAt = :now"),
 					ConditionExpression: aws.String(
-						"lifecycle = :active AND configVersion = :version AND (attribute_not_exists(lease) OR lease.#until < :now)",
+						"lifecycle = :active AND configVersion = :version AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
 					),
-					ExpressionAttributeNames: map[string]string{"#until": "until"},
-					ExpressionAttributeValues: map[string]types.AttributeValue{
-						":lease":   mustAV(lease),
-						":active":  mustAV("active"),
-						":version": mustAV(w.ConfigVersion),
-						":now":     mustAV(workStamp(now)),
+					ExpressionAttributeNames: map[string]string{
+						"#until":   "until",
+						"#windows": "windows",
 					},
+					ExpressionAttributeValues: indexValues,
 				},
 			},
 		}},
@@ -598,6 +609,7 @@ func (s *Store) Claim(ctx context.Context, w Work, now time.Time) (monitor.Monit
 		}
 		return m, "", ErrUnavailable
 	}
+	m.Lease = &lease
 	m.LastClaimAt = workStamp(now)
 	return m, token, nil
 }
@@ -621,7 +633,15 @@ func (s *Store) ClaimManual(
 		Until: workStamp(
 			now.Add(time.Duration(m.Check.DeadlineMs)*time.Millisecond + 10*time.Second),
 		),
+		StartedAt: monitor.Stamp(now),
 	}
+	if windowID := incident.Active(m.Maintenance.Windows, now); windowID != "" {
+		lease.MaintenanceWindowID = &windowID
+	}
+	indexCond, indexValues := indexCondition(m)
+	indexValues[":lease"] = mustAV(lease)
+	indexValues[":archived"] = mustAV("archived")
+	indexValues[":now"] = mustAV(workStamp(now))
 	_, err = s.db.UpdateItem(
 		ctx,
 		&dynamodb.UpdateItemInput{
@@ -629,14 +649,10 @@ func (s *Store) ClaimManual(
 			Key:              key("MONITORS", "MON#"+id),
 			UpdateExpression: aws.String("SET lease = :lease, lastClaimAt = :now"),
 			ConditionExpression: aws.String(
-				"lifecycle <> :archived AND (attribute_not_exists(lease) OR lease.#until < :now)",
+				"lifecycle <> :archived AND (attribute_not_exists(lease) OR lease.#until < :now) AND " + indexCond,
 			),
-			ExpressionAttributeNames: map[string]string{"#until": "until"},
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":lease":    mustAV(lease),
-				":archived": mustAV("archived"),
-				":now":      mustAV(workStamp(now)),
-			},
+			ExpressionAttributeNames:  map[string]string{"#until": "until", "#windows": "windows"},
+			ExpressionAttributeValues: indexValues,
 		},
 	)
 	if err != nil {
@@ -682,6 +698,9 @@ func (s *Store) RecordResult(
 	m, err := s.Get(ctx, o.MonitorID)
 	if err != nil {
 		return o, err
+	}
+	if m.Lease != nil && m.Lease.Token == token {
+		o.MaintenanceWindowID = m.Lease.MaintenanceWindowID
 	}
 	o.Counted = true
 	evidence := monitor.Evidence{

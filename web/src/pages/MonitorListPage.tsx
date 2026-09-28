@@ -140,6 +140,7 @@ export function MonitorListPage() {
                   status={monitor.status}
                   intervalSeconds={monitor.intervalSeconds}
                   now={now}
+                  maintenance={monitor.maintenance}
                 />
                 {monitor.openIncident === null ? null : (
                   <p className="incident-alert">

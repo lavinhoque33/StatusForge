@@ -159,6 +159,18 @@ func (s *Scheduler) Run(ctx context.Context) {
 		}
 		candidates := make([]candidate, 0, len(ms))
 		for _, m := range ms {
+			if boundaryStore, ok := s.Store.(interface {
+				Boundary(context.Context, monitor.Monitor, time.Time) error
+			}); ok && m.Lifecycle == "active" {
+				if e := boundaryStore.Boundary(tickCtx, m, now); e != nil &&
+					!errors.Is(e, store.ErrNotEligible) {
+					logger.Warn(
+						"scheduler maintenance boundary failed",
+						"reason",
+						"dependency_failure",
+					)
+				}
+			}
 			if reminderStore, ok := s.Store.(interface {
 				Reminder(context.Context, monitor.Monitor, time.Time, time.Duration) error
 			}); ok && m.OpenIncident != nil && m.Lifecycle == "active" {

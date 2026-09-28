@@ -42,6 +42,11 @@ func New(policy *targetpolicy.Policy, now func() time.Time) *Runner {
 
 func (r *Runner) Run(ctx context.Context, m monitor.Monitor) (o monitor.Observation) {
 	started := r.Now()
+	if m.Lease != nil && m.Lease.StartedAt != "" {
+		if claimed, err := time.Parse(time.RFC3339Nano, m.Lease.StartedAt); err == nil {
+			started = claimed
+		}
+	}
 	startMono := time.Now()
 	o = monitor.Observation{
 		ID:            rand.Text(),

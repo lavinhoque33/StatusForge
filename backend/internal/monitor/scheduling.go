@@ -11,9 +11,11 @@ import (
 const DefaultIntervalSeconds = 300
 
 type Lease struct {
-	Token string `dynamodbav:"token"`
-	Until string `dynamodbav:"until"`
-	Kind  string `dynamodbav:"kind"`
+	Token               string  `dynamodbav:"token"`
+	Until               string  `dynamodbav:"until"`
+	Kind                string  `dynamodbav:"kind"`
+	StartedAt           string  `dynamodbav:"startedAt,omitempty"`
+	MaintenanceWindowID *string `dynamodbav:"maintenanceWindowId,omitempty"`
 }
 type Evidence struct {
 	ObservationID  string      `dynamodbav:"observationId"`

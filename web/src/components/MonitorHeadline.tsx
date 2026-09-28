@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
-import type { MonitorStatus } from '../api/monitors';
+import type { Monitor, MonitorStatus } from '../api/monitors';
 import { outcomeWord } from '../lib/outcomes';
 import { effectiveState, headlineParts, stateClass } from '../lib/statusHeadline';
-import { formatRelativeAge } from '../lib/time';
+import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
 
 type MonitorHeadlineProps = {
   status: MonitorStatus;
   intervalSeconds: number;
   now: number;
+  maintenance?: Monitor['maintenance'];
 };
 
 /** Render `text` with its single `<time>` slot replaced by the real element. */
@@ -38,15 +39,32 @@ type HeadlineTimeLike = {
  * the state class; the words always carry the meaning, and stale/unknown never
  * receive the healthy accent.
  */
-export function MonitorHeadline({ status, intervalSeconds, now }: MonitorHeadlineProps) {
+export function MonitorHeadline({
+  status,
+  intervalSeconds,
+  now,
+  maintenance,
+}: MonitorHeadlineProps) {
   const state = effectiveState(status, now);
   const parts = headlineParts(status, now, intervalSeconds);
+  const active = maintenance?.active;
+  const suffix =
+    active === undefined || active === null ? null : (
+      <>
+        {' '}
+        — in maintenance until{' '}
+        <time dateTime={active.endAt}>{formatLocalWithOffset(new Date(active.endAt))}</time>
+      </>
+    );
 
   if (state === 'paused' && status.observation !== null) {
     const completedAt = status.observation.completedAt;
     return (
       <>
-        <p className={`monitor-headline ${stateClass(state)}`}>{parts.text}</p>
+        <p className={`monitor-headline ${stateClass(state)}`}>
+          {parts.text}
+          {suffix}
+        </p>
         <p className="monitor-headline-secondary">
           last result {outcomeWord(status.observation.outcome)}{' '}
           {formatRelativeAge(completedAt, now)}
@@ -58,6 +76,7 @@ export function MonitorHeadline({ status, intervalSeconds, now }: MonitorHeadlin
   return (
     <p className={`monitor-headline ${stateClass(state)}`}>
       {parts.time === null ? parts.text : renderWithTime(parts.text, parts.time)}
+      {suffix}
     </p>
   );
 }

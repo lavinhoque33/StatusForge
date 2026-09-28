@@ -115,6 +115,29 @@ describe('MonitorListPage', () => {
     );
   });
 
+  it('shows maintenance as text alongside status without converting unknown to healthy', async () => {
+    const window = {
+      id: 'w1',
+      monitorId: 'monitor-1',
+      startAt: '2026-09-27T10:00:00.000Z',
+      endAt: '2026-09-27T12:00:00.000Z',
+      note: '',
+      createdAt: '2026-09-27T09:00:00.000Z',
+      cancelledAt: null,
+      state: 'active' as const,
+    };
+    stubApi({
+      'GET /api/monitors': () =>
+        jsonResponse({
+          monitors: [monitorRecordFixture({ maintenance: { active: window, next: null } })],
+        }),
+    });
+    render(<MonitorListPage />);
+    const headline = await screen.findByText(/Unknown — no checks yet — in maintenance until/);
+    expect(headline.querySelector('time')).toHaveAttribute('datetime', window.endAt);
+    expect(headline).not.toHaveTextContent('Healthy');
+  });
+
   it('keeps archived monitors visible with their last result', async () => {
     stubApi({
       'GET /api/monitors': () =>
