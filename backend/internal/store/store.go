@@ -113,6 +113,21 @@ func key(pk, sk string) map[string]types.AttributeValue {
 	}
 }
 
+type LifecycleEvent struct {
+	MonitorID string `json:"monitorId" dynamodbav:"monitorId"`
+	Action    string `json:"action"    dynamodbav:"action"`
+	At        string `json:"at"        dynamodbav:"at"`
+}
+
+func (s *Store) lifecycleEvent(id, action string, at time.Time) types.TransactWriteItem {
+	event := LifecycleEvent{MonitorID: id, Action: action, At: monitor.Stamp(at)}
+	item, _ := attributevalue.MarshalMap(event)
+	item["entityType"] = mustAV("lifecycle")
+	item["PK"] = mustAV("MON#" + id)
+	item["SK"] = mustAV("LIFE#" + workStamp(at) + "#" + action)
+	return putItem(s.table, item)
+}
+
 func (s *Store) Create(ctx context.Context, m monitor.Monitor) error {
 	if err := s.ensure(ctx); err != nil {
 		return err
@@ -123,14 +138,15 @@ func (s *Store) Create(ctx context.Context, m monitor.Monitor) error {
 		if e != nil {
 			return e
 		}
-		_, e = s.db.PutItem(
-			ctx,
-			&dynamodb.PutItemInput{
-				TableName:           aws.String(s.table),
-				Item:                item,
-				ConditionExpression: aws.String("attribute_not_exists(PK)"),
+		_, e = s.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+			TransactItems: []types.TransactWriteItem{
+				{Put: &types.Put{
+					TableName: aws.String(s.table), Item: item,
+					ConditionExpression: aws.String("attribute_not_exists(PK)"),
+				}},
+				s.lifecycleEvent(m.ID, "created", now),
 			},
-		)
+		})
 		if e != nil {
 			return ErrUnavailable
 		}
@@ -170,6 +186,7 @@ func (s *Store) Create(ctx context.Context, m monitor.Monitor) error {
 					ConditionExpression: aws.String("attribute_not_exists(PK)"),
 				},
 			},
+			s.lifecycleEvent(m.ID, "created", now),
 		}},
 	)
 	if err != nil {
@@ -368,6 +385,10 @@ func (s *Store) save(
 				ExpressionAttributeNames:  input.ExpressionAttributeNames,
 			},
 		},
+	}
+	if m.Lifecycle != previous.Lifecycle {
+		action := map[string]string{"paused": "paused", "active": "resumed", "archived": "archived"}[m.Lifecycle]
+		tx = append(tx, s.lifecycleEvent(m.ID, action, now))
 	}
 	if trigger != "" {
 		work, _ := workItem(

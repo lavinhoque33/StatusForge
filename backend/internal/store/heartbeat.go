@@ -160,6 +160,10 @@ func (s *Store) saveHeartbeat(
 			},
 		},
 	}
+	if m.Lifecycle != previous.Lifecycle {
+		action := map[string]string{"paused": "paused", "active": "resumed", "archived": "archived"}[m.Lifecycle]
+		tx = append(tx, s.lifecycleEvent(m.ID, action, now))
+	}
 	if previous.OpenIncident != nil {
 		kind := ""
 		details := map[string]any{}

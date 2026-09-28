@@ -5,6 +5,7 @@ import { jsonResponse, stubApi } from './test/fixtures';
 
 const READINESS_GET = 'GET /api/health/ready';
 const MONITORS_GET = 'GET /api/monitors';
+const OVERVIEW_GET = 'GET /api/overview';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,6 +22,28 @@ describe('App', () => {
           dependencies: { dynamodb: { status: 'ready' } },
         }),
       [MONITORS_GET]: () => jsonResponse({ monitors: [] }),
+      [OVERVIEW_GET]: () =>
+        jsonResponse({
+          evaluatedAt: '2026-09-27T12:00:00.000Z',
+          receiveOutages: [],
+          openIncidents: [],
+          failingWithoutIncident: [],
+          coverageProblems: [],
+          notifications: { count: 0, items: [] },
+          recentRecoveries: [],
+          counts: {
+            active: 0,
+            paused: 0,
+            archived: 0,
+            byState: { healthy: 0, late: 0, failing: 0, checker_problem: 0, stale: 0, unknown: 0 },
+          },
+          limits: {
+            openIncidents: 50,
+            recentRecoveries: 20,
+            notifications: 10,
+            recoveryWindowHours: 24,
+          },
+        }),
       'GET /api/notifications/attention?limit=200': () => jsonResponse({ notifications: [] }),
       'GET /api/incidents?state=all&limit=50': () => jsonResponse({ incidents: [] }),
     });
@@ -28,6 +51,11 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Backend status' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/All clear — 0 active monitors checked recently; 0 paused/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Monitors' }));
     expect(
       await screen.findByText('No monitors yet. Create one to check the sample target.'),
     ).toBeInTheDocument();
@@ -37,7 +65,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Open incidents' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Backend status' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Monitors' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Monitors' })).toHaveAttribute('href', '/monitors');
   });
 
   it('shows a not-found page for an unknown address', async () => {

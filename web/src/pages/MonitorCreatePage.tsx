@@ -124,7 +124,7 @@ export function MonitorCreatePage() {
         </>
       )}
       <p>
-        <Link to="/">Back to monitors</Link>
+        <Link to="/monitors">Back to monitors</Link>
       </p>
     </section>
   );

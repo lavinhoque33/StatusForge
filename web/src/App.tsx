@@ -7,6 +7,7 @@ import { BackendStatus } from './components/BackendStatus';
 import { MonitorCreatePage } from './pages/MonitorCreatePage';
 import { MonitorDetailPage } from './pages/MonitorDetailPage';
 import { MonitorListPage } from './pages/MonitorListPage';
+import { OverviewPage } from './pages/OverviewPage';
 import { Link } from './router/Link';
 import { usePathname } from './router/history';
 import { matchRoute } from './router/routes';
@@ -25,7 +26,19 @@ export default function App() {
         <nav aria-label="Main">
           <ul>
             <li>
-              <Link to="/" aria-current={route.name === 'monitors' ? 'page' : undefined}>
+              <Link to="/" aria-current={route.name === 'overview' ? 'page' : undefined}>
+                Overview
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/monitors"
+                aria-current={
+                  ['monitors', 'create-monitor', 'monitor-detail'].includes(route.name)
+                    ? 'page'
+                    : undefined
+                }
+              >
                 Monitors
               </Link>
             </li>
@@ -61,6 +74,7 @@ export default function App() {
       </header>
 
       <main className="app-main">
+        {route.name === 'overview' ? <OverviewPage /> : null}
         {route.name === 'monitors' ? <MonitorListPage /> : null}
         {route.name === 'create-monitor' ? <MonitorCreatePage /> : null}
         {route.name === 'monitor-detail' ? (
@@ -81,7 +95,7 @@ export default function App() {
             <h2 id="page-not-found-heading">Page not found</h2>
             <p>That address does not match a StatusForge page.</p>
             <p>
-              <Link to="/">Back to monitors</Link>
+              <Link to="/monitors">Back to monitors</Link>
             </p>
           </section>
         ) : null}

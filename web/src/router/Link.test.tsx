@@ -33,7 +33,7 @@ describe('Link', () => {
 
   it('navigates client-side on a plain click', () => {
     render(<Harness />);
-    expect(screen.getByText('Route: monitors')).toBeInTheDocument();
+    expect(screen.getByText('Route: overview')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('link', { name: 'New monitor' }));
 
@@ -51,7 +51,7 @@ describe('Link', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
-    expect(screen.getByText('Route: monitors')).toBeInTheDocument();
+    expect(screen.getByText('Route: overview')).toBeInTheDocument();
   });
 
   it('leaves activations it does not own to the browser', () => {
@@ -72,7 +72,8 @@ describe('Link', () => {
     expect(window.location.pathname).toBe('/');
   });
   it('leaves fragment navigation to the browser for native scroll and focus', () => {
-    render(<Link to="/#notifications-attention">Failed notifications</Link>);
+    window.history.pushState(null, '', '/incidents');
+    render(<Link to="/incidents#notifications-attention">Failed notifications</Link>);
     const link = screen.getByRole('link', { name: 'Failed notifications' });
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
     link.dispatchEvent(event);

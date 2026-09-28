@@ -3,7 +3,9 @@ import { matchRoute } from './routes';
 
 describe('matchRoute', () => {
   it.each([
-    ['/', 'monitors'],
+    ['/', 'overview'],
+    ['/monitors', 'monitors'],
+    ['/monitors/', 'monitors'],
     ['/monitors/new', 'create-monitor'],
     ['/monitors/monitor-1', 'monitor-detail'],
     ['/monitors/monitor-1/', 'monitor-detail'],
@@ -12,8 +14,6 @@ describe('matchRoute', () => {
     ['/incidents/monitor-1/incident-1/', 'incident-detail'],
     ['/incidents/%E0%A4%A/incident', 'not-found'],
     ['/unknown', 'not-found'],
-    ['/monitors', 'not-found'],
-    ['/monitors/', 'not-found'],
     ['/monitors/monitor-1/observations', 'not-found'],
     ['/monitors/%E0%A4%A', 'not-found'],
   ])('maps %s to %s', (pathname, name) => {

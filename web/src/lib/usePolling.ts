@@ -17,6 +17,8 @@ type PollOptions = {
   refresh: () => Promise<unknown>;
   /** Fire an immediate poll on mount instead of waiting one interval. */
   immediate?: boolean;
+  /** Independent refresh cadence for summaries; defaults to the normal 15 s poll. */
+  intervalMs?: number;
 };
 
 /**
@@ -24,7 +26,11 @@ type PollOptions = {
  * effect event, so callers may pass an inline closure without rescheduling the
  * timer.
  */
-export function usePolling({ refresh, immediate = false }: PollOptions): void {
+export function usePolling({
+  refresh,
+  immediate = false,
+  intervalMs = POLL_INTERVAL_MS,
+}: PollOptions): void {
   const runRefresh = useEffectEvent(() => refresh());
 
   useEffect(() => {
@@ -63,10 +69,10 @@ export function usePolling({ refresh, immediate = false }: PollOptions): void {
     if (immediate) {
       run();
     }
-    const timer = window.setInterval(run, POLL_INTERVAL_MS);
+    const timer = window.setInterval(run, intervalMs);
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.clearInterval(timer);
     };
-  }, [immediate]);
+  }, [immediate, intervalMs]);
 }

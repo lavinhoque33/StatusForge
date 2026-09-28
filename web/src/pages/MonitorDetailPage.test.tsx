@@ -89,7 +89,10 @@ describe('MonitorDetailPage', () => {
     render(<MonitorDetailPage monitorId="monitor-1" />);
 
     expect(await screen.findByRole('heading', { name: 'Monitor not found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to monitors' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Back to monitors' })).toHaveAttribute(
+      'href',
+      '/monitors',
+    );
   });
 
   it('offers a retry when the monitor could not be loaded', async () => {

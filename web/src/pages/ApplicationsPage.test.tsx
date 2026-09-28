@@ -37,7 +37,9 @@ it('shows a new application token exactly once and lets a monitor join', async (
   expect(within(panel).getByText(/-d '{"version":"1.2.3"}'/)).toHaveTextContent(
     '/ingest/applications/app-1/deployments',
   );
-  expect(within(panel).getByRole('button', { name: 'Copy token' })).toHaveFocus();
+  await waitFor(() =>
+    expect(within(panel).getByRole('button', { name: 'Copy token' })).toHaveFocus(),
+  );
   expect(screen.getByText('Application created. Token shown once.')).toHaveAttribute(
     'role',
     'status',

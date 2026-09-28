@@ -488,3 +488,64 @@ textarea:focus-visible {
     transition: none !important;
   }
 }
+
+.overview-list {
+  list-style: none;
+  padding: 0;
+}
+.overview-list li {
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.summary-window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+}
+.summary-window legend {
+  font-weight: 600;
+}
+.summary-window label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 0.4rem;
+}
+.summary-figure {
+  margin: 1.5rem 0;
+  min-width: 0;
+}
+.summary-figure figcaption {
+  margin-bottom: 0.5rem;
+}
+.summary-plot {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.75rem;
+}
+.summary-shading-key {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.summary-shading-key span {
+  padding: 0.1rem 0.25rem;
+}
+.shade-key--outage {
+  background: #e3a4a4;
+  color: #341515;
+}
+.shade-key--paused {
+  background: #d4d4dc;
+  color: #24242f;
+}
+.summary-table th,
+.summary-table td {
+  white-space: normal;
+}
+@media (max-width: 600px) {
+  .summary-table {
+    min-width: 700px;
+  }
+}

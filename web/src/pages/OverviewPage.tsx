@@ -1,0 +1,209 @@
+import { useCallback, useEffect, useState } from 'react';
+import { getOverview, type Overview } from '../api/dailyUse';
+import { incidentLink } from '../api/incidents';
+import { isAbortError } from '../api/http';
+import { describeApiError } from '../lib/errors';
+import { durationWords } from '../lib/incidentPresentation';
+import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
+import { useNow } from '../lib/useNow';
+import { usePolling } from '../lib/usePolling';
+import { Link } from '../router/Link';
+
+function When({ at }: { at: string }) {
+  return <time dateTime={at}>{formatLocalWithOffset(new Date(at))}</time>;
+}
+export function OverviewPage() {
+  const [data, setData] = useState<Overview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const now = useNow(1000);
+  const load = useCallback(async (signal: AbortSignal) => {
+    try {
+      const result = await getOverview(signal);
+      if (signal.aborted) return;
+      setData(result);
+      setUpdatedAt(Date.now());
+      setError(null);
+    } catch (failure) {
+      if (!signal.aborted && !isAbortError(failure)) setError(describeApiError(failure));
+    }
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.resolve().then(() => {
+      if (!controller.signal.aborted) return load(controller.signal);
+    });
+    return () => controller.abort();
+  }, [load]);
+  usePolling({ refresh: () => load(new AbortController().signal) });
+  return (
+    <section className="overview" aria-labelledby="overview-heading">
+      <h2 id="overview-heading">Overview</h2>
+      {error !== null ? (
+        <p role="alert">
+          {error}{' '}
+          {data === null ? (
+            <button
+              className="button"
+              type="button"
+              onClick={() => void load(new AbortController().signal)}
+            >
+              Try again
+            </button>
+          ) : (
+            'Showing last available data.'
+          )}
+        </p>
+      ) : null}
+      {data === null && error === null ? <p role="status">Loading overview…</p> : null}
+      {updatedAt !== null ? (
+        <p role="status">Updated {formatRelativeAge(new Date(updatedAt).toISOString(), now)}</p>
+      ) : null}
+      {data === null ? null : (
+        <>
+          {data.openIncidents.length === 0 &&
+          data.failingWithoutIncident.length === 0 &&
+          data.coverageProblems.length === 0 &&
+          data.notifications.count === 0 ? (
+            <p className="panel">
+              All clear — {data.counts.active} active monitor{data.counts.active === 1 ? '' : 's'}{' '}
+              checked recently; {data.counts.paused} paused. Evaluated{' '}
+              <When at={data.evaluatedAt} />.
+            </p>
+          ) : null}
+          {data.receiveOutages.length > 0 ? (
+            <section aria-labelledby="outages-heading">
+              <h3 id="outages-heading">StatusForge was not receiving</h3>
+              <ul className="overview-list">
+                {data.receiveOutages.map((outage) => (
+                  <li className="panel" key={outage.from}>
+                    From <When at={outage.from} /> to{' '}
+                    {outage.to === null ? 'now' : <When at={outage.to} />} (
+                    {Math.round(
+                      ((outage.to === null ? Date.parse(data.evaluatedAt) : Date.parse(outage.to)) -
+                        Date.parse(outage.from)) /
+                        60000,
+                    )}{' '}
+                    min); checks and reports during this time were not observed.
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data.openIncidents.length > 0 ? (
+            <section aria-labelledby="overview-incidents-heading">
+              <h3 id="overview-incidents-heading">Open incidents</h3>
+              <ul className="overview-list">
+                {data.openIncidents.map(({ monitor, incident }) => (
+                  <li className="panel" key={incident.id}>
+                    <Link to={incidentLink(monitor.id, incident.id)}>
+                      {monitor.name} — {monitor.kind === 'heartbeat' ? 'heartbeat' : 'HTTP check'}{' '}
+                      incident
+                    </Link>
+                    . Opened <When at={incident.openedAt} />; duration{' '}
+                    {durationWords(incident, now)}.{' '}
+                    {incident.lastFailure.reason.replaceAll('_', ' ')}.
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data.failingWithoutIncident.length > 0 ? (
+            <section aria-labelledby="failing-heading">
+              <h3 id="failing-heading">Failing — incident not open yet</h3>
+              <ul className="overview-list">
+                {data.failingWithoutIncident.map(({ monitor }) => (
+                  <li className="panel monitor-state--failing" key={monitor.id}>
+                    <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —
+                    Failing; policy threshold not reached yet.
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data.coverageProblems.length > 0 ? (
+            <section aria-labelledby="coverage-problems-heading">
+              <h3 id="coverage-problems-heading">Coverage problems</h3>
+              <ul className="overview-list">
+                {data.coverageProblems.map(({ monitor, status }) => (
+                  <li className={`panel monitor-state--${status.state}`} key={monitor.id}>
+                    <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —{' '}
+                    {status.state === 'stale' ? (
+                      <>
+                        Stale — not checked since{' '}
+                        {status.observation === null ? (
+                          'the last recorded check'
+                        ) : (
+                          <When at={status.observation.completedAt} />
+                        )}
+                      </>
+                    ) : status.state === 'checker_problem' ? (
+                      'Checker problem — StatusForge could not complete the check — not a target failure'
+                    ) : status.state === 'late' ? (
+                      'Late — expected report not yet received'
+                    ) : (
+                      'Unknown — no current result'
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data.notifications.count > 0 ? (
+            <section aria-labelledby="overview-notifications-heading">
+              <h3 id="overview-notifications-heading">Notifications need attention</h3>
+              <p>
+                {data.notifications.count} failed notification
+                {data.notifications.count === 1 ? '' : 's'} (newest {data.limits.notifications}{' '}
+                shown).
+              </p>
+              <ul className="overview-list">
+                {data.notifications.items.map((note) => (
+                  <li className="panel" key={note.id}>
+                    <Link to={incidentLink(note.monitorId, note.incidentId)}>
+                      {note.monitorName} — {note.kind} notification
+                    </Link>{' '}
+                    failed
+                    {note.failedAt === null ? null : (
+                      <>
+                        {' '}
+                        at <When at={note.failedAt} />
+                      </>
+                    )}
+                    .
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data.recentRecoveries.length > 0 ? (
+            <section aria-labelledby="recoveries-heading">
+              <h3 id="recoveries-heading">Recovered in the last 24 hours</h3>
+              <ul className="overview-list">
+                {data.recentRecoveries.map(({ monitor, incident }) => (
+                  <li className="panel" key={incident.id}>
+                    <Link to={incidentLink(monitor.id, incident.id)}>
+                      {monitor.name} — Recovered
+                    </Link>{' '}
+                    at{' '}
+                    {incident.resolvedAt === null ? (
+                      'unknown time'
+                    ) : (
+                      <When at={incident.resolvedAt} />
+                    )}
+                    ; incident duration {durationWords(incident, now)}.
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          <p className="note">
+            Up to {data.limits.openIncidents} open incidents, {data.limits.recentRecoveries}{' '}
+            recoveries in {data.limits.recoveryWindowHours} hours, and {data.limits.notifications}{' '}
+            notifications shown.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}

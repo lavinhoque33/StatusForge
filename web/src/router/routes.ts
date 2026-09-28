@@ -1,5 +1,6 @@
 /** Route matching for monitor and incident pages. */
 export type Route =
+  | { name: 'overview' }
   | { name: 'monitors' }
   | { name: 'activity' }
   | { name: 'applications' }
@@ -11,7 +12,8 @@ export type Route =
 
 export function matchRoute(pathname: string): Route {
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
-  if (path === '/') return { name: 'monitors' };
+  if (path === '/') return { name: 'overview' };
+  if (path === '/monitors') return { name: 'monitors' };
   if (path === '/incidents') return { name: 'incidents' };
   if (path === '/activity') return { name: 'activity' };
   if (path === '/applications') return { name: 'applications' };

@@ -24,6 +24,7 @@ export type ApiErrorCode =
   | 'incident_not_found'
   | 'notification_not_found'
   | 'not_failed'
+  | 'not_supported'
   | 'store_unavailable';
 
 /** One field problem inside a `validation_failed` response. */

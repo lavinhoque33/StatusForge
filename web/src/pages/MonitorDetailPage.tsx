@@ -24,6 +24,7 @@ import { TimelineTable } from '../components/TimelineTable';
 import { HeartbeatTokenSection } from '../components/HeartbeatTokenSection';
 import { MonitorApplicationSection } from '../components/MonitorApplicationSection';
 import { MaintenanceSection } from '../components/MaintenanceSection';
+import { HttpSummaryPanel } from '../components/HttpSummaryPanel';
 import { describeApiError } from '../lib/errors';
 import {
   MONITOR_FIELD_PATHS,
@@ -397,7 +398,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         <h2 id="monitor-not-found-heading">Monitor not found</h2>
         <p>No monitor exists at this address.</p>
         <p>
-          <Link to="/">Back to monitors</Link>
+          <Link to="/monitors">Back to monitors</Link>
         </p>
       </section>
     );
@@ -412,7 +413,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           Try again
         </button>
         <p>
-          <Link to="/">Back to monitors</Link>
+          <Link to="/monitors">Back to monitors</Link>
         </p>
       </section>
     );
@@ -461,7 +462,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         <p className="note">Archived monitors are read-only. Observations stay available.</p>
       ) : null}
       <p>
-        <Link to="/">Back to monitors</Link>
+        <Link to="/monitors">Back to monitors</Link>
       </p>
 
       <MonitorApplicationSection
@@ -605,6 +606,14 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           </p>
         )}
       </section>
+
+      {monitor.kind === 'http' && monitor.check !== null ? (
+        <HttpSummaryPanel
+          monitorId={monitor.id}
+          createdAt={monitor.createdAt}
+          deadlineMs={monitor.check.deadlineMs}
+        />
+      ) : null}
 
       {monitor.heartbeat ? (
         <>
