@@ -69,11 +69,18 @@ export function OverviewPage() {
           {data.openIncidents.length === 0 &&
           data.failingWithoutIncident.length === 0 &&
           data.coverageProblems.length === 0 &&
-          data.notifications.count === 0 ? (
+          data.notifications.count === 0 &&
+          data.scheduler.state !== 'behind' ? (
             <p className="panel">
               All clear — {data.counts.active} active monitor{data.counts.active === 1 ? '' : 's'}{' '}
               checked recently; {data.counts.paused} paused. Evaluated{' '}
               <When at={data.evaluatedAt} />.
+            </p>
+          ) : null}
+          {data.scheduler.state === 'disabled' ? (
+            <p className="note">
+              Scheduled checks are turned off (<code>STATUSFORGE_SCHEDULER_ENABLED=false</code>);
+              only manual checks run.
             </p>
           ) : null}
           {data.receiveOutages.length > 0 ? (
@@ -93,6 +100,24 @@ export function OverviewPage() {
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+          {data.scheduler.state === 'behind' ? (
+            <section aria-labelledby="scheduler-behind-heading">
+              <h3 id="scheduler-behind-heading">Scheduler is behind</h3>
+              <div className="panel">
+                <p>
+                  Scheduler is behind — {data.scheduler.missedChecks} of {data.scheduler.dueChecks}{' '}
+                  due check{data.scheduler.dueChecks === 1 ? '' : 's'} in the last{' '}
+                  {data.scheduler.windowMinutes} minutes were missed because workers were busy.
+                  Missed checks are recorded as coverage gaps.
+                </p>
+                <p>
+                  To keep up, use longer check intervals or monitor fewer targets. If checks wait on
+                  slow targets, raising <code>STATUSFORGE_WORKERS</code> (now{' '}
+                  {data.scheduler.workers}; up to 16) can also help.
+                </p>
+              </div>
             </section>
           ) : null}
           {data.openIncidents.length > 0 ? (

@@ -47,9 +47,20 @@ type (
 		Count int                    `json:"count"`
 		Items []OverviewNotification `json:"items"`
 	}
+	// SchedulerCoverage is this process's evidence that due checks reached a
+	// worker: state unknown (no evidence yet), disabled (scheduler off), ok,
+	// or behind (more than 5% of due checks in the window missed).
+	SchedulerCoverage struct {
+		State         string `json:"state"`
+		WindowMinutes int    `json:"windowMinutes"`
+		DueChecks     int    `json:"dueChecks"`
+		MissedChecks  int    `json:"missedChecks"`
+		Workers       int    `json:"workers"`
+	}
 	OverviewResult struct {
 		EvaluatedAt            string             `json:"evaluatedAt"`
 		ReceiveOutages         []heartbeat.Outage `json:"receiveOutages"`
+		Scheduler              SchedulerCoverage  `json:"scheduler"`
 		OpenIncidents          []IncidentItem     `json:"openIncidents"`
 		FailingWithoutIncident []StatusItem       `json:"failingWithoutIncident"`
 		CoverageProblems       []StatusItem       `json:"coverageProblems"`
@@ -60,10 +71,26 @@ type (
 	}
 )
 
+// SetSchedulerCoverage installs the process's scheduler coverage source. It
+// is called once at startup, before the server accepts requests.
+func (s *Store) SetSchedulerCoverage(source func(time.Time) SchedulerCoverage) {
+	s.schedulerCoverage = source
+}
+
+// SchedulerCoverage reports the process's scheduler coverage at now. It reads
+// no table data, so it answers even while the database is slow or down.
+func (s *Store) SchedulerCoverage(now time.Time) SchedulerCoverage {
+	if s.schedulerCoverage == nil {
+		return SchedulerCoverage{State: "unknown"}
+	}
+	return s.schedulerCoverage(now)
+}
+
 func (s *Store) Overview(ctx context.Context, now time.Time) (OverviewResult, error) {
 	r := OverviewResult{
 		EvaluatedAt:            monitor.Stamp(now),
 		ReceiveOutages:         []heartbeat.Outage{},
+		Scheduler:              s.SchedulerCoverage(now),
 		OpenIncidents:          []IncidentItem{},
 		FailingWithoutIncident: []StatusItem{},
 		CoverageProblems:       []StatusItem{},

@@ -27,6 +27,13 @@ describe('App', () => {
         jsonResponse({
           evaluatedAt: '2026-09-27T12:00:00.000Z',
           receiveOutages: [],
+          scheduler: {
+            state: 'unknown',
+            windowMinutes: 5,
+            dueChecks: 0,
+            missedChecks: 0,
+            workers: 4,
+          },
           openIncidents: [],
           failingWithoutIncident: [],
           coverageProblems: [],

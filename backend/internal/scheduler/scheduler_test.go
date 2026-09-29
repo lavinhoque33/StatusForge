@@ -36,6 +36,42 @@ type fakePersistence struct {
 	started chan struct{}
 }
 
+// passParts is the old three-call shape the fakes model; pass combines it into
+// one store.TickReport the way the store's TickCycle does.
+type passParts interface {
+	Tick(context.Context, time.Time) (int, int, int, error)
+	List(context.Context) ([]monitor.Monitor, error)
+	Works(context.Context, monitor.Monitor, time.Time) ([]store.Work, error)
+}
+
+func pass(ctx context.Context, p passParts, now time.Time) (store.TickReport, error) {
+	active, created, gaps, err := p.Tick(ctx, now)
+	if err != nil {
+		return store.TickReport{}, err
+	}
+	ms, err := p.List(ctx)
+	if err != nil {
+		return store.TickReport{}, err
+	}
+	r := store.TickReport{
+		Monitors: ms,
+		Open:     map[string][]store.Work{},
+		Active:   active,
+		Created:  created,
+		Gaps:     gaps,
+	}
+	for _, m := range ms {
+		if r.Open[m.ID], err = p.Works(ctx, m, now); err != nil {
+			return store.TickReport{}, err
+		}
+	}
+	return r, nil
+}
+
+func (f *fakePersistence) TickCycle(ctx context.Context, now time.Time) (store.TickReport, error) {
+	return pass(ctx, f, now)
+}
+
 func (f *fakePersistence) Tick(context.Context, time.Time) (int, int, int, error) {
 	f.mu.Lock()
 	f.ticks++

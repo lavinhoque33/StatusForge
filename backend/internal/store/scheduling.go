@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -98,172 +99,252 @@ func (s *Store) markTickFailure(monitors []monitor.Monitor) {
 	}
 }
 
+// CycleConcurrency bounds how many monitors one scheduler pass works on at
+// once. DynamoDB Local is a single node: a small bound overlaps request round
+// trips without queueing worker claims and API reads behind the pass.
+const CycleConcurrency = 8
+
+// monitorPassTimeout bounds one monitor's share of a pass, so a slow or
+// failing monitor cannot hold up the others.
+const monitorPassTimeout = 5 * time.Second
+
+// TickReport describes one scheduling pass.
+type TickReport struct {
+	// Monitors is the pass's only monitor list; callers reuse it.
+	Monitors []monitor.Monitor
+	// Open holds, per monitor that ticked successfully, the pending or claimed
+	// work left after closing everything past its claim or retry boundary.
+	Open    map[string][]Work
+	Active  int
+	Created int
+	Gaps    int
+	// Missed is the pending work this pass closed as overdue.
+	Missed []Work
+	// Failed counts monitors whose pass failed; the next pass widens their
+	// window (needsRecovery).
+	Failed int
+}
+
+// ForEachMonitor runs fn for each monitor with at most CycleConcurrency calls
+// in flight and returns when every call has finished.
+func ForEachMonitor(ms []monitor.Monitor, fn func(monitor.Monitor)) {
+	slots := make(chan struct{}, CycleConcurrency)
+	var wg sync.WaitGroup
+	for _, m := range ms {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-slots; wg.Done() }()
+			fn(m)
+		}()
+	}
+	wg.Wait()
+}
+
+// Tick runs one pass and reports counts only; any failed monitor fails the call.
 func (s *Store) Tick(ctx context.Context, now time.Time) (int, int, int, error) {
+	r, err := s.TickCycle(ctx, now)
+	if err == nil && r.Failed > 0 {
+		err = ErrUnavailable
+	}
+	return r.Active, r.Created, r.Gaps, err
+}
+
+// TickCycle creates due work, records not_scheduled gaps, and closes expired
+// work for every monitor. Monitors run concurrently and independently: one
+// monitor's failure marks only that monitor for a widened recovery window.
+func (s *Store) TickCycle(ctx context.Context, now time.Time) (TickReport, error) {
 	ms, err := s.List(ctx)
 	if err != nil {
 		s.markTickFailure(nil)
-		return 0, 0, 0, err
+		return TickReport{}, err
 	}
-	active, created, gaps := 0, 0, 0
-	for _, m := range ms {
-		if m.Deletion != nil {
-			continue
+	r := TickReport{Monitors: ms, Open: make(map[string][]Work, len(ms))}
+	var mu sync.Mutex
+	ForEachMonitor(ms, func(m monitor.Monitor) {
+		if m.Deletion != nil || m.Kind == "heartbeat" {
+			return
 		}
-		if m.Kind == "heartbeat" {
-			continue
+		monitorCtx, cancel := context.WithTimeout(ctx, monitorPassTimeout)
+		created, gaps, missed, open, e := s.tickMonitor(monitorCtx, m, now)
+		cancel()
+		if e != nil {
+			s.markTickFailure([]monitor.Monitor{m})
 		}
+		mu.Lock()
+		defer mu.Unlock()
 		if m.Lifecycle == "active" {
-			active++
-			latest := slotStamp(m.ID, m.IntervalSeconds, now)
-			if latest > m.ScheduledThrough {
-				prev, _ := time.Parse(sortLayout, m.ScheduledThrough)
-				if prev.IsZero() {
-					prev = monitor.GridSlot(m.ID, m.IntervalSeconds, now)
-				}
-				first, last, count := monitor.SlotsBetween(m.ID, m.IntervalSeconds, prev, now)
-				witem, _ := workItem(
-					Work{
-						MonitorID:     m.ID,
-						DueAt:         latest,
-						Trigger:       "schedule",
-						ConfigVersion: m.ConfigVersion,
-						State:         "pending",
+			r.Active++
+		}
+		r.Created += created
+		r.Gaps += gaps
+		r.Missed = append(r.Missed, missed...)
+		if e != nil {
+			r.Failed++
+			return
+		}
+		r.Open[m.ID] = open
+	})
+	return r, nil
+}
+
+func (s *Store) tickMonitor(
+	ctx context.Context,
+	m monitor.Monitor,
+	now time.Time,
+) (created, gaps int, missed, open []Work, err error) {
+	if m.Lifecycle == "active" {
+		latest := slotStamp(m.ID, m.IntervalSeconds, now)
+		if latest > m.ScheduledThrough {
+			prev, _ := time.Parse(sortLayout, m.ScheduledThrough)
+			if prev.IsZero() {
+				prev = monitor.GridSlot(m.ID, m.IntervalSeconds, now)
+			}
+			first, last, count := monitor.SlotsBetween(m.ID, m.IntervalSeconds, prev, now)
+			witem, _ := workItem(
+				Work{
+					MonitorID:     m.ID,
+					DueAt:         latest,
+					Trigger:       "schedule",
+					ConfigVersion: m.ConfigVersion,
+					State:         "pending",
+				},
+			)
+			tx := []types.TransactWriteItem{
+				{
+					Put: &types.Put{
+						TableName:           aws.String(s.table),
+						Item:                witem,
+						ConditionExpression: aws.String("attribute_not_exists(PK)"),
+					},
+				},
+			}
+			if count > 0 {
+				gi, _ := gapItem(
+					monitor.Gap{
+						ID:          rand.Text(),
+						MonitorID:   m.ID,
+						FromDueAt:   workStamp(first),
+						ToDueAt:     workStamp(last),
+						MissedCount: count,
+						Reason:      "not_scheduled",
+						RecordedAt:  monitor.Stamp(now),
 					},
 				)
-				tx := []types.TransactWriteItem{
-					{
-						Put: &types.Put{
-							TableName:           aws.String(s.table),
-							Item:                witem,
-							ConditionExpression: aws.String("attribute_not_exists(PK)"),
-						},
-					},
-				}
-				if count > 0 {
-					gi, _ := gapItem(
-						monitor.Gap{
-							ID:          rand.Text(),
-							MonitorID:   m.ID,
-							FromDueAt:   workStamp(first),
-							ToDueAt:     workStamp(last),
-							MissedCount: count,
-							Reason:      "not_scheduled",
-							RecordedAt:  monitor.Stamp(now),
-						},
-					)
-					tx = append(
-						tx,
-						types.TransactWriteItem{
-							Put: &types.Put{
-								TableName:           aws.String(s.table),
-								Item:                gi,
-								ConditionExpression: aws.String("attribute_not_exists(PK)"),
-							},
-						},
-					)
-				}
-				vals := map[string]types.AttributeValue{
-					":latest": mustAV(latest),
-					":active": mustAV("active"),
-				}
-				cond := "attribute_not_exists(scheduledThrough) AND lifecycle = :active"
-				if !m.LegacyCursor {
-					cond = "scheduledThrough = :previous AND lifecycle = :active"
-					vals[":previous"] = mustAV(m.ScheduledThrough)
-				}
-				updateExpr := "SET scheduledThrough = :latest"
-				if count > 0 {
-					updateExpr += ", evaluation = :evaluation"
-					vals[":evaluation"] = mustAV(incident.Clear(m.Evaluation))
-					vals[":revision"] = mustAV(m.Evaluation.Revision)
-					if m.Evaluation.Revision == 0 {
-						cond += " AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
-					} else {
-						cond += " AND evaluation.revision = :revision"
-					}
-				}
 				tx = append(
 					tx,
 					types.TransactWriteItem{
-						Update: &types.Update{
-							TableName:        aws.String(s.table),
-							Key:              key("MONITORS", "MON#"+m.ID),
-							UpdateExpression: aws.String(updateExpr),
-							ConditionExpression: aws.String(
-								cond + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
-							),
-							ExpressionAttributeValues: vals,
+						Put: &types.Put{
+							TableName:           aws.String(s.table),
+							Item:                gi,
+							ConditionExpression: aws.String("attribute_not_exists(PK)"),
 						},
 					},
 				)
-				_, err = s.db.TransactWriteItems(
-					ctx,
-					&dynamodb.TransactWriteItemsInput{TransactItems: tx},
-				)
-				if err != nil && !cancelled(err, len(tx)-1) && !cancelled(err, 0) {
-					s.markTickFailure(ms)
-					return active, created, gaps, ErrUnavailable
+			}
+			vals := map[string]types.AttributeValue{
+				":latest": mustAV(latest),
+				":active": mustAV("active"),
+			}
+			cond := "attribute_not_exists(scheduledThrough) AND lifecycle = :active"
+			if !m.LegacyCursor {
+				cond = "scheduledThrough = :previous AND lifecycle = :active"
+				vals[":previous"] = mustAV(m.ScheduledThrough)
+			}
+			updateExpr := "SET scheduledThrough = :latest"
+			if count > 0 {
+				updateExpr += ", evaluation = :evaluation"
+				vals[":evaluation"] = mustAV(incident.Clear(m.Evaluation))
+				vals[":revision"] = mustAV(m.Evaluation.Revision)
+				if m.Evaluation.Revision == 0 {
+					cond += " AND (attribute_not_exists(evaluation.revision) OR evaluation.revision = :revision)"
+				} else {
+					cond += " AND evaluation.revision = :revision"
 				}
-				if err == nil {
-					created++
-					if count > 0 {
-						gaps++
-					}
+			}
+			tx = append(
+				tx,
+				types.TransactWriteItem{
+					Update: &types.Update{
+						TableName:        aws.String(s.table),
+						Key:              key("MONITORS", "MON#"+m.ID),
+						UpdateExpression: aws.String(updateExpr),
+						ConditionExpression: aws.String(
+							cond + " AND attribute_exists(PK) AND attribute_not_exists(deletion)",
+						),
+						ExpressionAttributeValues: vals,
+					},
+				},
+			)
+			_, err = s.db.TransactWriteItems(
+				ctx,
+				&dynamodb.TransactWriteItemsInput{TransactItems: tx},
+			)
+			if err != nil && !cancelled(err, len(tx)-1) && !cancelled(err, 0) {
+				return created, gaps, nil, nil, ErrUnavailable
+			}
+			if err == nil {
+				created++
+				if count > 0 {
+					gaps++
 				}
 			}
 		}
-		from := workWindow(m, now)
-		s.mu.Lock()
-		last, known := s.lastSuccessfulTick[m.ID]
-		recovering := s.needsRecovery[m.ID]
-		s.mu.Unlock()
-		if !known {
-			from = now.Add(-7 * 24 * time.Hour)
-		} else if recovering {
-			from = workWindow(m, last)
-		}
-		retention := now.Add(-7 * 24 * time.Hour).Add(time.Nanosecond)
-		if from.Before(retention) {
-			from = retention
-		}
-		closed, scanErr := s.closeDueWork(ctx, m, from, now)
-		if scanErr != nil {
-			s.markTickFailure(ms)
-			return active, created, gaps, scanErr
-		}
-		gaps += closed
-		s.mu.Lock()
-		s.lastSuccessfulTick[m.ID] = now
-		delete(s.needsRecovery, m.ID)
-		s.mu.Unlock()
 	}
-	return active, created, gaps, nil
+	from := workWindow(m, now)
+	s.mu.Lock()
+	last, known := s.lastSuccessfulTick[m.ID]
+	recovering := s.needsRecovery[m.ID]
+	s.mu.Unlock()
+	if !known {
+		from = now.Add(-7 * 24 * time.Hour)
+	} else if recovering {
+		from = workWindow(m, last)
+	}
+	retention := now.Add(-7 * 24 * time.Hour).Add(time.Nanosecond)
+	if from.Before(retention) {
+		from = retention
+	}
+	closed, missed, open, err := s.closeDueWork(ctx, m, from, now)
+	gaps += closed
+	if err != nil {
+		return created, gaps, missed, nil, err
+	}
+	s.mu.Lock()
+	s.lastSuccessfulTick[m.ID] = now
+	delete(s.needsRecovery, m.ID)
+	s.mu.Unlock()
+	return created, gaps, missed, open, nil
 }
 
-// closeDueWork closes every item that has crossed its claim/retry boundary.
-// This runs even with a saturated worker channel, before dispatch, so no
-// pending item can age silently out of the short WORK# tick range.
+// closeDueWork closes every item that has crossed its claim/retry boundary and
+// returns the gap count, the pending items it closed as overdue, and the open
+// items left. It runs whether or not workers are free, so no pending item can
+// age silently out of the short WORK# tick range.
 func (s *Store) closeDueWork(
 	ctx context.Context,
 	m monitor.Monitor,
 	from, now time.Time,
-) (int, error) {
+) (int, []Work, []Work, error) {
 	items, err := s.queryWorks(ctx, m.ID, from, now)
 	if err != nil {
-		return 0, err
+		return 0, nil, nil, err
 	}
 	gaps := 0
+	var missed []Work
+	open := make([]Work, 0, len(items))
 	for _, w := range items {
 		due, err := time.Parse(sortLayout, w.DueAt)
 		if err != nil {
-			return gaps, ErrUnavailable
+			return gaps, missed, nil, ErrUnavailable
 		}
 		if w.State == "claimed" {
 			until, err := time.Parse(sortLayout, w.LeaseUntil)
 			if err != nil {
-				return gaps, ErrUnavailable
+				return gaps, missed, nil, ErrUnavailable
 			}
 			if !now.After(until) {
+				open = append(open, w)
 				continue
 			}
 		}
@@ -281,19 +362,23 @@ func (s *Store) closeDueWork(
 			reason = "lease_expired"
 		}
 		if reason == "" {
+			open = append(open, w)
 			continue
 		}
 		if err := s.closeWork(ctx, w, reason, now); err != nil {
 			if err == ErrNotEligible {
 				continue
 			}
-			return gaps, err
+			return gaps, missed, nil, err
 		}
 		if reason == "overdue" || reason == "lease_expired" {
 			gaps++
 		}
+		if reason == "overdue" {
+			missed = append(missed, w)
+		}
 	}
-	return gaps, nil
+	return gaps, missed, open, nil
 }
 
 func workWindow(m monitor.Monitor, now time.Time) time.Time {
@@ -359,42 +444,58 @@ func (s *Store) SweepOld(ctx context.Context, now time.Time) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	var mu sync.Mutex
 	gaps := 0
-	for _, m := range monitors {
+	var first error
+	ForEachMonitor(monitors, func(m monitor.Monitor) {
 		if m.Kind == "heartbeat" {
+			return
+		}
+		monitorCtx, cancel := context.WithTimeout(ctx, monitorPassTimeout)
+		n, e := s.sweepMonitor(monitorCtx, m, now)
+		cancel()
+		mu.Lock()
+		defer mu.Unlock()
+		gaps += n
+		if e != nil && first == nil {
+			first = e
+		}
+	})
+	return gaps, first
+}
+
+func (s *Store) sweepMonitor(ctx context.Context, m monitor.Monitor, now time.Time) (int, error) {
+	works, err := s.queryWorks(
+		ctx,
+		m.ID,
+		now.Add(-7*24*time.Hour).Add(time.Nanosecond),
+		workWindow(m, now).Add(-time.Nanosecond),
+	)
+	if err != nil {
+		return 0, err
+	}
+	gaps := 0
+	for _, w := range works {
+		_, token, err := s.Claim(ctx, w, now)
+		if err == ErrLeaseHeld || err == ErrNotEligible {
 			continue
 		}
-		works, err := s.queryWorks(
-			ctx,
-			m.ID,
-			now.Add(-7*24*time.Hour).Add(time.Nanosecond),
-			workWindow(m, now).Add(-time.Nanosecond),
-		)
 		if err != nil {
 			return gaps, err
 		}
-		for _, w := range works {
-			_, token, err := s.Claim(ctx, w, now)
-			if err == ErrLeaseHeld || err == ErrNotEligible {
-				continue
-			}
-			if err != nil {
-				return gaps, err
-			}
-			if token != "" {
-				// An interval increase can make an old work item eligible
-				// under the new interval. It still needs normal dispatch.
-				return gaps, ErrNotEligible
-			}
-			if m.Lifecycle == "active" && m.ConfigVersion == w.ConfigVersion {
-				gaps++
-			}
+		if token != "" {
+			// An interval increase can make an old work item eligible
+			// under the new interval. It still needs normal dispatch.
+			return gaps, ErrNotEligible
 		}
-		s.mu.Lock()
-		s.lastSuccessfulTick[m.ID] = now
-		delete(s.needsRecovery, m.ID)
-		s.mu.Unlock()
+		if m.Lifecycle == "active" && m.ConfigVersion == w.ConfigVersion {
+			gaps++
+		}
 	}
+	s.mu.Lock()
+	s.lastSuccessfulTick[m.ID] = now
+	delete(s.needsRecovery, m.ID)
+	s.mu.Unlock()
 	return gaps, nil
 }
 

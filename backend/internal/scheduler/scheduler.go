@@ -1,12 +1,11 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"log/slog"
-	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
@@ -27,9 +26,7 @@ func (realClock) Now() time.Time                         { return time.Now() }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 type Persistence interface {
-	Tick(context.Context, time.Time) (int, int, int, error)
-	List(context.Context) ([]monitor.Monitor, error)
-	Works(context.Context, monitor.Monitor, time.Time) ([]store.Work, error)
+	TickCycle(context.Context, time.Time) (store.TickReport, error)
 	SweepOld(context.Context, time.Time) (int, error)
 	Claim(context.Context, store.Work, time.Time) (monitor.Monitor, string, error)
 	RecordResult(context.Context, monitor.Observation, string) (monitor.Observation, error)
@@ -46,8 +43,28 @@ type (
 		ReminderInterval time.Duration
 		LivenessInterval time.Duration
 		Logger           *slog.Logger
+		// Coverage receives this run's dispatch evidence; nil keeps a private one.
+		Coverage *Coverage
 	}
 )
+
+const (
+	// cyclePause separates scheduling passes. Workers do not wait for it: a
+	// free worker takes the next eligible candidate at once.
+	cyclePause = 2 * time.Second
+	// cycleTimeout bounds one pass. Each monitor's share is bounded separately
+	// in the store, so a slow monitor fails alone instead of starving the rest.
+	cycleTimeout = 15 * time.Second
+	// monitorTimeout bounds one monitor's maintenance, reminder, and deadline
+	// work within a pass.
+	monitorTimeout = 5 * time.Second
+	shutdownDrain  = 30 * time.Second
+)
+
+// counters aggregate dispatch outcomes between two "scheduler tick" lines.
+type counters struct {
+	dispatched, completed, expired, notEligible atomic.Int64
+}
 
 func (s *Scheduler) Run(ctx context.Context) {
 	clock := s.Clock
@@ -62,30 +79,43 @@ func (s *Scheduler) Run(ctx context.Context) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	// Reserve at most one outstanding item per worker, including in-flight
-	// checks. Otherwise stale buffered work biases the next dispatch cycle.
-	work := make(chan store.Work, workers)
-	type dueKey struct{ monitorID, dueAt string }
-	queued := make(map[dueKey]struct{})
-	var queueMu sync.Mutex
-	process := func(w store.Work) {
-		defer func() {
-			queueMu.Lock()
-			delete(queued, dueKey{w.MonitorID, w.DueAt})
-			queueMu.Unlock()
-		}()
+	coverage := s.Coverage
+	if coverage == nil {
+		coverage = NewCoverage(workers, true)
+	}
+	coverage.start(clock.Now())
+	var counts counters
+	f := newFeed(func() { counts.expired.Add(1) })
+	process := func(c candidate) {
+		w := c.work
 		now := clock.Now()
 		claimCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		m, token, err := s.Store.Claim(claimCtx, w, now)
 		cancel()
-		if err != nil {
-			if !errors.Is(err, store.ErrNotEligible) && !errors.Is(err, store.ErrLeaseHeld) {
-				logger.Warn("claim failed", "reason", "dependency_failure")
+		claimed := err == nil && token != ""
+		defer f.finish(w.MonitorID, claimed, now)
+		switch {
+		case errors.Is(err, store.ErrNotEligible) || errors.Is(err, store.ErrLeaseHeld):
+			counts.notEligible.Add(1)
+			return
+		case err != nil:
+			logger.Warn("claim failed", "reason", "dependency_failure")
+			return
+		case token == "":
+			// Claim closed the item instead of leasing it: overdue (it
+			// expired between hand-off and claim) or cancelled.
+			interval := time.Duration(m.IntervalSeconds) * time.Second
+			if w.State == "pending" && interval > 0 && !now.Before(c.due.Add(interval)) {
+				counts.expired.Add(1)
+				coverage.record(now, w.DueAt, true)
+			} else {
+				counts.notEligible.Add(1)
 			}
 			return
 		}
-		if token == "" {
-			return
+		counts.dispatched.Add(1)
+		if w.Attempts == 0 {
+			coverage.record(now, w.DueAt, false)
 		}
 		checkCtx, stop := context.WithTimeout(
 			context.Background(),
@@ -103,6 +133,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 			logger.Warn("scheduled result failed", "reason", "dependency_failure")
 			return
 		}
+		counts.completed.Add(1)
 		checker.Log(logger, o)
 	}
 	var wg sync.WaitGroup
@@ -110,19 +141,43 @@ func (s *Scheduler) Run(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for w := range work {
-				if ctx.Err() != nil {
+			for {
+				c, ok := f.take(ctx, clock)
+				if !ok {
 					return
 				}
-				process(w)
+				process(c)
 			}
 		}()
 	}
 	recoveryDone := false
 	lastLiveness := time.Time{}
+	lastState := "unknown"
+	evaluate := func(now time.Time) {
+		snapshot := coverage.Snapshot(now)
+		if snapshot.State == lastState {
+			return
+		}
+		attrs := []any{
+			"state", snapshot.State,
+			"due_checks", snapshot.DueChecks,
+			"missed_checks", snapshot.MissedChecks,
+			"window_minutes", snapshot.WindowMinutes,
+			"workers", snapshot.Workers,
+		}
+		if snapshot.State == "behind" {
+			logger.Warn("scheduler coverage degraded", attrs...)
+		} else if lastState == "behind" {
+			logger.Info("scheduler coverage recovered", attrs...)
+		}
+		lastState = snapshot.State
+	}
 	tick := func() {
+		started := time.Now()
 		now := clock.Now()
-		tickCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer evaluate(now)
+		tickCtx, cancel := context.WithTimeout(ctx, cycleTimeout)
+		defer cancel()
 		if writer, ok := s.Store.(interface {
 			WriteLiveness(context.Context, time.Time, time.Duration) (heartbeat.Liveness, error)
 		}); ok {
@@ -138,7 +193,6 @@ func (s *Scheduler) Run(ctx context.Context) {
 				}
 			}
 		}
-		defer cancel()
 		sweepGaps := 0
 		if !recoveryDone {
 			var sweepErr error
@@ -149,130 +203,122 @@ func (s *Scheduler) Run(ctx context.Context) {
 				recoveryDone = true
 			}
 		}
-		monitors, created, gaps, err := s.Store.Tick(tickCtx, now)
+		report, err := s.Store.TickCycle(tickCtx, now)
 		if err != nil {
 			logger.Warn("scheduler tick failed", "reason", "dependency_failure")
 			return
 		}
-		gaps += sweepGaps
-		if created > 0 || gaps > 0 {
-			logger.Info(
-				"scheduler tick",
-				"monitors",
-				monitors,
-				"work_created",
-				created,
-				"gaps_created",
-				gaps,
+		if report.Failed > 0 {
+			logger.Warn(
+				"scheduler tick failed",
+				"reason", "dependency_failure",
+				"monitors_failed", report.Failed,
 			)
 		}
-		ms, err := s.Store.List(tickCtx)
-		if err != nil {
-			logger.Warn("scheduler dispatch failed", "reason", "dependency_failure")
-			return
+		for _, w := range report.Missed {
+			coverage.record(now, w.DueAt, true)
 		}
-		type candidate struct {
-			work        store.Work
-			lastClaimAt string
-		}
-		candidates := make([]candidate, 0, len(ms))
-		for _, m := range ms {
-			if boundaryStore, ok := s.Store.(interface {
-				Boundary(context.Context, monitor.Monitor, time.Time) error
-			}); ok && m.Lifecycle == "active" {
-				if e := boundaryStore.Boundary(tickCtx, m, now); e != nil &&
-					!errors.Is(e, store.ErrNotEligible) {
-					logger.Warn(
-						"scheduler maintenance boundary failed",
-						"reason",
-						"dependency_failure",
-					)
-				}
-			}
-			if reminderStore, ok := s.Store.(interface {
-				Reminder(context.Context, monitor.Monitor, time.Time, time.Duration) error
-			}); ok && m.OpenIncident != nil && m.Lifecycle == "active" {
-				interval := s.ReminderInterval
-				if interval <= 0 {
-					interval = 6 * time.Hour
-				}
-				if e := reminderStore.Reminder(tickCtx, m, now, interval); e != nil &&
-					!errors.Is(e, store.ErrNotEligible) {
-					logger.Warn("scheduler reminder failed", "reason", "dependency_failure")
-				}
-			}
-			if m.Kind == "heartbeat" {
-				if deadlines, ok := s.Store.(interface {
-					Liveness(context.Context) (heartbeat.Liveness, error)
-					Deadline(context.Context, monitor.Monitor, time.Time, heartbeat.Liveness) error
-				}); ok && m.Lifecycle == "active" {
-					if live, e := deadlines.Liveness(tickCtx); e == nil {
-						if e = deadlines.Deadline(tickCtx, m, now, live); e != nil &&
-							!errors.Is(e, store.ErrNotEligible) {
-							logger.Warn("heartbeat deadline failed", "reason", "dependency_failure")
-						}
-					}
-				}
-				continue
-			}
-			ws, e := s.Store.Works(tickCtx, m, now)
-			if e != nil {
-				logger.Warn("scheduler dispatch failed", "reason", "dependency_failure")
-				continue
-			}
-			for _, w := range ws {
-				if w.State == "claimed" {
-					until, parseErr := time.Parse(time.RFC3339Nano, w.LeaseUntil)
-					if parseErr == nil && !now.After(until) {
-						continue
-					}
-				}
-				candidates = append(candidates, candidate{work: w, lastClaimAt: m.LastClaimAt})
-			}
-		}
-		slices.SortFunc(candidates, func(a, b candidate) int {
-			if order := cmp.Compare(a.lastClaimAt, b.lastClaimAt); order != 0 {
-				return order
-			}
-			if order := cmp.Compare(a.work.DueAt, b.work.DueAt); order != 0 {
-				return order
-			}
-			return cmp.Compare(a.work.MonitorID, b.work.MonitorID)
-		})
-		for _, next := range candidates {
-			w := next.work
-			key := dueKey{w.MonitorID, w.DueAt}
-			queueMu.Lock()
-			if _, exists := queued[key]; exists {
-				queueMu.Unlock()
-				continue
-			}
-			if len(queued) >= workers {
-				queueMu.Unlock()
-				break
-			}
-			select {
-			case work <- w:
-				queued[key] = struct{}{}
-			default:
-			}
-			queueMu.Unlock()
+		f.install(report.Monitors, report.Open, now)
+		s.maintain(tickCtx, report.Monitors, now, logger)
+		gaps := report.Gaps + sweepGaps
+		dispatched := counts.dispatched.Swap(0)
+		completed := counts.completed.Swap(0)
+		expired := counts.expired.Swap(0)
+		notEligible := counts.notEligible.Swap(0)
+		if report.Created > 0 || gaps > 0 || dispatched > 0 || completed > 0 || expired > 0 ||
+			notEligible > 0 {
+			logger.Info(
+				"scheduler tick",
+				"monitors", report.Active,
+				"work_created", report.Created,
+				"gaps_created", gaps,
+				"dispatched", dispatched,
+				"completed", completed,
+				"skipped_expired", expired,
+				"not_eligible", notEligible,
+				"backlog", f.backlog(),
+				"cycle_ms", time.Since(started).Milliseconds(),
+			)
 		}
 	}
 	tick()
 	for {
 		select {
 		case <-ctx.Done():
-			close(work)
 			done := make(chan struct{})
 			go func() { wg.Wait(); close(done) }()
 			select {
 			case <-done:
-			case <-time.After(30 * time.Second):
+			case <-time.After(shutdownDrain):
 			}
 			return
-		case <-clock.After(2 * time.Second):
+		case <-clock.After(cyclePause):
 			tick()
 		}
 	}
+}
+
+// maintain runs the per-monitor maintenance boundary, incident reminder, and
+// heartbeat deadline passes with the store's bounded concurrency. It runs after
+// candidates are installed, so it never delays dispatch.
+func (s *Scheduler) maintain(
+	ctx context.Context,
+	ms []monitor.Monitor,
+	now time.Time,
+	logger *slog.Logger,
+) {
+	boundaryStore, hasBoundary := s.Store.(interface {
+		Boundary(context.Context, monitor.Monitor, time.Time) error
+	})
+	reminderStore, hasReminder := s.Store.(interface {
+		Reminder(context.Context, monitor.Monitor, time.Time, time.Duration) error
+	})
+	deadlines, hasDeadlines := s.Store.(interface {
+		Liveness(context.Context) (heartbeat.Liveness, error)
+		Deadline(context.Context, monitor.Monitor, time.Time, heartbeat.Liveness) error
+	})
+	if !hasBoundary && !hasReminder && !hasDeadlines {
+		return
+	}
+	var live heartbeat.Liveness
+	liveOK := false
+	if hasDeadlines {
+		for _, m := range ms {
+			if m.Kind == "heartbeat" && m.Lifecycle == "active" {
+				var e error
+				live, e = deadlines.Liveness(ctx)
+				liveOK = e == nil
+				break
+			}
+		}
+	}
+	reminder := s.ReminderInterval
+	if reminder <= 0 {
+		reminder = 6 * time.Hour
+	}
+	store.ForEachMonitor(ms, func(m monitor.Monitor) {
+		if m.Lifecycle != "active" {
+			return
+		}
+		monitorCtx, cancel := context.WithTimeout(ctx, monitorTimeout)
+		defer cancel()
+		if hasBoundary {
+			if e := boundaryStore.Boundary(monitorCtx, m, now); e != nil &&
+				!errors.Is(e, store.ErrNotEligible) {
+				logger.Warn("scheduler maintenance boundary failed", "reason", "dependency_failure")
+			}
+		}
+		if hasReminder && m.OpenIncident != nil {
+			if e := reminderStore.Reminder(monitorCtx, m, now, reminder); e != nil &&
+				!errors.Is(e, store.ErrNotEligible) {
+				logger.Warn("scheduler reminder failed", "reason", "dependency_failure")
+			}
+		}
+		if m.Kind == "heartbeat" && liveOK {
+			if e := deadlines.Deadline(monitorCtx, m, now, live); e != nil &&
+				!errors.Is(e, store.ErrNotEligible) {
+				logger.Warn("heartbeat deadline failed", "reason", "dependency_failure")
+			}
+		}
+	})
 }

@@ -155,3 +155,41 @@ func TestOverviewNotificationApplicationContext(t *testing.T) {
 		}
 	}
 }
+
+func TestOverviewReportsSchedulerCoverage(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	s := dailyTestStore(t, now)
+	field := func() map[string]any {
+		t.Helper()
+		overview, err := s.Overview(t.Context(), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(overview)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		return body["scheduler"].(map[string]any)
+	}
+	// Without a scheduler source there is no evidence: never "ok" by default.
+	if got := field(); got["state"] != "unknown" {
+		t.Fatalf("default scheduler %+v", got)
+	}
+	var asked time.Time
+	s.SetSchedulerCoverage(func(at time.Time) SchedulerCoverage {
+		asked = at
+		return SchedulerCoverage{
+			State: "behind", WindowMinutes: 5, DueChecks: 40, MissedChecks: 9, Workers: 4,
+		}
+	})
+	got := field()
+	if !asked.Equal(now) || got["state"] != "behind" || got["windowMinutes"] != float64(5) ||
+		got["dueChecks"] != float64(40) || got["missedChecks"] != float64(9) ||
+		got["workers"] != float64(4) {
+		t.Fatalf("scheduler %+v asked at %s", got, asked)
+	}
+}

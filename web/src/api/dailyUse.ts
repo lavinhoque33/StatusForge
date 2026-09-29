@@ -89,9 +89,18 @@ export type MonitorRef = {
   applicationId: string | null;
   applicationName: string | null;
 };
+export type SchedulerCoverageState = 'unknown' | 'disabled' | 'ok' | 'behind';
+export type SchedulerCoverage = {
+  state: SchedulerCoverageState;
+  windowMinutes: number;
+  dueChecks: number;
+  missedChecks: number;
+  workers: number;
+};
 export type Overview = {
   evaluatedAt: string;
   receiveOutages: Span[];
+  scheduler: SchedulerCoverage;
   openIncidents: { monitor: MonitorRef; incident: Incident }[];
   failingWithoutIncident: { monitor: MonitorRef; status: MonitorStatus }[];
   coverageProblems: { monitor: MonitorRef; status: MonitorStatus }[];
@@ -342,6 +351,19 @@ function attention(
     applicationName: nullableText(v.applicationName),
   };
 }
+const schedulerStates: readonly SchedulerCoverageState[] = ['unknown', 'disabled', 'ok', 'behind'];
+function schedulerCoverage(value: unknown): SchedulerCoverage {
+  const v = obj(value);
+  const state = schedulerStates.find((s) => s === v.state);
+  if (state === undefined) invalid();
+  return {
+    state,
+    windowMinutes: count(v.windowMinutes),
+    dueChecks: count(v.dueChecks),
+    missedChecks: count(v.missedChecks),
+    workers: count(v.workers),
+  };
+}
 export function parseOverview(value: unknown): Overview {
   const v = obj(value),
     n = obj(v.notifications),
@@ -351,6 +373,7 @@ export function parseOverview(value: unknown): Overview {
   return {
     evaluatedAt: time(v.evaluatedAt),
     receiveOutages: list(v.receiveOutages, span),
+    scheduler: schedulerCoverage(v.scheduler),
     openIncidents: list(v.openIncidents, incidentRow),
     failingWithoutIncident: list(v.failingWithoutIncident, statusRow),
     coverageProblems: list(v.coverageProblems, statusRow),

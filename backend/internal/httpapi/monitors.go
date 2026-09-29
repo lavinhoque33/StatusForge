@@ -92,6 +92,17 @@ func NewMonitorRouter(
 		}
 		apiError(w, 503, "store_unavailable")
 	})
+	// In-process scheduler coverage; no table access, so it stays cheap and
+	// available while the Overview is slow under load.
+	mux.Get("/api/system/scheduler", func(w http.ResponseWriter, r *http.Request) {
+		coverage := store.SchedulerCoverage{State: "unknown"}
+		if v, ok := s.(interface {
+			SchedulerCoverage(time.Time) store.SchedulerCoverage
+		}); ok {
+			coverage = v.SchedulerCoverage(now())
+		}
+		writeJSON(w, 200, coverage)
+	})
 	mux.Get("/api/system", func(w http.ResponseWriter, r *http.Request) {
 		v, ok := s.(interface {
 			System(context.Context) (store.SystemStatus, error)

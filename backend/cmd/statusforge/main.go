@@ -144,10 +144,12 @@ func run() error {
 	defer stop()
 	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
 	schedulerDone := make(chan struct{})
+	coverage := scheduler.NewCoverage(cfg.Workers, cfg.SchedulerEnabled)
+	persistence.SetSchedulerCoverage(coverage.Snapshot)
 	if cfg.SchedulerEnabled {
 		go func() {
 			defer close(schedulerDone)
-			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger, ReminderInterval: time.Duration(cfg.ReminderIntervalSeconds) * time.Second, LivenessInterval: time.Duration(cfg.LivenessIntervalSeconds) * time.Second}).Run(
+			(&scheduler.Scheduler{Store: persistence, Runner: runner, Workers: cfg.Workers, Logger: logger, ReminderInterval: time.Duration(cfg.ReminderIntervalSeconds) * time.Second, LivenessInterval: time.Duration(cfg.LivenessIntervalSeconds) * time.Second, Coverage: coverage}).Run(
 				schedulerCtx,
 			)
 		}()

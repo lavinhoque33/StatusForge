@@ -25,6 +25,7 @@ vi.mocked(listApplications).mockResolvedValue([
 const data: Overview = {
   evaluatedAt: '2026-09-28T12:00:00.000Z',
   receiveOutages: [],
+  scheduler: { state: 'ok', windowMinutes: 5, dueChecks: 120, missedChecks: 0, workers: 4 },
   openIncidents: [],
   failingWithoutIncident: [],
   coverageProblems: [],
@@ -210,6 +211,45 @@ describe('Overview', () => {
     expect(
       await screen.findByText(/All clear — 1 active monitor checked recently; 1 paused/),
     ).toBeInTheDocument();
+  });
+  it('says the scheduler is behind in words, with guidance, instead of All clear', async () => {
+    vi.mocked(getOverview).mockResolvedValue({
+      ...data,
+      receiveOutages: [{ from: '2026-09-28T11:00:00.000Z', to: '2026-09-28T11:05:00.000Z' }],
+      scheduler: { state: 'behind', windowMinutes: 5, dueChecks: 40, missedChecks: 9, workers: 4 },
+    });
+    render(<OverviewPage />);
+    const section = await screen.findByRole('region', { name: 'Scheduler is behind' });
+    expect(section).toHaveTextContent(
+      'Scheduler is behind — 9 of 40 due checks in the last 5 minutes were missed because workers were busy.',
+    );
+    expect(section).toHaveTextContent(
+      'To keep up, use longer check intervals or monitor fewer targets. If checks wait on slow targets, raising STATUSFORGE_WORKERS (now 4; up to 16) can also help.',
+    );
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
+    ).toEqual(['StatusForge was not receiving', 'Scheduler is behind']);
+    expect(screen.queryByText(/All clear/)).not.toBeInTheDocument();
+  });
+  it.each([
+    { state: 'unknown' as const, note: null },
+    { state: 'ok' as const, note: null },
+    { state: 'disabled' as const, note: /Scheduled checks are turned off/ },
+  ])('shows no behind item when the scheduler is $state', async ({ state, note }) => {
+    vi.mocked(getOverview).mockResolvedValue({
+      ...data,
+      scheduler: { ...data.scheduler, state, dueChecks: 0 },
+    });
+    render(<OverviewPage />);
+    expect(await screen.findByText(/All clear/)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Scheduler is behind' })).not.toBeInTheDocument();
+    if (note === null) {
+      expect(screen.queryByText(/Scheduled checks are turned off/)).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByText(note)).toHaveTextContent(
+        'Scheduled checks are turned off (STATUSFORGE_SCHEDULER_ENABLED=false); only manual checks run.',
+      );
+    }
   });
   it('polls one overview request every 15 s while visible, not one per monitor', async () => {
     vi.mocked(getOverview).mockResolvedValue(data);

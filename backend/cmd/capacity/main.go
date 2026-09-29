@@ -37,6 +37,11 @@ const (
 	proxyAddr  = "127.0.0.1:8202"
 )
 
+var (
+	apiLogLevel = new(string)
+	apiWorkers  = new(int)
+)
+
 type (
 	point struct {
 		At               string  `json:"at"`
@@ -45,6 +50,13 @@ type (
 		APIRSSBytes      int64   `json:"apiRssBytes"`
 		DynamoCPUPercent float64 `json:"dynamoCpuPercent"`
 		DynamoRSSBytes   int64   `json:"dynamoRssBytes"`
+		// Scheduler is the API's own coverage state from GET /api/overview.
+		Scheduler *schedulerCoverage `json:"scheduler,omitempty"`
+	}
+	schedulerCoverage struct {
+		State        string `json:"state"`
+		DueChecks    int    `json:"dueChecks"`
+		MissedChecks int    `json:"missedChecks"`
 	}
 	latency struct {
 		P50     float64 `json:"p50Ms"`
@@ -53,28 +65,30 @@ type (
 		Samples int     `json:"samples"`
 	}
 	stage struct {
-		Name               string   `json:"name"`
-		Monitors           int      `json:"monitors"`
-		DurationSeconds    float64  `json:"durationSeconds"`
-		StartedAt          string   `json:"startedAt"`
-		FinishedAt         string   `json:"finishedAt"`
-		Observations       int      `json:"observations"`
-		ChecksPerMinute    float64  `json:"checksPerMinute"`
-		ChecksByMinute     []int    `json:"checksByMinute"`
-		Gaps               int      `json:"gaps"`
-		MissedSlots        int      `json:"missedSlots"`
-		GapsNearDisruption int      `json:"gapsNearDisruption"`
-		DuplicateSlots     int      `json:"duplicateSlots"`
-		Delay              latency  `json:"scheduleDelay"`
-		Overview           latency  `json:"overview"`
-		Summary            latency  `json:"summary"`
-		Samples            []point  `json:"samples"`
-		Transitions        []point  `json:"readinessTransitions"`
-		DisruptionAt       string   `json:"disruptionAt,omitempty"`
-		RestoredAt         string   `json:"restoredAt,omitempty"`
-		RecoveredAt        string   `json:"recoveredAt,omitempty"`
-		RecoverySeconds    float64  `json:"recoverySeconds,omitempty"`
-		Errors             []string `json:"errors,omitempty"`
+		Name               string  `json:"name"`
+		Monitors           int     `json:"monitors"`
+		DurationSeconds    float64 `json:"durationSeconds"`
+		StartedAt          string  `json:"startedAt"`
+		FinishedAt         string  `json:"finishedAt"`
+		Observations       int     `json:"observations"`
+		ChecksPerMinute    float64 `json:"checksPerMinute"`
+		ChecksByMinute     []int   `json:"checksByMinute"`
+		Gaps               int     `json:"gaps"`
+		MissedSlots        int     `json:"missedSlots"`
+		GapsNearDisruption int     `json:"gapsNearDisruption"`
+		DuplicateSlots     int     `json:"duplicateSlots"`
+		Delay              latency `json:"scheduleDelay"`
+		Overview           latency `json:"overview"`
+		Summary            latency `json:"summary"`
+		Samples            []point `json:"samples"`
+		Transitions        []point `json:"readinessTransitions"`
+		DisruptionAt       string  `json:"disruptionAt,omitempty"`
+		RestoredAt         string  `json:"restoredAt,omitempty"`
+		RecoveredAt        string  `json:"recoveredAt,omitempty"`
+		RecoverySeconds    float64 `json:"recoverySeconds,omitempty"`
+		// SchedulerStates counts samples by the API's scheduler coverage state.
+		SchedulerStates map[string]int `json:"schedulerStates,omitempty"`
+		Errors          []string       `json:"errors,omitempty"`
 	}
 	result struct {
 		StartedAt  string            `json:"startedAt"`
@@ -193,14 +207,23 @@ func stop(cmd *exec.Cmd) {
 }
 
 func get(client *http.Client, path string) (int, time.Duration, error) {
+	return getJSON(client, path, nil)
+}
+
+// getJSON times one GET and, when into is non-nil, decodes a 200 body into it.
+func getJSON(client *http.Client, path string, into any) (int, time.Duration, error) {
 	start := time.Now()
 	r, e := client.Get("http://" + apiAddr + path)
 	if e != nil {
 		return 0, time.Since(start), e
 	}
 	defer r.Body.Close()
-	_, e = io.Copy(io.Discard, r.Body)
-	return r.StatusCode, time.Since(start), e
+	body, e := io.ReadAll(r.Body)
+	elapsed := time.Since(start)
+	if e == nil && into != nil && r.StatusCode == 200 {
+		e = json.Unmarshal(body, into)
+	}
+	return r.StatusCode, elapsed, e
 }
 
 func waitReady(ctx context.Context, client *http.Client) error {
@@ -459,8 +482,8 @@ func stageRun(
 		"STATUSFORGE_MIN_INTERVAL_SECONDS=10",
 		"STATUSFORGE_ALLOWED_TARGETS=" + targetAddr,
 		"STATUSFORGE_NOTIFY_URL=http://127.0.0.1:8203/notify",
-		"STATUSFORGE_WORKERS=4",
-		"STATUSFORGE_LOG_LEVEL=error",
+		fmt.Sprintf("STATUSFORGE_WORKERS=%d", *apiWorkers),
+		"STATUSFORGE_LOG_LEVEL=" + *apiLogLevel,
 	}
 	api, e := runProcess(ctx, binary, env)
 	if e != nil {
@@ -528,6 +551,16 @@ func stageRun(
 			s.RecoverySeconds = recovery.Sub(restored).Seconds()
 			recovered = true
 		}
+		// The scheduler state is in-process (no table reads), so it is sampled
+		// whether or not the dependency is ready and does not load the database.
+		var coverage schedulerCoverage
+		if c, _, e := getJSON(client, "/api/system/scheduler", &coverage); e == nil && c == 200 {
+			point.Scheduler = &coverage
+			if s.SchedulerStates == nil {
+				s.SchedulerStates = map[string]int{}
+			}
+			s.SchedulerStates[coverage.State]++
+		}
 		if code == 200 {
 			if c, d, e := get(client, "/api/overview"); e == nil && c == 200 {
 				overview = append(overview, d.Seconds()*1000)
@@ -575,7 +608,21 @@ func main() {
 		"comma-separated 25,100,250,restart,outage",
 	)
 	out := flag.String("out", "", "write JSON to file (also prints to stdout)")
+	apiLogLevel = flag.String(
+		"api-log-level",
+		"error",
+		"API STATUSFORGE_LOG_LEVEL; info adds per-cycle scheduler tick lines on stderr",
+	)
+	apiWorkers = flag.Int(
+		"workers",
+		4,
+		"API STATUSFORGE_WORKERS (1–16); release evidence uses the default 4",
+	)
 	flag.Parse()
+	if *apiWorkers < 1 || *apiWorkers > 16 {
+		fmt.Fprintln(os.Stderr, "workers must be 1–16")
+		os.Exit(2)
+	}
 	if e := run(*duration, *levels, *out); e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		os.Exit(1)
@@ -632,7 +679,7 @@ func run(duration time.Duration, levels, out string) error {
 		},
 		Parameters: map[string]any{
 			"secondsPerStage": duration.Seconds(),
-			"workers":         4,
+			"workers":         *apiWorkers,
 			"intervalSeconds": 10,
 			"api":             apiAddr,
 			"fixture":         targetAddr,

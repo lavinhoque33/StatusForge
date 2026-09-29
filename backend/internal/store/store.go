@@ -45,6 +45,7 @@ type Store struct {
 	lastHousekeepingRun  *string
 	housekeepingInterval int
 	systemLimits         SystemLimits
+	schedulerCoverage    func(time.Time) SchedulerCoverage
 	retentionJobCursor   map[string]types.AttributeValue
 	deletionJobCursors   map[string]map[string]types.AttributeValue
 }

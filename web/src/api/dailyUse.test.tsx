@@ -8,6 +8,7 @@ import SummaryCharts from '../components/SummaryCharts';
 const overview = {
   evaluatedAt: '2026-09-28T12:00:00.000Z',
   receiveOutages: [],
+  scheduler: { state: 'behind', windowMinutes: 5, dueChecks: 40, missedChecks: 9, workers: 4 },
   openIncidents: [],
   failingWithoutIncident: [],
   coverageProblems: [],
@@ -33,6 +34,13 @@ describe('daily-use API boundaries', () => {
   it('accepts the documented summary and overview and rejects missing or malformed counts', () => {
     expect(parseHttpSummary(summaryFixture).coverage.expected).toBe(288);
     expect(parseOverview(overview).counts.byState.healthy).toBe(0);
+    expect(parseOverview(overview).scheduler).toEqual(overview.scheduler);
+    expect(() => parseOverview({ ...overview, scheduler: undefined })).toThrow(
+      ApiInvalidResponseError,
+    );
+    expect(() =>
+      parseOverview({ ...overview, scheduler: { ...overview.scheduler, state: 'fine' } }),
+    ).toThrow(ApiInvalidResponseError);
     expect(() =>
       parseHttpSummary({ ...summaryFixture, latency: { ...summaryFixture.latency, samples: -1 } }),
     ).toThrow(ApiInvalidResponseError);

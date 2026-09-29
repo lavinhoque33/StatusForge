@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -190,5 +191,76 @@ func TestScheduledTransactionsAndEligibility(t *testing.T) {
 	_, _, gapCount, err := s.Tick(ctx, now.Add(42*time.Second))
 	if err != nil || gapCount != 0 {
 		t.Fatalf("interval change created gap %d %v", gapCount, err)
+	}
+}
+
+func TestTickCycleClosesExpiredWorkOnceAndReportsOpenWork(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	s := isolatedStore(t, now)
+	ctx := t.Context()
+	ids := make([]string, 0, 12)
+	for i := range 12 {
+		m := monitor.New(
+			fmt.Sprintf("parallel %d", i),
+			monitor.Check{Method: "GET", DeadlineMs: 1000},
+			now,
+		)
+		m.IntervalSeconds = 10
+		if err := s.Create(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, m.ID)
+	}
+	r, err := s.TickCycle(ctx, now.Add(time.Second))
+	if err != nil || r.Failed != 0 || len(r.Monitors) != 12 || r.Active != 12 {
+		t.Fatalf("first pass %+v %v", r, err)
+	}
+	for _, id := range ids {
+		// The create run is still open next to the newest scheduled slot.
+		if len(r.Open[id]) == 0 || r.Open[id][0].Trigger != "create" {
+			t.Fatalf("open work for %s: %+v", id, r.Open[id])
+		}
+	}
+	// Twenty seconds on, every create run is past dueAt + interval: each is
+	// closed as exactly one overdue gap, reported once as missed, and no
+	// longer offered as open work.
+	later := now.Add(20 * time.Second)
+	r, err = s.TickCycle(ctx, later)
+	if err != nil || r.Failed != 0 {
+		t.Fatalf("expiry pass %+v %v", r, err)
+	}
+	missedCreate := map[string]int{}
+	for _, w := range r.Missed {
+		if w.Trigger == "create" {
+			missedCreate[w.MonitorID]++
+		}
+	}
+	for _, id := range ids {
+		if missedCreate[id] != 1 {
+			t.Fatalf("missed create runs %v", missedCreate)
+		}
+	}
+	for _, id := range ids {
+		for _, w := range r.Open[id] {
+			if w.Trigger == "create" {
+				t.Fatalf("expired work still open: %+v", w)
+			}
+		}
+	}
+	r, err = s.TickCycle(ctx, later)
+	if err != nil || len(r.Missed) != 0 || r.Gaps != 0 {
+		t.Fatalf("repeat pass %+v %v", r, err)
+	}
+	for _, id := range ids {
+		gaps, err := s.Gaps(ctx, id, 10)
+		overdue := 0
+		for _, g := range gaps {
+			if g.Reason == "overdue" && g.FromDueAt == workStamp(now) {
+				overdue++
+			}
+		}
+		if err != nil || overdue != 1 {
+			t.Fatalf("overdue gaps for %s: %+v %v", id, gaps, err)
+		}
 	}
 }

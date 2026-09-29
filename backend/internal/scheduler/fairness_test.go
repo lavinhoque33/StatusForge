@@ -26,6 +26,10 @@ type cycleStore struct {
 }
 
 func (c *cycleStore) SweepOld(context.Context, time.Time) (int, error) { return 0, nil }
+func (c *cycleStore) TickCycle(ctx context.Context, now time.Time) (store.TickReport, error) {
+	return pass(ctx, c, now)
+}
+
 func (c *cycleStore) Tick(_ context.Context, now time.Time) (int, int, int, error) {
 	c.mu.Lock()
 	next := int(now.Sub(c.base) / (10 * time.Second))

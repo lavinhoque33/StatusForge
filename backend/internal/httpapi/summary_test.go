@@ -105,3 +105,47 @@ func TestDailyAPIValidationAndErrors(t *testing.T) {
 		t.Fatalf("seven days: %d %+v", code, body)
 	}
 }
+
+type coverageFake struct {
+	*fakeMonitorStore
+	asked time.Time
+}
+
+func (f *coverageFake) SchedulerCoverage(now time.Time) store.SchedulerCoverage {
+	f.asked = now
+	return store.SchedulerCoverage{State: "disabled", WindowMinutes: 5, Workers: 4}
+}
+
+func TestSchedulerCoverageEndpoint(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	get := func(s MonitorStore) map[string]any {
+		t.Helper()
+		h := NewMonitorRouter(
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
+			time.Second,
+			func() time.Time { return now },
+			s,
+			nil,
+			nil,
+		)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/system/scheduler", nil)
+		req.Host = "localhost:8080"
+		h.ServeHTTP(rec, req)
+		var body map[string]any
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+			t.Fatalf("scheduler endpoint %d %s", rec.Code, rec.Body)
+		}
+		return body
+	}
+	f := &coverageFake{fakeMonitorStore: &fakeMonitorStore{}}
+	if body := get(f); body["state"] != "disabled" || body["workers"] != float64(4) ||
+		!f.asked.Equal(now) {
+		t.Fatalf("configured coverage %+v asked at %s", body, f.asked)
+	}
+	// A process without a scheduler source has no evidence: unknown, never ok.
+	if body := get(&fakeMonitorStore{}); body["state"] != "unknown" {
+		t.Fatalf("default coverage %+v", body)
+	}
+}
