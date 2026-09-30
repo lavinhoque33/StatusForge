@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check installed production dependencies, not build/test tool modules."""
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -24,15 +25,25 @@ def accepted(kind, name, license_id):
 
 
 def go_licence(directory):
+    # A *-SUMMARY file only indexes the licence files beside it.
     files = [
         p for p in pathlib.Path(directory).iterdir()
         if p.is_file() and p.name.lower().startswith(("license", "licence", "copying"))
+        and not p.name.lower().endswith("-summary")
     ]
-    if len(files) != 1:
-        return "unknown (missing or ambiguous licence file)"
-    text = files[0].read_text(errors="replace")
+    if not files:
+        return "unknown (missing licence file)"
+    # Several licence files: every one applies to some part of the module.
+    ids = sorted({licence_text_id(p.read_text(errors="replace")) for p in files})
+    unknown = [i for i in ids if i.startswith("unknown")]
+    return unknown[0] if unknown else " AND ".join(ids)
+
+
+def licence_text_id(text):
     if re.search(r"Apache License\s+Version 2\.0", text, re.I):
         return "Apache-2.0"
+    if text.lstrip().startswith("MIT No Attribution"):
+        return "MIT-0"
     if ("Permission is hereby granted, free of charge" in text
             and 'THE SOFTWARE IS PROVIDED "AS IS"' in text):
         return "MIT"
@@ -45,21 +56,30 @@ def go_licence(directory):
     return "unknown (unrecognized licence text)"
 
 
+# Every shipped binary, as it is built (Makefile build and lambda-build).
+GO_BINARIES = [
+    (["./cmd/statusforge"], ["-tags", "release"], {}),
+    (["./cmd/lambda-planner", "./cmd/lambda-worker"], ["-tags", "lambda.norpc"],
+     {"GOOS": "linux", "GOARCH": "arm64", "CGO_ENABLED": "0"}),
+]
+
+
 def check_go():
-    output = subprocess.check_output(
-        ["go", "list", "-deps", "-json", "./cmd/statusforge"],
-        cwd=ROOT / "backend", text=True,
-    )
-    decoder = json.JSONDecoder()
     modules = {}
-    while output.strip():
-        item, offset = decoder.raw_decode(output.lstrip())
-        output = output.lstrip()[offset:]
-        module = item.get("Module")
-        if module and module.get("Path") != "github.com/lavinhoque33/statusforge/backend":
-            # A replace directive supplies the actual source and licence.
-            source = module.get("Replace", module)
-            modules[module["Path"]] = source["Dir"]
+    for packages, flags, env in GO_BINARIES:
+        output = subprocess.check_output(
+            ["go", "list", "-deps", "-json", *flags, *packages],
+            cwd=ROOT / "backend", text=True, env={**os.environ, **env},
+        )
+        decoder = json.JSONDecoder()
+        while output.strip():
+            item, offset = decoder.raw_decode(output.lstrip())
+            output = output.lstrip()[offset:]
+            module = item.get("Module")
+            if module and module.get("Path") != "github.com/lavinhoque33/statusforge/backend":
+                # A replace directive supplies the actual source and licence.
+                source = module.get("Replace", module)
+                modules[module["Path"]] = source["Dir"]
     for name, directory in sorted(modules.items()):
         license_id = go_licence(directory)
         if not accepted("go", name, license_id):

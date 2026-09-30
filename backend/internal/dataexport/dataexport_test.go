@@ -44,7 +44,7 @@ func local(t *testing.T) (*localdynamo.Client, string, string) {
 func TestUnmarkedExportHeaderPreservesUnknownFormat(t *testing.T) {
 	client, source, _ := local(t)
 	ctx := t.Context()
-	if err := store.New(client, source, time.Second, time.Now).Initialize(ctx); err != nil {
+	if err := store.New(client.DynamoDB(), source, time.Second, time.Now).Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.DynamoDB().DeleteItem(ctx, &dynamodb.DeleteItemInput{
@@ -69,7 +69,7 @@ func TestUnmarkedExportHeaderPreservesUnknownFormat(t *testing.T) {
 func TestExportImportValidationAndRoundTrip(t *testing.T) {
 	client, source, target := local(t)
 	ctx := t.Context()
-	src := store.New(client, source, time.Second, time.Now)
+	src := store.New(client.DynamoDB(), source, time.Second, time.Now)
 	if e := src.Initialize(ctx); e != nil {
 		t.Fatal(e)
 	}
@@ -118,7 +118,7 @@ func TestExportImportValidationAndRoundTrip(t *testing.T) {
 	if e = os.WriteFile(tampered, changed, 0o600); e != nil {
 		t.Fatal(e)
 	}
-	dest := store.New(client, target, time.Second, time.Now)
+	dest := store.New(client.DynamoDB(), target, time.Second, time.Now)
 	if _, e = dataexport.Import(ctx, client.DynamoDB(), target, tampered, dest.Initialize); e == nil {
 		t.Fatal("tampered input accepted")
 	}

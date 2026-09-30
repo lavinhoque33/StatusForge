@@ -30,7 +30,7 @@ func TestHeartbeatIngestHTTP(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	client := localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local")
 	table := "statusforge_heartbeat_http_" + rand.Text()
-	s := store.New(client, table, time.Second, func() time.Time { return now })
+	s := store.New(client.DynamoDB(), table, time.Second, func() time.Time { return now })
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

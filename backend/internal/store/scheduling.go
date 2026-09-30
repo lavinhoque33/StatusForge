@@ -118,6 +118,8 @@ type TickReport struct {
 	Active  int
 	Created int
 	Gaps    int
+	// Expired counts work this pass closed as an overdue or lease_expired gap.
+	Expired int
 	// Missed is the pending work this pass closed as overdue.
 	Missed []Work
 	// Failed counts monitors whose pass failed; the next pass widens their
@@ -166,7 +168,7 @@ func (s *Store) TickCycle(ctx context.Context, now time.Time) (TickReport, error
 			return
 		}
 		monitorCtx, cancel := context.WithTimeout(ctx, monitorPassTimeout)
-		created, gaps, missed, open, e := s.tickMonitor(monitorCtx, m, now)
+		created, gaps, expired, missed, open, e := s.tickMonitor(monitorCtx, m, now)
 		cancel()
 		if e != nil {
 			s.markTickFailure([]monitor.Monitor{m})
@@ -178,6 +180,7 @@ func (s *Store) TickCycle(ctx context.Context, now time.Time) (TickReport, error
 		}
 		r.Created += created
 		r.Gaps += gaps
+		r.Expired += expired
 		r.Missed = append(r.Missed, missed...)
 		if e != nil {
 			r.Failed++
@@ -192,7 +195,7 @@ func (s *Store) tickMonitor(
 	ctx context.Context,
 	m monitor.Monitor,
 	now time.Time,
-) (created, gaps int, missed, open []Work, err error) {
+) (created, gaps, expired int, missed, open []Work, err error) {
 	if m.Lifecycle == "active" {
 		latest := slotStamp(m.ID, m.IntervalSeconds, now)
 		if latest > m.ScheduledThrough {
@@ -281,7 +284,7 @@ func (s *Store) tickMonitor(
 				&dynamodb.TransactWriteItemsInput{TransactItems: tx},
 			)
 			if err != nil && !cancelled(err, len(tx)-1) && !cancelled(err, 0) {
-				return created, gaps, nil, nil, ErrUnavailable
+				return created, gaps, 0, nil, nil, ErrUnavailable
 			}
 			if err == nil {
 				created++
@@ -308,13 +311,13 @@ func (s *Store) tickMonitor(
 	closed, missed, open, err := s.closeDueWork(ctx, m, from, now)
 	gaps += closed
 	if err != nil {
-		return created, gaps, missed, nil, err
+		return created, gaps, closed, missed, nil, err
 	}
 	s.mu.Lock()
 	s.lastSuccessfulTick[m.ID] = now
 	delete(s.needsRecovery, m.ID)
 	s.mu.Unlock()
-	return created, gaps, missed, open, nil
+	return created, gaps, closed, missed, open, nil
 }
 
 // closeDueWork closes every item that has crossed its claim/retry boundary and

@@ -25,16 +25,8 @@ func (s *Store) RunHousekeeping(ctx context.Context) error {
 			break
 		}
 	}
-	retentionUntil := time.Now().Add(2 * time.Second)
-	for ctx.Err() == nil && time.Now().Before(retentionUntil) {
-		count, err := s.processRetention(ctx)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("retention: %w", err))
-			break
-		}
-		if count == 0 {
-			break
-		}
+	if _, err := s.retentionPhase(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("retention: %w", err))
 	}
 	deletionUntil := time.Now().Add(2 * time.Second)
 	for ctx.Err() == nil && time.Now().Before(deletionUntil) {

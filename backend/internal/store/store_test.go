@@ -23,7 +23,7 @@ func TestLocalRoundTrip(t *testing.T) {
 	conn.Close()
 	now := time.Now().UTC()
 	s := New(
-		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"),
+		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").DynamoDB(),
 		"statusforge_test_"+rand.Text(),
 		time.Second,
 		time.Now,
@@ -31,7 +31,7 @@ func TestLocalRoundTrip(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
-		if _, err := s.db.DeleteTable(cleanupCtx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); err != nil {
+		if _, err := s.db.(*dynamodb.Client).DeleteTable(cleanupCtx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); err != nil {
 			t.Logf("could not remove isolated DynamoDB Local test table: %v", err)
 		}
 	})

@@ -50,7 +50,12 @@ func seed(ctx context.Context) error {
 	realNow := time.Now().UTC().Truncate(time.Second)
 	scene := realNow.Add(-7*24*time.Hour + time.Minute)
 	now := scene
-	s := store.New(client, cfg.DynamoDBTable, cfg.ReadinessTimeout, func() time.Time { return now })
+	s := store.New(
+		client.DynamoDB(),
+		cfg.DynamoDBTable,
+		cfg.ReadinessTimeout,
+		func() time.Time { return now },
+	)
 	if err := s.Initialize(ctx); err != nil {
 		return err
 	}

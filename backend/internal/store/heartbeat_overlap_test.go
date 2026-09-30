@@ -24,7 +24,7 @@ func TestHeartbeatWindowOverlapRestartsDeadline(t *testing.T) {
 	start := time.Now().UTC().Truncate(time.Millisecond)
 	clock := start
 	s := New(
-		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"),
+		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").DynamoDB(),
 		"statusforge_heartbeat_window_"+rand.Text(),
 		time.Second,
 		func() time.Time { return clock },
@@ -32,7 +32,7 @@ func TestHeartbeatWindowOverlapRestartsDeadline(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, e := s.db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
+		if _, e := s.db.(*dynamodb.Client).DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
 			t.Errorf("delete isolated table: %v", e)
 		}
 	})

@@ -71,7 +71,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	persistence := store.New(dependency, cfg.DynamoDBTable, cfg.ReadinessTimeout, time.Now)
+	persistence := store.New(
+		dependency.DynamoDB(),
+		cfg.DynamoDBTable,
+		cfg.ReadinessTimeout,
+		time.Now,
+	)
 	heartbeat.SetLivenessInterval(cfg.LivenessIntervalSeconds)
 	persistence.SetReminderInterval(time.Duration(cfg.ReminderIntervalSeconds) * time.Second)
 	delays := make([]string, len(cfg.DeliveryRetrySchedule))

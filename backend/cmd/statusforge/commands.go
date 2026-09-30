@@ -109,7 +109,7 @@ func transfer(kind string, args []string) error {
 		)
 		return nil
 	}
-	persistence := store.New(client, *table, cfg.ReadinessTimeout, time.Now)
+	persistence := store.New(client.DynamoDB(), *table, cfg.ReadinessTimeout, time.Now)
 	result, e := dataexport.Import(ctx, db, *table, *in, persistence.Initialize)
 	if e != nil {
 		return e

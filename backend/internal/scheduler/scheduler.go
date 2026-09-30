@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lavinhoque33/statusforge/backend/internal/checker"
+	"github.com/lavinhoque33/statusforge/backend/internal/checkwork"
 	"github.com/lavinhoque33/statusforge/backend/internal/heartbeat"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
@@ -86,55 +87,47 @@ func (s *Scheduler) Run(ctx context.Context) {
 	coverage.start(clock.Now())
 	var counts counters
 	f := newFeed(func() { counts.expired.Add(1) })
+	runner := checkwork.Runner{
+		Store:   s.Store,
+		Checker: s.Runner,
+		Claimed: func(w store.Work, _ monitor.Monitor, now time.Time) {
+			counts.dispatched.Add(1)
+			if w.Attempts == 0 {
+				coverage.record(now, w.DueAt, false)
+			}
+		},
+	}
 	process := func(c candidate) {
 		w := c.work
 		now := clock.Now()
-		claimCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		m, token, err := s.Store.Claim(claimCtx, w, now)
-		cancel()
-		claimed := err == nil && token != ""
+		// In-flight slots finish during the shutdown drain, so they do not
+		// inherit the scheduler's context.
+		r := runner.RunSlot(context.Background(), w, now)
+		claimed := r.Outcome == checkwork.Recorded ||
+			(r.Outcome == checkwork.DependencyFailure && r.Stage == "record")
 		defer f.finish(w.MonitorID, claimed, now)
 		switch {
-		case errors.Is(err, store.ErrNotEligible) || errors.Is(err, store.ErrLeaseHeld):
+		case r.Outcome == checkwork.LeaseHeld ||
+			(r.Outcome == checkwork.NotEligible && !r.Closed):
 			counts.notEligible.Add(1)
-			return
-		case err != nil:
+		case r.Outcome == checkwork.DependencyFailure && r.Stage == "claim":
 			logger.Warn("claim failed", "reason", "dependency_failure")
-			return
-		case token == "":
+		case r.Closed:
 			// Claim closed the item instead of leasing it: overdue (it
 			// expired between hand-off and claim) or cancelled.
-			interval := time.Duration(m.IntervalSeconds) * time.Second
+			interval := time.Duration(r.Monitor.IntervalSeconds) * time.Second
 			if w.State == "pending" && interval > 0 && !now.Before(c.due.Add(interval)) {
 				counts.expired.Add(1)
 				coverage.record(now, w.DueAt, true)
 			} else {
 				counts.notEligible.Add(1)
 			}
-			return
-		}
-		counts.dispatched.Add(1)
-		if w.Attempts == 0 {
-			coverage.record(now, w.DueAt, false)
-		}
-		checkCtx, stop := context.WithTimeout(
-			context.Background(),
-			time.Duration(m.Check.DeadlineMs)*time.Millisecond,
-		)
-		o := s.Runner.Run(checkCtx, m)
-		stop()
-		o.InitiatedBy = "scheduled"
-		o.Trigger = &w.Trigger
-		o.DueAt = &w.DueAt
-		saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		o, err = s.Store.RecordResult(saveCtx, o, token)
-		saveCancel()
-		if err != nil {
+		case r.Outcome == checkwork.DependencyFailure:
 			logger.Warn("scheduled result failed", "reason", "dependency_failure")
-			return
+		case r.Outcome == checkwork.Recorded:
+			counts.completed.Add(1)
+			checker.Log(logger, r.Observation)
 		}
-		counts.completed.Add(1)
-		checker.Log(logger, o)
 	}
 	var wg sync.WaitGroup
 	for range workers {

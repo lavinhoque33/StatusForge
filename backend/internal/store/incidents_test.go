@@ -21,7 +21,7 @@ func incidentTestStore(t *testing.T) *Store {
 	}
 	conn.Close()
 	s := New(
-		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"),
+		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").DynamoDB(),
 		"statusforge_incident_test_"+rand.Text(),
 		time.Second,
 		time.Now,
@@ -29,7 +29,7 @@ func incidentTestStore(t *testing.T) *Store {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, e := s.db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
+		if _, e := s.db.(*dynamodb.Client).DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
 			t.Errorf("delete table: %v", e)
 		}
 	})

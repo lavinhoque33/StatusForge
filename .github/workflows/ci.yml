@@ -99,8 +99,8 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health/ready)" = 200
       - name: Start DynamoDB Local (loopback, persistent volume)
         run: docker compose --env-file .env.example up -d --wait dynamodb
-      - name: DynamoDB-backed store, upgrade, and export/import tests
-        run: cd backend && go test -race -count=1 ./internal/store ./internal/upgrade ./internal/dataexport
+      - name: DynamoDB-backed store, upgrade, export/import, and M7 cloud-path drill tests
+        run: cd backend && go test -race -count=1 ./internal/store ./internal/upgrade ./internal/dataexport ./internal/cloudwork ./internal/cloudtargetpolicy
       - name: Readiness against real DynamoDB Local, then degraded, then restored
         shell: bash
         run: |

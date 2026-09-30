@@ -1,4 +1,8 @@
 {
-  "go": {},
+  "go": {
+    "github.com/aws/aws-lambda-go": {
+      "Apache-2.0 AND MIT-0": "LICENSE-SUMMARY: the library (the lambda, lambdacontext, and events packages the Lambda binaries link) is Apache-2.0; only Lambda function code is MIT No Attribution, which is more permissive than the allowed MIT."
+    }
+  },
   "npm": {}
 }

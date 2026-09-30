@@ -15,10 +15,91 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/lavinhoque33/statusforge/backend/internal/incident"
-	"github.com/lavinhoque33/statusforge/backend/internal/localdynamo"
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 	"github.com/lavinhoque33/statusforge/backend/internal/retention"
 )
+
+// DynamoDB is the set of SDK calls the store makes. *dynamodb.Client satisfies
+// it; the local binary passes the loopback client from localdynamo, and the
+// Lambda binaries pass the SDK default-configuration client from hosteddynamo.
+type DynamoDB interface {
+	BatchWriteItem(
+		context.Context,
+		*dynamodb.BatchWriteItemInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.BatchWriteItemOutput, error)
+	CreateTable(
+		context.Context,
+		*dynamodb.CreateTableInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.CreateTableOutput, error)
+	DeleteItem(
+		context.Context,
+		*dynamodb.DeleteItemInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.DeleteItemOutput, error)
+	DescribeTable(
+		context.Context,
+		*dynamodb.DescribeTableInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.DescribeTableOutput, error)
+	DescribeTimeToLive(
+		context.Context,
+		*dynamodb.DescribeTimeToLiveInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.DescribeTimeToLiveOutput, error)
+	GetItem(
+		context.Context,
+		*dynamodb.GetItemInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.GetItemOutput, error)
+	PutItem(
+		context.Context,
+		*dynamodb.PutItemInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.PutItemOutput, error)
+	Query(
+		context.Context,
+		*dynamodb.QueryInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.QueryOutput, error)
+	Scan(
+		context.Context,
+		*dynamodb.ScanInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.ScanOutput, error)
+	TransactWriteItems(
+		context.Context,
+		*dynamodb.TransactWriteItemsInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.TransactWriteItemsOutput, error)
+	UpdateItem(
+		context.Context,
+		*dynamodb.UpdateItemInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.UpdateItemOutput, error)
+	UpdateTimeToLive(
+		context.Context,
+		*dynamodb.UpdateTimeToLiveInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.UpdateTimeToLiveOutput, error)
+}
+
+// Notifications selects how incident notification intents are written.
+type Notifications int
+
+const (
+	// NotificationsDeliver writes pending intents with a DELIVERY due pointer
+	// for the local delivery worker (the local default).
+	NotificationsDeliver Notifications = iota
+	// NotificationsNone writes each intent as cancelled/no_channel without a
+	// due pointer; the cloud path has no delivery channel (ADR 0008 D5).
+	NotificationsNone
+)
+
+// CancelledNoChannel is the cancelledReason of intents written with
+// NotificationsNone.
+const CancelledNoChannel = "no_channel"
 
 var (
 	ErrNotFound          = errors.New("monitor_not_found")
@@ -32,7 +113,7 @@ var (
 )
 
 type Store struct {
-	db                   *dynamodb.Client
+	db                   DynamoDB
 	table                string
 	mu                   sync.Mutex
 	ready                bool
@@ -48,10 +129,16 @@ type Store struct {
 	schedulerCoverage    func(time.Time) SchedulerCoverage
 	retentionJobCursor   map[string]types.AttributeValue
 	deletionJobCursors   map[string]map[string]types.AttributeValue
+	notifications        Notifications
+	// hosted is set by Validate: the table belongs to the infrastructure, so
+	// the store never creates or alters it and re-validates instead.
+	hosted bool
 }
 
+// New builds a store over client. The client is either the loopback client
+// from localdynamo (local binary) or the SDK client from hosteddynamo (Lambda).
 func New(
-	client *localdynamo.Client,
+	client DynamoDB,
 	table string,
 	timeout time.Duration,
 	now func() time.Time,
@@ -60,7 +147,7 @@ func New(
 		now = time.Now
 	}
 	return &Store{
-		db:                 client.DynamoDB(),
+		db:                 client,
 		table:              table,
 		timeout:            timeout * 5,
 		now:                now,
@@ -76,6 +163,9 @@ func (s *Store) ensure(ctx context.Context) error {
 	defer s.mu.Unlock()
 	if s.ready {
 		return nil
+	}
+	if s.hosted {
+		return s.validate(ctx)
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()

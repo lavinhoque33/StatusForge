@@ -190,14 +190,14 @@ func TestAcceptedMilestoneUpgrade(t *testing.T) {
 			if e = json.Unmarshal(raw, &expected); e != nil {
 				t.Fatal(e)
 			}
-			s := store.New(client, table, time.Second, func() time.Time { return fixed })
+			s := store.New(client.DynamoDB(), table, time.Second, func() time.Time { return fixed })
 			_, e = dataexport.Import(t.Context(), client.DynamoDB(), table, copyPath, s.Initialize)
 			if e != nil {
 				t.Fatal(e)
 			}
 			disableTTL(t, client.DynamoDB(), table)
 			// Import contains no marker; a fresh process identifies unmarked milestone data.
-			s = store.New(client, table, time.Second, func() time.Time { return fixed })
+			s = store.New(client.DynamoDB(), table, time.Second, func() time.Time { return fixed })
 			if e = s.Initialize(t.Context()); e != nil {
 				t.Fatal(e)
 			}
@@ -330,7 +330,7 @@ func TestAcceptedMilestoneUpgrade(t *testing.T) {
 
 func TestNewerFormatRefused(t *testing.T) {
 	client, table := local(t)
-	s := store.New(client, table, time.Second, time.Now)
+	s := store.New(client.DynamoDB(), table, time.Second, time.Now)
 	if e := s.Initialize(t.Context()); e != nil {
 		t.Fatal(e)
 	}
@@ -339,7 +339,7 @@ func TestNewerFormatRefused(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	newProcess := store.New(client, table, time.Second, time.Now)
+	newProcess := store.New(client.DynamoDB(), table, time.Second, time.Now)
 	e = newProcess.Initialize(t.Context())
 	if !errors.Is(e, store.ErrNewerFormat) {
 		t.Fatalf("format 7 not refused: %v", e)
@@ -348,7 +348,7 @@ func TestNewerFormatRefused(t *testing.T) {
 
 func TestBackfillResumesFromCursor(t *testing.T) {
 	client, table := local(t)
-	s := store.New(client, table, time.Second, time.Now)
+	s := store.New(client.DynamoDB(), table, time.Second, time.Now)
 	if e := s.Initialize(t.Context()); e != nil {
 		t.Fatal(e)
 	}
@@ -386,7 +386,7 @@ func TestBackfillResumesFromCursor(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	restarted := store.New(client, table, time.Second, time.Now)
+	restarted := store.New(client.DynamoDB(), table, time.Second, time.Now)
 	if e := restarted.Initialize(t.Context()); e != nil {
 		t.Fatal(e)
 	}

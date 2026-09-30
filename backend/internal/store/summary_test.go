@@ -23,7 +23,7 @@ func dailyTestStore(t *testing.T, now time.Time) *Store {
 	}
 	conn.Close()
 	s := New(
-		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local"),
+		localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").DynamoDB(),
 		"statusforge_m5a_test_"+rand.Text(),
 		time.Second,
 		func() time.Time { return now },
@@ -31,7 +31,7 @@ func dailyTestStore(t *testing.T, now time.Time) *Store {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, e := s.db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
+		if _, e := s.db.(*dynamodb.Client).DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(s.table)}); e != nil {
 			t.Errorf("delete isolated table: %v", e)
 		}
 	})

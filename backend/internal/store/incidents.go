@@ -189,9 +189,19 @@ func (s *Store) intent(
 		NextAttemptAt: &at,
 	}
 	note.EntityType = "notification"
+	if s.notifications == NotificationsNone {
+		reason := CancelledNoChannel
+		note.State = "cancelled"
+		note.CancelledReason = &reason
+		note.NextAttemptAt = nil
+	}
 	item, _ := attributevalue.MarshalMap(note)
 	item["PK"] = mustAV(incidentPK(m.ID))
 	item["SK"] = mustAV(noteSK(inc.ID, key))
+	if s.notifications == NotificationsNone {
+		// No channel means no sender: no DELIVERY due pointer (ADR 0008 D5).
+		return []types.TransactWriteItem{putItem(s.table, item)}, nil
+	}
 	return []types.TransactWriteItem{
 		putItem(s.table, item),
 		putItem(s.table, pointer(dueSK(at, m.ID, inc.ID, key))),

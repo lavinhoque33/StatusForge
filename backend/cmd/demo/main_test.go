@@ -32,7 +32,7 @@ func TestDemoGuardAndMarker(t *testing.T) {
 		t.Fatalf("non-demo reset permitted: %v", err)
 	}
 	name := "statusforge_m6cap_demoflag_" + rand.Text()
-	scratch := store.New(client, name, time.Second, time.Now)
+	scratch := store.New(client.DynamoDB(), name, time.Second, time.Now)
 	if err := scratch.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestDemoGuardAndMarker(t *testing.T) {
 	if !errors.As(err, &absent) {
 		t.Fatal(err)
 	}
-	demo := store.New(client, "statusforge_demo", time.Second, time.Now)
+	demo := store.New(client.DynamoDB(), "statusforge_demo", time.Second, time.Now)
 	if err := demo.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

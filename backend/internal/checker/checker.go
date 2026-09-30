@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"syscall"
 	"time"
@@ -19,7 +20,22 @@ type Runner struct {
 	Now    func() time.Time
 }
 
-func New(policy *targetpolicy.Policy, now func() time.Time) *Runner {
+type (
+	// Dialer is the destination policy every plain connection goes through.
+	Dialer interface {
+		DialContext(ctx context.Context, network, address string) (net.Conn, error)
+	}
+	// TLSDialer also completes TLS itself, so HTTPS connections go only to
+	// the address the policy pinned (the cloud destination policy).
+	TLSDialer interface {
+		Dialer
+		DialTLSContext(ctx context.Context, network, address string) (net.Conn, error)
+	}
+)
+
+// New builds a runner whose every connection goes through policy: no proxy,
+// no redirects, no keep-alives, and the M1 header and body bounds.
+func New(policy Dialer, now func() time.Time) *Runner {
 	if now == nil {
 		now = time.Now
 	}
@@ -30,6 +46,9 @@ func New(policy *targetpolicy.Policy, now func() time.Time) *Runner {
 		DisableCompression:     true,
 		ForceAttemptHTTP2:      false,
 		DialContext:            policy.DialContext,
+	}
+	if tlsPolicy, ok := policy.(TLSDialer); ok {
+		transport.DialTLSContext = tlsPolicy.DialTLSContext
 	}
 	return &Runner{
 		client: &http.Client{
