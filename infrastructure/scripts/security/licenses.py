@@ -56,9 +56,12 @@ def licence_text_id(text):
     return "unknown (unrecognized licence text)"
 
 
-# Every shipped binary, as it is built (Makefile build and lambda-build).
+# Every shipped binary (Makefile build and lambda-build). cmd/statusforge is
+# listed without the release tag: that tag only swaps internal/webui's embed
+# file (standard-library imports only) and needs a built web bundle, which a
+# fresh checkout and the CI security job do not have.
 GO_BINARIES = [
-    (["./cmd/statusforge"], ["-tags", "release"], {}),
+    (["./cmd/statusforge"], [], {}),
     (["./cmd/lambda-planner", "./cmd/lambda-worker"], ["-tags", "lambda.norpc"],
      {"GOOS": "linux", "GOARCH": "arm64", "CGO_ENABLED": "0"}),
 ]
