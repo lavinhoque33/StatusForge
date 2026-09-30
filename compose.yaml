@@ -20,7 +20,9 @@ services:
         condition: service_completed_successfully
     # -sharedDb: one database file regardless of the access key/region a client sends.
     # -dbPath: persist to the named volume instead of the image default (-inMemory).
-    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    # -disableTelemetry: DynamoDB Local otherwise sends usage telemetry to AWS in the background.
+    command:
+      ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data", "-disableTelemetry"]
     ports:
       - "127.0.0.1:${STATUSFORGE_DYNAMODB_PORT:-8000}:8000"
     volumes:
