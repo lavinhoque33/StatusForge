@@ -7,7 +7,7 @@ BACKEND := backend
 # Native applications do not read Compose's environment file themselves.
 LOAD_ENV = set -a; if [ -f .env ]; then . ./.env; fi; set +a;
 
-.PHONY: help setup doctor db-up db-down db-reset db-export db-import backend-dev sample-target notification-receiver sample-job web-dev backend-check local-isolation-check web-check verify format down build run security-check demo lambda-build
+.PHONY: help setup doctor db-up db-down db-reset db-export db-import backend-dev sample-target notification-receiver sample-job web-dev backend-check local-isolation-check web-check infra-check infra-synth verify format down build run security-check demo lambda-build
 
 # The local binary must never link the cloud path (ADR 0008 D7): these
 # packages and everything beneath them are cloud-only.
@@ -27,6 +27,7 @@ help:
 	  '  db-import      Import validated JSONL into empty table (FILE= and TABLE= required)' \
 	  '  build/run      Build embedded web and versioned binary; run on loopback with DynamoDB Local' \
 	  '  lambda-build   Cross-compile the planner and worker bootstrap binaries (linux/arm64; build only, no deploy)' \
+	  '  infra-synth    lambda-build, then CDK synth into infra/cdk.out inside a no-network sandbox (unshare -rn); never deploys' \
 	  '  backend-dev    Run the API on 127.0.0.1:8080 with root .env configuration' \
 	  '  sample-target  Run the controlled sample target fixture on 127.0.0.1:8090' \
 	  '  notification-receiver  Run the local notification receiver on 127.0.0.1:8091' \
@@ -36,8 +37,9 @@ help:
 	  '  demo           Seed and run the isolated demonstration table (DEMO_RESET=yes to reset)' \
 	  '  backend-check  gofumpt, golines (100 cols), go vet, race-enabled tests, build, local dependency isolation' \
 	  '  web-check      Lint, types, formatting, tests, production build' \
-	  '  verify         Run both check suites' \
-	  '  format         Apply golines + gofumpt and Prettier' \
+	  '  infra-check    Prettier, tsc, Vitest template assertions, infra-synth and the template check' \
+	  '  verify         Run backend-check, web-check and infra-check' \
+	  '  format         Apply golines + gofumpt and Prettier (web and infra)' \
 	  '  down           Remove Compose containers/network; retain the data volume'
 
 .env:
@@ -46,6 +48,7 @@ help:
 setup: .env
 	cd $(BACKEND) && $(GO) mod download
 	npm --prefix web ci
+	npm --prefix infra ci
 
 doctor:
 	@sh infrastructure/scripts/doctor.sh
@@ -82,6 +85,23 @@ lambda-build:
 	rm -rf backend/bin/lambda
 	@version="$$(git describe --tags --always --dirty 2>/dev/null || printf dev)"; cd $(BACKEND) && for fn in planner worker; do \
 	  GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -tags lambda.norpc -trimpath -ldflags "-X github.com/lavinhoque33/statusforge/backend/internal/buildinfo.Version=$$version" -o bin/lambda/$$fn/bootstrap ./cmd/lambda-$$fn || exit 1; done
+
+# Synthesis only. The pinned CLI runs in a user and network
+# namespace with only loopback, with no inherited environment and a throwaway
+# HOME, so it cannot read ~/.aws, ~/.cdk or SSO caches or reach any network.
+# Without a working unshare the target fails; it never falls back. Node's own
+# directory leads PATH because version-manager shims need the real HOME.
+infra-synth: lambda-build
+	@command -v unshare >/dev/null 2>&1 || { printf '%s\n' 'infra-synth: unshare (util-linux) is required; refusing to synthesize with network access'; exit 1; }
+	@nodedir="$$(dirname "$$(node -p process.execPath)")" || exit 1; \
+	home="$$(mktemp -d)" || exit 1; \
+	rm -rf infra/cdk.out; \
+	status=0; \
+	(cd infra && unshare -rn env -i PATH="$$nodedir:$$PATH" HOME="$$home" CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true \
+	  ./node_modules/.bin/cdk synth --lookups=false --no-notices --no-version-reporting >/dev/null) || status=$$?; \
+	rm -rf "$$home"; \
+	if [ "$$status" -ne 0 ]; then printf 'infra-synth: sandboxed synthesis failed (exit %s)\n' "$$status"; exit 1; fi
+	node infra/scripts/check-template.ts
 
 security-check:
 	sh infrastructure/scripts/security-check.sh
@@ -127,12 +147,19 @@ web-check:
 	npm --prefix web test
 	npm --prefix web run build
 
-verify: backend-check web-check
+infra-check:
+	npm --prefix infra run format:check
+	npm --prefix infra run typecheck
+	npm --prefix infra test
+	$(MAKE) infra-synth
+
+verify: backend-check web-check infra-check
 
 format:
 	cd $(BACKEND) && $(GO) tool golines -w -m 100 --base-formatter "$(GO) tool gofumpt" .
 	cd $(BACKEND) && $(GO) tool gofumpt -w .
 	npm --prefix web run format
+	npm --prefix infra run format
 
 down:
 	docker compose down

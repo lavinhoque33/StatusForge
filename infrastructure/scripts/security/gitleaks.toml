@@ -10,6 +10,10 @@ description = "Generated dependency/build outputs, git metadata and local scratc
 paths = ['''(^|/)(node_modules|dist|\.git|\.local)/''']
 
 [[allowlists]]
+description = "Git-ignored CDK cloud assembly (make infra-synth): asset hashes resemble API keys; the committed infra/ source it is built from is still scanned"
+paths = ['''^infra/cdk\.out/''']
+
+[[allowlists]]
 description = ".env.example has public, documented placeholder credentials for DynamoDB Local only"
 paths = ['''(^|/)\.env\.example$''']
 

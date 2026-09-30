@@ -25,10 +25,20 @@ else
 fi
 
 if npm --prefix web audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org >"$scratch/npm.log" 2>&1; then
-    printf '%s\n' 'npm audit (production, low and above): PASS'
+    printf '%s\n' 'npm audit (web production, low and above): PASS'
 else
-    printf '%s\n' 'npm audit (production, low and above): FAIL — findings or registry error'
+    printf '%s\n' 'npm audit (web production, low and above): FAIL — findings or registry error'
     cat "$scratch/npm.log"
+    failed=1
+fi
+
+# infra/ only: reasoned, version-pinned exceptions in security/audit-exceptions.json.
+if python3 infrastructure/scripts/security/npm-audit.py >"$scratch/npm-infra.log" 2>&1; then
+    printf '%s\n' 'npm audit (infra production, low and above): PASS'
+    cat "$scratch/npm-infra.log"
+else
+    printf '%s\n' 'npm audit (infra production, low and above): FAIL — findings, stale exception, or registry error'
+    cat "$scratch/npm-infra.log"
     failed=1
 fi
 

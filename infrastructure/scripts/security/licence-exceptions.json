@@ -4,5 +4,12 @@
       "Apache-2.0 AND MIT-0": "LICENSE-SUMMARY: the library (the lambda, lambdacontext, and events packages the Lambda binaries link) is Apache-2.0; only Lambda function code is MIT No Attribution, which is more permissive than the allowed MIT."
     }
   },
-  "npm": {}
+  "npm": {
+    "case": {
+      "(MIT OR GPL-3.0-or-later)": "Bundled inside aws-cdk-lib (infra/ synthesis only; never shipped in a StatusForge binary or web bundle). A disjunctive dual licence: StatusForge elects MIT, which is on the allowlist, so the GPL alternative never applies."
+    },
+    "minimatch": {
+      "BlueOak-1.0.0": "Bundled inside aws-cdk-lib (infra/ synthesis only; never shipped in a StatusForge binary or web bundle). The Blue Oak Model License 1.0.0 is an OSI-approved permissive licence (use, modify, and distribute with notice, plus an express patent grant) with no copyleft terms."
+    }
+  }
 }

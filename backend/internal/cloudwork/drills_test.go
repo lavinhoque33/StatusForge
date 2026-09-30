@@ -124,7 +124,7 @@ func TestDrill03DuplicateConcurrent(t *testing.T) {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
-			response, err := worker.Handle(ctx, event(body))
+			response, err := worker.Handle(withRole(ctx, roleWorker), event(body))
 			if err != nil {
 				t.Error(err)
 			}

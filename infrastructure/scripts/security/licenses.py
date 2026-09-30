@@ -90,14 +90,17 @@ def check_go():
     print(f"licences/Go: {len(modules)} production modules, {len(errors)} findings")
 
 
-def check_npm():
+def check_npm(project):
+    """Walk a project's locked production tree (bundled dependencies included)."""
+    root = ROOT / project
     output = subprocess.check_output(
         ["npm", "ls", "--omit=dev", "--all", "--json"],
-        cwd=ROOT / "web", text=True,
+        cwd=root, text=True,
     )
     tree = json.loads(output)
     seen = set()
     count = 0
+    before = len(errors)
 
     def walk(node, parent):
         nonlocal count
@@ -110,7 +113,7 @@ def check_npm():
             directory = parent
             while True:
                 candidate = directory / "node_modules" / name
-                if candidate.exists() or directory == ROOT / "web":
+                if candidate.exists() or directory == root:
                     break
                 directory = directory.parent
             manifest = candidate / "package.json"
@@ -131,13 +134,15 @@ def check_npm():
                 errors.append(f"npm {name}@{child['version']}: {license_id or 'missing licence'}")
             walk(child, candidate)
 
-    walk(tree, ROOT / "web")
-    print(f"licences/npm: {count} production packages, {len(errors)} total findings")
+    walk(tree, root)
+    print(f"licences/npm ({project}): {count} production packages, {len(errors) - before} findings")
 
 
 try:
     check_go()
-    check_npm()
+    check_npm("web")
+    # The CDK app's production tree, including aws-cdk-lib's bundled dependencies.
+    check_npm("infra")
 except (OSError, ValueError, subprocess.CalledProcessError) as exc:
     errors.append(f"licence checker could not finish: {exc}")
 for error in errors:

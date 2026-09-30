@@ -1,0 +1,10 @@
+{
+  "node_modules/aws-cdk-lib/node_modules/brace-expansion": {
+    "version": "5.0.9",
+    "advisories": {
+      "GHSA-q2hr-2g5m-vwhr": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr (moderate: quadratic-time expansion, CPU denial of service; fixed in 5.0.12). brace-expansion 5.0.9 is bundled inside aws-cdk-lib 2.271.0 (inBundle in infra/package-lock.json), so npm overrides and audit fix cannot replace it, and no aws-cdk-lib release bundles a fixed copy as of 2026-09-30 (2.271.0 is the latest). It runs only during sandboxed `make infra-synth`, through aws-cdk-lib's bundled minimatch, on asset exclude globs and construct selectors authored in this repository; no untrusted input reaches it. Nothing from infra/ is deployed or shipped: not in a StatusForge binary, the web bundle, or a Lambda function. Accepted risk recorded in docs/operations/security-review.md; re-check whenever aws-cdk-lib is bumped.",
+      "GHSA-qhr7-859c-m2p7": "https://github.com/advisories/GHSA-qhr7-859c-m2p7 (high: uncontrolled recursion on nested brace groups, stack exhaustion; fixed in 5.0.11). Same bundled copy and reachability as GHSA-q2hr-2g5m-vwhr: aws-cdk-lib 2.271.0 bundle, synthesis-time globs authored in this repository only, never deployed or shipped in a Lambda, no fixed aws-cdk-lib release as of 2026-09-30.",
+      "GHSA-6j4f-fj2g-mc7p": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p (high: uncontrolled recursion in parseCommaParts, stack exhaustion; fixed in 5.0.10). Same bundled copy and reachability as GHSA-q2hr-2g5m-vwhr: aws-cdk-lib 2.271.0 bundle, synthesis-time globs authored in this repository only, never deployed or shipped in a Lambda, no fixed aws-cdk-lib release as of 2026-09-30."
+    }
+  }
+}

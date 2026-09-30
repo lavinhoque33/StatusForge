@@ -155,8 +155,10 @@ func (l *logBuffer) lines(msg string) []map[string]any {
 }
 
 type drill struct {
-	t       *testing.T
-	db      *dynamodb.Client
+	t  *testing.T
+	db *dynamodb.Client
+	// client wraps db and records the IAM actions of planner and worker calls.
+	client  store.DynamoDB
 	table   string
 	clock   *clock
 	queue   *fakeQueue
@@ -197,6 +199,7 @@ func newDrillOn(t *testing.T, db *dynamodb.Client) *drill {
 	d := &drill{
 		t:        t,
 		db:       db,
+		client:   recordingDB{db},
 		table:    "statusforge_m7t_" + strings.ToLower(rand.Text()[:12]),
 		clock:    &clock{},
 		queue:    &fakeQueue{},
@@ -223,9 +226,10 @@ func newDrillOn(t *testing.T, db *dynamodb.Client) *drill {
 // store is a fresh hosted store, as a cold Lambda container builds it.
 func (d *drill) store() *store.Store {
 	d.t.Helper()
-	s := store.New(d.db, d.table, time.Second, d.clock.Now)
+	s := store.New(d.client, d.table, time.Second, d.clock.Now)
 	s.SetNotifications(store.NotificationsNone)
-	if err := s.Validate(d.t.Context()); err != nil {
+	// Both Lambda handlers call Validate before their work.
+	if err := s.Validate(withRole(d.t.Context(), roleBoth)); err != nil {
 		d.t.Fatal(err)
 	}
 	return s
@@ -270,7 +274,7 @@ func (d *drill) passErr(s *store.Store) (cloudwork.PassReport, error) {
 	return cloudwork.Planner{
 		Store: s, Queue: d.queue, Policy: d.policy, Monitors: d.monitors,
 		Now: d.clock.Now, Logger: d.logger,
-	}.Pass(d.t.Context())
+	}.Pass(withRole(d.t.Context(), rolePlanner))
 }
 
 func (d *drill) worker(s *store.Store) cloudwork.Worker {
@@ -306,7 +310,7 @@ func (d *drill) deliverCtx(
 ) (events.SQSEventResponse, map[string]int) {
 	d.t.Helper()
 	before := len(d.logs.lines("worker batch"))
-	response, err := d.worker(s).Handle(ctx, event(bodies...))
+	response, err := d.worker(s).Handle(withRole(ctx, roleWorker), event(bodies...))
 	if err != nil {
 		d.t.Fatalf("worker returned an invocation error: %v", err)
 	}

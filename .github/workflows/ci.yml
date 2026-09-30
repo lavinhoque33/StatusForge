@@ -43,6 +43,36 @@ jobs:
       - name: Lint, types, formatting, tests, build
         run: make web-check
 
+  infra:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Synthesis only: no secrets, no credentials
+    # action, no id-token. make infra-synth runs the CDK CLI inside unshare -rn.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      # Ubuntu 24.04 AppArmor can deny unprivileged user namespaces
+      # (actions/runner-images#10443). Relax it on this ephemeral runner only
+      # when it is on; unshare itself still fails the target if it cannot run.
+      - name: Allow unprivileged user namespaces for the synthesis sandbox (runner-local)
+        run: |
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - run: npm --prefix infra ci
+      - name: Prettier, types, Vitest, sandboxed synthesis and template check
+        run: make infra-check
+
   security:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -60,8 +90,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            infra/package-lock.json
       - run: npm --prefix web ci
+      - run: npm --prefix infra ci
       - name: Vulnerabilities, production licences, working-tree and history secrets
         run: make security-check
 

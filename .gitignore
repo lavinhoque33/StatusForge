@@ -13,6 +13,10 @@ backend/bin/
 *.test
 *.out
 *.log
+# CDK: synthesized cloud assembly, and lookup context (must never exist).
+infra/node_modules/
+infra/cdk.out/
+infra/cdk.context.json
 
 # Local data that must never be committed.
 .local/

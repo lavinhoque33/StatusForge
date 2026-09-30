@@ -1,0 +1,23 @@
+{
+  "planner": [
+    "dynamodb:ConditionCheckItem",
+    "dynamodb:DeleteItem",
+    "dynamodb:DescribeTable",
+    "dynamodb:DescribeTimeToLive",
+    "dynamodb:GetItem",
+    "dynamodb:PutItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+    "dynamodb:UpdateItem"
+  ],
+  "worker": [
+    "dynamodb:ConditionCheckItem",
+    "dynamodb:DescribeTable",
+    "dynamodb:DescribeTimeToLive",
+    "dynamodb:GetItem",
+    "dynamodb:PutItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+    "dynamodb:UpdateItem"
+  ]
+}
