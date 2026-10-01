@@ -14,8 +14,8 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 )
 
-// Drill 1: declared monitor → planner pass → the sent message → worker.
-func TestDrill01WorkerHappyPath(t *testing.T) {
+// Happy path: declared monitor → planner pass → the sent message → worker.
+func TestWorkerHappyPath(t *testing.T) {
 	d := newDrill(t)
 	d.declare(declare("api", 60, 1000))
 	at := d.start("api", 60)
@@ -59,7 +59,7 @@ func TestDrill01WorkerHappyPath(t *testing.T) {
 
 func workStampOf(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
 
-// firstDelivery runs the drill-1 setup and returns the monitor and its message.
+// firstDelivery runs the happy-path setup and returns the monitor and its message.
 func firstDelivery(
 	t *testing.T,
 	d *drill,
@@ -77,8 +77,8 @@ func firstDelivery(
 	return d.monitor(key), sent[0]
 }
 
-// Drill 2: a duplicate delivered after the first is not_eligible and acknowledged.
-func TestDrill02DuplicateSequential(t *testing.T) {
+// A duplicate delivered after the first is not_eligible and acknowledged.
+func TestDuplicateSequential(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "dup", 60, 1000)
 	if r, counts := d.deliver(d.store(), body); len(r.BatchItemFailures) != 0 ||
@@ -108,8 +108,8 @@ func (b barrierStore) GetWork(ctx context.Context, id, dueAt string) (store.Work
 	return w, err
 }
 
-// Drill 3: two handlers, each in its own container, get the same message at once.
-func TestDrill03DuplicateConcurrent(t *testing.T) {
+// Two handlers, each in its own container, get the same message at once.
+func TestDuplicateConcurrent(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "race", 60, 1000)
 	var barrier sync.WaitGroup
@@ -171,9 +171,9 @@ func (d *drill) crash(m monitor.Monitor, body string) {
 	}
 }
 
-// Drill 4: after a crash the planner re-dispatches the expired lease and
-// attempt 2 records; a second crash leaves one lease_expired gap.
-func TestDrill04WorkerCrashAfterClaim(t *testing.T) {
+// After a crash the planner re-dispatches the expired lease and attempt 2
+// records; a second crash leaves one lease_expired gap.
+func TestWorkerCrashAfterClaim(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "crash", 60, 1000)
 	d.crash(m, body)
@@ -227,8 +227,8 @@ func TestDrill04WorkerCrashAfterClaim(t *testing.T) {
 	}
 }
 
-// Drill 5: a failed send leaves the row pending; the next pass sends it.
-func TestDrill05PlannerSendFailure(t *testing.T) {
+// A failed send leaves the row pending; the next pass sends it.
+func TestPlannerSendFailure(t *testing.T) {
 	d := newDrill(t)
 	d.declare(declare("send", 300, 1000))
 	d.start("send", 300)
@@ -255,8 +255,8 @@ func TestDrill05PlannerSendFailure(t *testing.T) {
 	}
 }
 
-// Drill 6: a message that is never consumed becomes one overdue gap.
-func TestDrill06NeverConsumed(t *testing.T) {
+// A message that is never consumed becomes one overdue gap.
+func TestNeverConsumed(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "lost", 60, 1000)
 	msg, _ := cloudwork.ParseMessage(body)
@@ -331,15 +331,15 @@ func downtime(t *testing.T, cold bool) {
 	}
 }
 
-// Drill 7: planner downtime of three intervals.
-func TestDrill07PlannerDowntime(t *testing.T) { downtime(t, false) }
+// Planner downtime of three intervals.
+func TestPlannerDowntime(t *testing.T) { downtime(t, false) }
 
-// Drill 8: the same with a new Store for every pass and every delivery.
-func TestDrill08ColdStart(t *testing.T) { downtime(t, true) }
+// The same with a new Store for every pass and every delivery (cold starts).
+func TestColdStart(t *testing.T) { downtime(t, true) }
 
-// Drill 9: an edited declaration bumps the version and queues a
-// config_change run; old-version messages never record a counted result.
-func TestDrill09ConfigurationChange(t *testing.T) {
+// An edited declaration bumps the version and queues a config_change run;
+// old-version messages never record a counted result.
+func TestConfigurationChange(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "edit", 60, 1000)
 	d.deliver(d.store(), body)
@@ -409,9 +409,9 @@ func mustMessage(t *testing.T, body string) cloudwork.Message {
 	return m
 }
 
-// a removed declaration archives the monitor; its pending message
-// is acknowledged as not_eligible.
-func TestDrill10DeclarationRemoved(t *testing.T) {
+// A removed declaration archives the monitor; its pending message is
+// acknowledged as not_eligible.
+func TestDeclarationRemoved(t *testing.T) {
 	d := newDrill(t)
 	m, body := firstDelivery(t, d, "gone", 60, 1000)
 	d.declare()
@@ -435,10 +435,10 @@ func TestDrill10DeclarationRemoved(t *testing.T) {
 	}
 }
 
-// failing twice then recovering twice opens and resolves an
-// incident with cancelled/no_channel intents, no DELIVERY pointer, and a
-// retention step stamps the resolved incident.
-func TestDrill11IncidentFlowNoChannel(t *testing.T) {
+// Failing twice then recovering twice opens and resolves an incident with
+// cancelled/no_channel intents, no DELIVERY pointer, and a retention step
+// stamps the resolved incident.
+func TestIncidentFlowNoChannel(t *testing.T) {
 	d := newDrill(t)
 	d.checker.outcomes = []string{"failing", "failing", "healthy", "healthy"}
 	m, body := firstDelivery(t, d, "inc", 60, 1000)
@@ -498,8 +498,8 @@ func TestDrill11IncidentFlowNoChannel(t *testing.T) {
 	}
 }
 
-// bad JSON and v:2 are reported; an unknown monitor is missing.
-func TestDrill13InvalidMessages(t *testing.T) {
+// Bad JSON and v:2 are reported; an unknown monitor is missing.
+func TestInvalidMessages(t *testing.T) {
 	d := newDrill(t)
 	stamp := workStampOf(time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC))
 	r, counts := d.deliver(
@@ -526,9 +526,9 @@ func TestDrill13InvalidMessages(t *testing.T) {
 	}
 }
 
-// with less than deadlineMs + 15 s left, records are reported
-// without being claimed.
-func TestDrill14RemainingTimeShort(t *testing.T) {
+// With less than deadlineMs + 15 s left, records are reported without being
+// claimed.
+func TestRemainingTimeShort(t *testing.T) {
 	d := newDrill(t)
 	d.declare(declare("short-a", 60, 5000), declare("short-b", 60, 5000))
 	d.start("short-a", 60)

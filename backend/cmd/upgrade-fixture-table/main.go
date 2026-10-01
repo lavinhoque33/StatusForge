@@ -15,8 +15,11 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 3 || !strings.HasPrefix(os.Args[2], "statusforge_m6fix_m") {
-		fmt.Fprintln(os.Stderr, "usage: upgrade-fixture-table [check|delete] statusforge_m6fix_mN")
+	if len(os.Args) != 3 || !strings.HasPrefix(os.Args[2], "statusforge_fixture_m") {
+		fmt.Fprintln(
+			os.Stderr,
+			"usage: upgrade-fixture-table [check|delete] statusforge_fixture_mN",
+		)
 		os.Exit(2)
 	}
 	db := localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").

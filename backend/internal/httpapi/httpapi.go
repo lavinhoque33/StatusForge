@@ -33,7 +33,7 @@ const DefaultReadinessTimeout = 2 * time.Second
 // apiPrefix is the mount point of every route this package serves.
 const apiPrefix = "/api"
 
-// dependencyReportKey is the role key the M0 storage dependency is reported
+// dependencyReportKey is the role key the storage dependency is reported
 // under in the readiness body. Dependency.Name() is the host-safe label for
 // logs, so it must not be published to clients; the response names the
 // dependency role instead. A second role needs a key of its own, and adding one

@@ -59,7 +59,7 @@ function BoundaryRow({ at, label }: { at: string; label: string }) {
 
 /**
  * Observation and gap history as one timeline, newest first.
- * Collapses to stacked rows below 600 px like the M1 table.
+ * Collapses to stacked rows below 600 px like the monitors table.
  */
 export function TimelineTable({
   observations,

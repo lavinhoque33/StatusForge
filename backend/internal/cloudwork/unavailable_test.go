@@ -24,10 +24,10 @@ func scratchDynamo(t *testing.T) (string, *dynamodb.Client) {
 	t.Helper()
 	docker, err := exec.LookPath("docker")
 	if err != nil {
-		t.Skip("this test needs Docker for a scratch DynamoDB Local; docker not found")
+		t.Skip("needs Docker for a scratch DynamoDB Local; docker not found")
 	}
 	if out, err := exec.Command(docker, "info", "--format", "{{.ServerVersion}}").CombinedOutput(); err != nil {
-		t.Skipf("this test needs Docker for a scratch DynamoDB Local; docker unavailable: %s",
+		t.Skipf("needs Docker for a scratch DynamoDB Local; docker unavailable: %s",
 			strings.TrimSpace(string(out)))
 	}
 	port := 0
@@ -42,7 +42,7 @@ func scratchDynamo(t *testing.T) (string, *dynamodb.Client) {
 	if port == 0 {
 		t.Skip("no free port in 127.0.0.1:8300–8309")
 	}
-	name := "sf-m7a-ddb-" + strings.ToLower(rand.Text()[:8])
+	name := "sf-scratch-ddb-" + strings.ToLower(rand.Text()[:8])
 	out, err := exec.Command(
 		docker,
 		"run",
@@ -90,10 +90,10 @@ func dockerRun(t *testing.T, args ...string) {
 	}
 }
 
-// the endpoint becomes unavailable mid-batch. The affected record
-// and every later one are reported; later records are not claimed; nothing
-// is stored as a target failure.
-func TestDrill12DynamoDBUnavailableMidBatch(t *testing.T) {
+// The endpoint becomes unavailable mid-batch. The affected record and every
+// later one are reported; later records are not claimed; nothing is stored
+// as a target failure.
+func TestDynamoDBUnavailableMidBatch(t *testing.T) {
 	name, db := scratchDynamo(t)
 	d := newDrillOn(t, db)
 	d.declare(declare("db-a", 60, 1000), declare("db-b", 60, 1000), declare("db-c", 60, 1000))

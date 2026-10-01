@@ -114,7 +114,7 @@ func scratchTable(t *testing.T, db *dynamodb.Client, keys []string, ttl string) 
 // Validate fails closed with a named error for a missing table, a
 // wrong key schema, TTL off, and TTL on the wrong attribute, and never calls
 // a table-level write, neither in Validate nor in later store calls.
-func TestDrill17HostedValidation(t *testing.T) {
+func TestHostedValidation(t *testing.T) {
 	db := scratchClient(t)
 	cases := []struct {
 		name string

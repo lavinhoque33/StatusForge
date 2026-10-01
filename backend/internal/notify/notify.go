@@ -64,7 +64,7 @@ func (w *Worker) Send(ctx context.Context, n store.Notification) (string, *int, 
 		return "connection_error", nil, 0
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "StatusForge/M3 (local)")
+	req.Header.Set("User-Agent", "StatusForge/0.6 (local)")
 	req.Header.Set("Idempotency-Key", n.ID)
 	req = req.WithContext(
 		httptrace.WithClientTrace(

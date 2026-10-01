@@ -2,10 +2,12 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 cd "$root"
+# Regenerates backend/internal/upgrade/testdata/m{1..5}.{jsonl,facts.json}: each
+# fixture is produced by the historical build that introduced that data shape.
 case "${1:-all}" in all) milestones='1 2 3 4 5';; 1|2|3|4|5) milestones="$1";; *) echo 'usage: generate-upgrade-fixtures.sh [1|2|3|4|5|all]' >&2; exit 2;; esac
 for n in $milestones; do
-  case "$n" in 1) revision=63372db;; 2) revision=38dcaf4;; 3) revision=33e8717;; 4) revision=4091a2c;; 5) revision=db7ab1d;; esac
-  table="statusforge_m6fix_m$n"
+  case "$n" in 1) revision=dfa63ff;; 2) revision=ad49489;; 3) revision=afca4e7;; 4) revision=ccfd70a;; 5) revision=0113c3c;; esac
+  table="statusforge_fixture_m$n"
   tmp=$(mktemp -d)
   active=no
   api= target= receiver=

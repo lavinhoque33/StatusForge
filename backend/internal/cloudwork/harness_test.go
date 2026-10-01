@@ -27,7 +27,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/store"
 )
 
-// clock is the drills' injected clock.
+// clock is the scenarios' injected clock.
 type clock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -172,7 +172,7 @@ type drill struct {
 
 const drillOrigin = "https://status.example.com"
 
-// newDrill creates a scratch table with the M7 prefix on DynamoDB Local.
+// newDrill creates a scratch table with the test prefix on DynamoDB Local.
 func newDrill(t *testing.T) *drill {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:8000", 200*time.Millisecond)
@@ -200,7 +200,7 @@ func newDrillOn(t *testing.T, db *dynamodb.Client) *drill {
 		t:        t,
 		db:       db,
 		client:   recordingDB{db},
-		table:    "statusforge_m7t_" + strings.ToLower(rand.Text()[:12]),
+		table:    "statusforge_test_" + strings.ToLower(rand.Text()[:12]),
 		clock:    &clock{},
 		queue:    &fakeQueue{},
 		checker:  &scriptedChecker{},
@@ -249,7 +249,7 @@ func declare(key string, interval, deadlineMs int) string {
 func (d *drill) declare(entries ...string) { d.monitors = "[" + strings.Join(entries, ",") + "]" }
 
 // start aligns the clock one second after key's grid slot, so the next slot is
-// a full interval away and every drill is deterministic.
+// a full interval away and every scenario is deterministic.
 func (d *drill) start(key string, interval int) time.Time {
 	id := cloudwork.DeclaredID(key, 0)
 	base := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)

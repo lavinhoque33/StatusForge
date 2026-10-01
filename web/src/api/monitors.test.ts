@@ -245,7 +245,7 @@ describe('strict parsing', () => {
         jsonResponse({ ...monitorRecordFixture(), lastObservation: observationFixture() }),
     });
 
-    // The field is no longer returned; the client never reads it back.
+    // The field is no longer part of the API; the client never reads it back.
     const monitor = await getMonitor('monitor-1');
     expect(monitor).toMatchObject({ id: 'monitor-1' });
     expect(monitor).not.toHaveProperty('lastObservation');

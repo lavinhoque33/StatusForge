@@ -14,7 +14,7 @@ import { parseDeletion, type DeletionStatus } from './deletion';
 /** Observation window requested by the detail page (contract default is 50). */
 export const OBSERVATION_LIMIT = 50;
 
-/** Gap window requested by the detail page. */
+/** Gap window requested by the detail page (default 50). */
 export const GAP_LIMIT = 50;
 
 const MONITORS_PATH = '/api/monitors';

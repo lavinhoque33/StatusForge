@@ -37,7 +37,7 @@ func runMain(t *testing.T, env ...string) (string, int) {
 // outside Lambda the binary refuses before reading configuration or
 // credentials; with a runtime API but no configuration it names the missing
 // variable and never contacts anything.
-func TestDrill16RefusesOutsideLambda(t *testing.T) {
+func TestRefusesOutsideLambda(t *testing.T) {
 	out, code := runMain(t, "STATUSFORGE_TABLE=statusforge")
 	if code != 1 || strings.TrimSpace(out) != "not running in AWS Lambda" {
 		t.Fatalf("exit %d, output %q", code, out)

@@ -1,5 +1,5 @@
 // Run by `make infra-synth` after the CLI synthesizes infra/cdk.out: checks the
-// CLI-produced template (§10.2–§10.3, closed defaults) and that no lookup
+// CLI-produced template (resources, IAM, closed defaults) and that no lookup
 // context was written.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -35,4 +35,4 @@ if (problems.length > 0) {
   console.error(`template check: FAIL\n  ${problems.join('\n  ')}`);
   process.exit(1);
 }
-console.log(`template check: PASS (${STACK_NAME}: §10.2 resources, §10.3 IAM, closed defaults)`);
+console.log(`template check: PASS (${STACK_NAME}: resources, IAM, closed defaults)`);

@@ -30,13 +30,13 @@ const INFRA_ROOT = join(import.meta.dirname, '..');
 /** The committed cdk.json: the CLI passes its context to the app, and the tests read it here. */
 export const CDK_JSON = join(INFRA_ROOT, 'cdk.json');
 
-/** The DynamoDB actions each Lambda role is granted, derived from the Go drills (§10.3). */
+/** The DynamoDB actions each Lambda role is granted, derived from the Go contract tests. */
 export const DYNAMODB_ACTIONS_FILE = join(INFRA_ROOT, 'iam', 'dynamodb-actions.json');
 
 /** Where `make lambda-build` writes the two `bootstrap` binaries. */
 export const LAMBDA_BUILD_DIR = join(INFRA_ROOT, '..', 'backend', 'bin', 'lambda');
 
-/** Deploy-time configuration (§10.1). Each key defaults to closed. */
+/** Deploy-time configuration. Each key defaults to closed. */
 export const CONTEXT_MONITORS = 'statusforge:cloudMonitors';
 export const CONTEXT_TARGETS = 'statusforge:cloudTargets';
 export const CONTEXT_SCHEDULE_STATE = 'statusforge:scheduleState';

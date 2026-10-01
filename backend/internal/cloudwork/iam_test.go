@@ -23,8 +23,9 @@ import (
 )
 
 // The infrastructure grants each Lambda role exactly the DynamoDB actions in
-// this file. The drills record what the planner pass and
-// the worker handler actually call; TestMain fails if one is not granted.
+// this file (see docs/architecture/cloud-path.md). The tests record what the
+// planner pass and the worker handler actually call; TestMain fails if one is
+// not granted.
 const iamActionsFile = "../../../infra/iam/dynamodb-actions.json"
 
 type role string
@@ -206,8 +207,8 @@ func loadGranted() (map[role][]string, error) {
 	return granted, nil
 }
 
-// TestIAMActionsGrantNoTableLevelWrites: IAM enforces §5's "no table-level
-// writes" as well as the store code.
+// TestIAMActionsGrantNoTableLevelWrites: IAM enforces the "no table-level
+// writes" rule as well as the store code.
 func TestIAMActionsGrantNoTableLevelWrites(t *testing.T) {
 	granted, err := loadGranted()
 	if err != nil {
@@ -243,7 +244,7 @@ func TestIAMFirstValidateOnFreshTable(t *testing.T) {
 	conn.Close()
 	db := localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local").
 		DynamoDB()
-	table := "statusforge_m7t_" + strings.ToLower(rand.Text()[:12])
+	table := "statusforge_test_" + strings.ToLower(rand.Text()[:12])
 	ctx := t.Context()
 	// The table as the stack defines it: string PK/SK and TTL on expiresAt.
 	_, err = db.CreateTable(ctx, &dynamodb.CreateTableInput{
@@ -284,8 +285,8 @@ func TestIAMFirstValidateOnFreshTable(t *testing.T) {
 	}
 }
 
-// checkObserved compares what the drills called with what IAM grants. It
-// returns the actions granted but never observed, for the §11 list.
+// checkObserved compares what the tests called with what IAM grants. It
+// returns the actions granted but never observed, for the unproven list.
 func checkObserved() (unobserved []string, err error) {
 	granted, err := loadGranted()
 	if err != nil {
@@ -301,7 +302,7 @@ func checkObserved() (unobserved []string, err error) {
 			}
 		}
 		if len(observed.actions[r]) == 0 {
-			// No drill ran for this role (DynamoDB Local unavailable, or -run filtered).
+			// No test ran for this role (DynamoDB Local unavailable, or -run filtered).
 			continue
 		}
 		for _, action := range granted[r] {
@@ -314,7 +315,7 @@ func checkObserved() (unobserved []string, err error) {
 	sort.Strings(unobserved)
 	if len(missing) > 0 {
 		return unobserved, fmt.Errorf(
-			"drills called DynamoDB actions that %s does not grant:\n  %s",
+			"tests called DynamoDB actions that %s does not grant:\n  %s",
 			iamActionsFile,
 			strings.Join(missing, "\n  "),
 		)
@@ -322,8 +323,8 @@ func checkObserved() (unobserved []string, err error) {
 	return unobserved, nil
 }
 
-// TestMain checks the recorded actions after every drill has run, so the
-// check covers whichever drills ran (they skip without DynamoDB Local).
+// TestMain checks the recorded actions after every test has run, so the
+// check covers whichever tests ran (they skip without DynamoDB Local).
 func TestMain(m *testing.M) {
 	code := m.Run()
 	unobserved, err := checkObserved()
@@ -332,7 +333,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "FAIL: IAM action list:", err)
 		code = 1
 	case testing.Verbose() && len(unobserved) > 0:
-		fmt.Printf("IAM actions granted but not reached by any drill (§11):\n  %s\n",
+		fmt.Printf("IAM actions granted but not reached by any test:\n  %s\n",
 			strings.Join(unobserved, "\n  "))
 	}
 	os.Exit(code)

@@ -461,7 +461,7 @@ func stageRun(
 	s.Name = kind
 	s.Monitors = n
 	s.DurationSeconds = duration.Seconds()
-	table := fmt.Sprintf("statusforge_m6cap_%d_%d", os.Getpid(), ordinal)
+	table := fmt.Sprintf("statusforge_capacity_%d_%d", os.Getpid(), ordinal)
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()

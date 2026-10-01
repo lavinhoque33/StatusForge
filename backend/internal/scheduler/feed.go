@@ -133,7 +133,7 @@ func (f *feed) backlog() int {
 // take blocks until it can hand out work or ctx ends. Eligibility is
 // rechecked against the clock at hand-off: a slot already past dueAt +
 // interval is dropped (the store's next pass closes it as one overdue gap).
-// Order: least recently claimed monitor first (M2 fairness), then oldest
+// Order: least recently claimed monitor first (fairness), then oldest
 // dueAt, then monitor ID.
 func (f *feed) take(ctx context.Context, clock Clock) (candidate, bool) {
 	for {

@@ -176,7 +176,7 @@ func item(t *testing.T, db *dynamodb.Client, table, pk, sk string) map[string]ty
 	return out.Item
 }
 
-func TestAcceptedMilestoneUpgrade(t *testing.T) {
+func TestHistoricalFixtureUpgrade(t *testing.T) {
 	for n := 1; n <= 5; n++ {
 		t.Run(fmt.Sprintf("M%d", n), func(t *testing.T) {
 			client, table := local(t)
@@ -196,7 +196,7 @@ func TestAcceptedMilestoneUpgrade(t *testing.T) {
 				t.Fatal(e)
 			}
 			disableTTL(t, client.DynamoDB(), table)
-			// Import contains no marker; a fresh process identifies unmarked milestone data.
+			// Import contains no marker; a fresh process identifies unmarked data from an earlier build.
 			s = store.New(client.DynamoDB(), table, time.Second, func() time.Time { return fixed })
 			if e = s.Initialize(t.Context()); e != nil {
 				t.Fatal(e)
@@ -304,7 +304,7 @@ func TestAcceptedMilestoneUpgrade(t *testing.T) {
 				}
 			}
 			if n == 2 && !scheduled {
-				t.Fatal("M2 fixture has no counted scheduled observation")
+				t.Fatal("m2 fixture has no counted scheduled observation")
 			}
 			for _, want := range expected.Applications {
 				a, e := s.Application(t.Context(), want.ID)

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestM1ConfigGuards(t *testing.T) {
+func TestConfigGuards(t *testing.T) {
 	base := map[string]string{"STATUSFORGE_DYNAMODB_ENDPOINT": "http://127.0.0.1:8000"}
 	for _, tc := range []struct{ key, value string }{{"STATUSFORGE_ALLOWED_TARGETS", ""}, {"STATUSFORGE_ALLOWED_TARGETS", "example.com:80"}, {"STATUSFORGE_ALLOWED_TARGETS", "127.0.0.1:0"}, {"STATUSFORGE_ALLOWED_TARGETS", "127.0.0.1:65536"}, {"STATUSFORGE_DYNAMODB_TABLE", "ab"}, {"STATUSFORGE_DYNAMODB_TABLE", "abc/def"}} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {

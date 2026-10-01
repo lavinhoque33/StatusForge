@@ -19,7 +19,7 @@ import (
 
 // every non-public range of ADR 0008 D6 is refused, including the
 // IPv4-mapped and NAT64 forms and the metadata addresses.
-func TestDrill15NonPublicAddressesRefused(t *testing.T) {
+func TestNonPublicAddressesRefused(t *testing.T) {
 	refused := []string{
 		"0.0.0.0", "0.1.2.3", "10.0.0.1", "10.255.255.255", "100.64.0.1", "100.127.255.254",
 		"127.0.0.1", "127.8.9.10", "169.254.169.254", "169.254.100.1", "169.254.0.1",
@@ -56,7 +56,7 @@ func publicResolver(ip string) Resolver {
 	}
 }
 
-func TestDrill15SaveTimeRefusals(t *testing.T) {
+func TestSaveTimeRefusals(t *testing.T) {
 	p, err := Parse("https://status.example.com, https://api.example.org:8443", "127.0.0.1:9001")
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestDrill15SaveTimeRefusals(t *testing.T) {
 	}
 }
 
-func TestDrill15AllowlistParsing(t *testing.T) {
+func TestAllowlistParsing(t *testing.T) {
 	for _, bad := range []string{
 		"http://status.example.com", "https://user@status.example.com",
 		"https://status.example.com/path", "https://status.example.com/?q=1",
@@ -168,7 +168,7 @@ func check(p *Policy, raw string) monitor.Observation {
 	return checker.New(p, time.Now).Run(context.Background(), m)
 }
 
-func TestDrill15PinnedTLSDialThroughTestHook(t *testing.T) {
+func TestPinnedTLSDialThroughTestHook(t *testing.T) {
 	p, origin, hits := tlsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil || r.TLS.ServerName != "example.com" {
 			w.WriteHeader(http.StatusTeapot)
@@ -207,7 +207,7 @@ func TestDrill15PinnedTLSDialThroughTestHook(t *testing.T) {
 	}
 }
 
-func TestDrill15RedirectsNotFollowed(t *testing.T) {
+func TestRedirectsNotFollowed(t *testing.T) {
 	var private atomic.Int64
 	inner := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		private.Add(1)
@@ -226,7 +226,7 @@ func TestDrill15RedirectsNotFollowed(t *testing.T) {
 	}
 }
 
-func TestDrill15RuntimeAPIHostAndUntrustedCertificate(t *testing.T) {
+func TestRuntimeAPIHostAndUntrustedCertificate(t *testing.T) {
 	p, err := Parse("https://status.example.com", "status.example.com:9001")
 	if err == nil {
 		t.Fatalf("runtime API host accepted in allowlist: %+v", p)

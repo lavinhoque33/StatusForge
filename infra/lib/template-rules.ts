@@ -1,7 +1,8 @@
-// Checks a synthesized StatusForge template against the resource and IAM rules in docs/architecture/cloud-path.md.
-// Used on the in-process template by the tests and on the CLI's cdk.out by
-// scripts/check-template.ts, so both apply the same rules. The template is
-// untrusted JSON: every read narrows at runtime.
+// Checks a synthesized StatusForge template against the resource and IAM
+// rules in docs/architecture/cloud-path.md. Used on the in-process template by
+// the tests and on the CLI's cdk.out by scripts/check-template.ts, so both
+// apply the same rules. The template is untrusted JSON: every read narrows at
+// runtime.
 import { isDeepStrictEqual } from 'node:util';
 
 import type { DynamoDBActions } from './statusforge-stack.ts';
@@ -14,7 +15,7 @@ export interface CheckOptions {
   readonly closedDefaults: boolean;
 }
 
-/** Exactly these types and counts (§10.2). AWS::IAM::Policy is allowed but, like roles, checked. */
+/** Exactly these types and counts. AWS::IAM::Policy is allowed but, like roles, checked. */
 export const EXPECTED_TYPES: Readonly<Record<string, number>> = {
   'AWS::DynamoDB::Table': 1,
   'AWS::SQS::Queue': 3,

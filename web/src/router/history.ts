@@ -1,7 +1,7 @@
 /**
  * Minimal History-API routing.
  *
- * M1 has three routes and no loaders, nested layouts, or server rendering, so a
+ * The app has a handful of routes and no loaders, nested layouts, or server rendering, so a
  * subscription over `history` keeps the dependency surface empty and small
  * enough to audit. Links stay real anchors (see `Link`), so middle-click,
  * modifier-click, and copy-link keep working.

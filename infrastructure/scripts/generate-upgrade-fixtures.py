@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive only the loopback milestone binary supplied by generate-upgrade-fixtures.sh."""
+"""Drive only the loopback historical-build binary supplied by generate-upgrade-fixtures.sh."""
 import json
 import sys
 import time
@@ -114,7 +114,7 @@ if len(sys.argv) > 3 and sys.argv[3] == "--scene-only":
                 break
             time.sleep(1)
         else:
-            raise RuntimeError("M2 scene missing counted scheduled check")
+            raise RuntimeError("scene 2 missing counted scheduled check")
     sys.exit(0)
 facts = {"milestone": milestone, "monitors": [], "applications": []}
 for m in good("GET", "/api/monitors")["monitors"]:

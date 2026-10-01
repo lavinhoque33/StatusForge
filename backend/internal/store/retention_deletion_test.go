@@ -13,7 +13,7 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/retention"
 )
 
-func m6Monitor(t *testing.T, s *Store, now time.Time) monitor.Monitor {
+func retentionMonitor(t *testing.T, s *Store, now time.Time) monitor.Monitor {
 	t.Helper()
 	m := monitor.New(
 		"delete me",
@@ -36,7 +36,7 @@ func TestRetentionWaitsForNotificationAndRetryProtectsIncident(t *testing.T) {
 	ctx := t.Context()
 	fixed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return fixed }
-	m := m6Monitor(t, s, fixed)
+	m := retentionMonitor(t, s, fixed)
 	id := "resolved-test"
 	at := monitor.Stamp(fixed)
 	expiry := retention.History(fixed)
@@ -52,7 +52,7 @@ func TestRetentionWaitsForNotificationAndRetryProtectsIncident(t *testing.T) {
 	if e := s.RetainJob(ctx, m.ID, id); e != nil {
 		t.Fatal(e)
 	}
-	if _, ok := rawM6(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; ok {
+	if _, ok := rawItem(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; ok {
 		t.Fatal("non-final notification did not protect incident")
 	}
 	_, e := s.db.UpdateItem(
@@ -73,25 +73,25 @@ func TestRetentionWaitsForNotificationAndRetryProtectsIncident(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	if got := rawM6(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; got == nil ||
+	if got := rawItem(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; got == nil ||
 		got.(*types.AttributeValueMemberN).Value != mustAV(expiry).(*types.AttributeValueMemberN).Value {
 		t.Fatalf("incident expiry %v", got)
 	}
-	if rawM6(t, s, "DELIVERY", "ATTENTION#"+m.ID+"#"+id+"#opened")["expiresAt"] == nil {
+	if rawItem(t, s, "DELIVERY", "ATTENTION#"+m.ID+"#"+id+"#opened")["expiresAt"] == nil {
 		t.Fatal("attention pointer not stamped")
 	}
 	if _, e = s.RetryNotification(ctx, m.ID, id, "opened", fixed.Add(time.Second)); e != nil {
 		t.Fatal(e)
 	}
 	for _, sk := range []string{"INC#" + id, noteSK(id, "opened")} {
-		if _, ok := rawM6(t, s, "MON#"+m.ID, sk)["expiresAt"]; ok {
+		if _, ok := rawItem(t, s, "MON#"+m.ID, sk)["expiresAt"]; ok {
 			t.Fatalf("manual retry left %s expiring", sk)
 		}
 	}
 	if e = s.RetainJob(ctx, m.ID, id); e != nil {
 		t.Fatal(e)
 	}
-	if _, ok := rawM6(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; ok {
+	if _, ok := rawItem(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"]; ok {
 		t.Fatal("pending retry not protected")
 	}
 }
@@ -101,7 +101,7 @@ func TestRetentionRetryTokenPreventsStaleFinalization(t *testing.T) {
 	ctx := t.Context()
 	fixed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return fixed }
-	m := m6Monitor(t, s, fixed)
+	m := retentionMonitor(t, s, fixed)
 	id := "retry-race"
 	for _, row := range []map[string]types.AttributeValue{
 		{
@@ -114,7 +114,7 @@ func TestRetentionRetryTokenPreventsStaleFinalization(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	old := avString(rawM6(t, s, "JOBS", "JOB#retain#"+m.ID+"#"+id)["token"])
+	old := avString(rawItem(t, s, "JOBS", "JOB#retain#"+m.ID+"#"+id)["token"])
 	if _, err := s.db.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(s.table), Item: retentionJobItem(m.ID, id),
 	}); err != nil {
@@ -123,16 +123,16 @@ func TestRetentionRetryTokenPreventsStaleFinalization(t *testing.T) {
 	if err := s.finalizeRetention(ctx, m.ID, id, retention.History(fixed), old); err != nil {
 		t.Fatal(err)
 	}
-	if rawM6(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"] != nil {
+	if rawItem(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"] != nil {
 		t.Fatal("stale retention run stamped the incident after retry")
 	}
-	if rawM6(t, s, "JOBS", "JOB#retain#"+m.ID+"#"+id)["token"] == nil {
+	if rawItem(t, s, "JOBS", "JOB#retain#"+m.ID+"#"+id)["token"] == nil {
 		t.Fatal("stale retention run deleted the renewed job")
 	}
 	if err := s.RetainJob(ctx, m.ID, id); err != nil {
 		t.Fatal(err)
 	}
-	if rawM6(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"] == nil {
+	if rawItem(t, s, "MON#"+m.ID, "INC#"+id)["expiresAt"] == nil {
 		t.Fatal("renewed retention job did not complete")
 	}
 }
@@ -175,7 +175,7 @@ func TestRetentionStampRejectsNotificationChangedToPending(t *testing.T) {
 		retention.History(time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)),
 		true,
 	)
-	if err != nil || stamped || rawM6(t, s, pk, sk)["expiresAt"] != nil {
+	if err != nil || stamped || rawItem(t, s, pk, sk)["expiresAt"] != nil {
 		t.Fatalf("pending notification was stamped: success=%v error=%v", stamped, err)
 	}
 }
@@ -185,7 +185,7 @@ func TestWaitingRetentionJobsDoNotStarveLaterIncident(t *testing.T) {
 	ctx := t.Context()
 	fixed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return fixed }
-	m := m6Monitor(t, s, fixed)
+	m := retentionMonitor(t, s, fixed)
 	for i := range 11 {
 		id := fmt.Sprintf("incident-%02d", i)
 		items := []map[string]types.AttributeValue{
@@ -215,12 +215,12 @@ func TestWaitingRetentionJobsDoNotStarveLaterIncident(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if rawM6(t, s, "MON#"+m.ID, "INC#incident-10")["expiresAt"] == nil {
+	if rawItem(t, s, "MON#"+m.ID, "INC#incident-10")["expiresAt"] == nil {
 		t.Fatal("ready incident starved behind waiting retention jobs")
 	}
 }
 
-func rawM6(t *testing.T, s *Store, pk, sk string) map[string]types.AttributeValue {
+func rawItem(t *testing.T, s *Store, pk, sk string) map[string]types.AttributeValue {
 	t.Helper()
 	out, e := s.db.GetItem(
 		t.Context(),
@@ -240,7 +240,7 @@ func TestDeletionCompletesWithoutRecreatingMonitorOrApplication(t *testing.T) {
 	s := incidentTestStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC()
-	m := m6Monitor(t, s, now)
+	m := retentionMonitor(t, s, now)
 	if _, e := s.StartMonitorDeletion(ctx, m.ID, m.Name, now); !errors.Is(e, ErrNotArchived) {
 		t.Fatalf("active monitor deletion: %v", e)
 	}
@@ -303,7 +303,7 @@ func TestDeletionCountsParallelBatchRows(t *testing.T) {
 	s := incidentTestStore(t)
 	ctx := t.Context()
 	fixed := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
-	m := m6Monitor(t, s, fixed)
+	m := retentionMonitor(t, s, fixed)
 	if _, err := s.Lifecycle(ctx, m.ID, "archive", fixed); err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestArchivedPendingNotificationCompletesBeforeMonitorDeletion(t *testing.T)
 	s := incidentTestStore(t)
 	ctx := t.Context()
 	s.now = func() time.Time { return fixed.Add(5 * time.Second) }
-	m := m6Monitor(t, s, fixed)
+	m := retentionMonitor(t, s, fixed)
 	id, at := "pending-opened", monitor.Stamp(fixed.Add(time.Second))
 	for _, row := range []map[string]types.AttributeValue{
 		{

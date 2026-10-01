@@ -73,7 +73,7 @@ type declarationJSON struct {
 	DeadlineMs      *int    `json:"deadlineMs"`
 }
 
-// ParseDeclarations validates the declared monitors: keys, M1 name and check
+// ParseDeclarations validates the declared monitors: keys, name and check
 // rules, cloud intervals, and the static destination policy. expectedStatus
 // and deadlineMs default as in the API (200, 10000 ms).
 func ParseDeclarations(raw string, policy URLPolicy) ([]Declaration, error) {

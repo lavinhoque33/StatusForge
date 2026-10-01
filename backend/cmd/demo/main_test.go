@@ -25,13 +25,13 @@ func TestDemoGuardAndMarker(t *testing.T) {
 	client := localdynamo.New("http://127.0.0.1:8000", "127.0.0.1", "local", "local", "local")
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	if err := store.PrepareDemo(ctx, client, "statusforge_m6cap_guard", true); !errors.Is(
+	if err := store.PrepareDemo(ctx, client, "statusforge_scratch_guard", true); !errors.Is(
 		err,
 		store.ErrDemoRefused,
 	) {
 		t.Fatalf("non-demo reset permitted: %v", err)
 	}
-	name := "statusforge_m6cap_demoflag_" + rand.Text()
+	name := "statusforge_scratch_demoflag_" + rand.Text()
 	scratch := store.New(client.DynamoDB(), name, time.Second, time.Now)
 	if err := scratch.Initialize(ctx); err != nil {
 		t.Fatal(err)

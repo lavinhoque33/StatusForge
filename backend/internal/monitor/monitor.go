@@ -53,7 +53,7 @@ type Monitor struct {
 	PausedAt         string                   `json:"pausedAt,omitempty"   dynamodbav:"pausedAt,omitempty"`
 	ArchivedAt       string                   `json:"archivedAt,omitempty" dynamodbav:"archivedAt,omitempty"`
 	Deletion         *Deletion                `json:"deletion"             dynamodbav:"deletion,omitempty"`
-	// DeclaredKey is the stable key of a cloud-declared monitor (M7 §3.1);
+	// DeclaredKey is the stable key of a cloud-declared monitor;
 	// empty for monitors created through the API.
 	DeclaredKey string `json:"-"                    dynamodbav:"declaredKey,omitempty"`
 }

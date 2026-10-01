@@ -34,7 +34,7 @@ type (
 )
 
 // New builds a runner whose every connection goes through policy: no proxy,
-// no redirects, no keep-alives, and the M1 header and body bounds.
+// no redirects, no keep-alives, and the header and body bounds.
 func New(policy Dialer, now func() time.Time) *Runner {
 	if now == nil {
 		now = time.Now
@@ -93,7 +93,7 @@ func (r *Runner) Run(ctx context.Context, m monitor.Monitor) (o monitor.Observat
 	if err != nil {
 		return
 	}
-	req.Header.Set("User-Agent", "StatusForge/M1 (local)")
+	req.Header.Set("User-Agent", "StatusForge/0.6 (local)")
 	req.Header.Set("Accept", "*/*")
 	resp, err := r.client.Do(req)
 	if err != nil {

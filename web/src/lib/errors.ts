@@ -21,7 +21,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   invalid_value: 'This value is not accepted.',
   unknown_field: 'This field is not allowed.',
   url_invalid: 'Enter an absolute URL.',
-  scheme_not_allowed: 'Only http URLs are allowed in M1.',
+  scheme_not_allowed: 'Only http URLs are allowed.',
   url_has_userinfo: 'Remove the user name and password from the URL.',
   url_has_fragment: 'Remove the #fragment from the URL.',
   host_not_loopback: 'The host must be loopback (127.0.0.0/8, ::1, or localhost).',

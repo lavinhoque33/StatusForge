@@ -58,7 +58,7 @@ describe('cdk.json', () => {
 });
 
 describe('StatusForge stack', () => {
-  it('matches §10.2 and §10.3 with closed defaults', () => {
+  it('matches the resource and IAM rules with closed defaults', () => {
     expect(checkTemplate(synth(), { actions, closedDefaults: true })).toStrictEqual([]);
   });
 
@@ -112,7 +112,7 @@ describe('StatusForge stack', () => {
     }
     const [[, schedule]] = resourcesOf(template, 'AWS::Scheduler::Schedule');
     expect(at(schedule, 'Properties', 'State')).toBe('ENABLED');
-    // Opened configuration keeps the §10.2 shape; only the committed-default check treats the
+    // Opened configuration keeps the expected resource shape; only the committed-default check treats the
     // operator's target URLs as forbidden literals.
     expect(checkTemplate(template, { actions, closedDefaults: false })).toStrictEqual([]);
     expect(checkTemplate(template, { actions, closedDefaults: true })).toEqual(
@@ -154,7 +154,7 @@ describe('template rules', () => {
     return check(copy);
   };
 
-  it('rejects resources outside §10.2', () => {
+  it('rejects resources outside the expected set', () => {
     expect(
       mutate((resources) => {
         resources['LogRetention'] = { Type: 'Custom::LogRetention', Properties: {} };

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture milestone API facts after the historical scheduler has stopped."""
+"""Capture API facts from a historical build after its scheduler has stopped."""
 import json
 import sys
 import time

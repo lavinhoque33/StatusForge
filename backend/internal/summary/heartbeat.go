@@ -2,7 +2,7 @@ package summary
 
 import "time"
 
-// Heartbeat reports reset the M4 deadline at receipt, and therefore have no dueAt.
+// Heartbeat reports reset the deadline at receipt, and therefore have no dueAt.
 // Only counted reports and explicit misses occupy slots. Paused and out-of-order
 // reports remain visible as not-counted evidence, without adding a deadline.
 type HeartbeatOutcomes struct {
@@ -158,7 +158,7 @@ func ComputeHeartbeat(in Input) HeartbeatResult {
 			}
 			fallthrough
 		default:
-			// M4 records a report's late bit in report, not in its outcome.
+			// A report's late bit is recorded on the report, not in its outcome.
 			if o.Late {
 				r.Coverage.Outcomes.Late++
 				bucket.Late++
