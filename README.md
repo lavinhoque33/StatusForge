@@ -1,5 +1,8 @@
 # StatusForge
 
+[![StatusForge checks](https://github.com/lavinhoque33/StatusForge/actions/workflows/ci.yml/badge.svg)](https://github.com/lavinhoque33/StatusForge/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 > Know what is working. Understand what failed. Never confuse silence with health.
 
 StatusForge is a local-first uptime and job monitor for personal applications. It checks HTTP endpoints on a
