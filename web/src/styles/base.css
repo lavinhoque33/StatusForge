@@ -1,0 +1,227 @@
+/* Reset and element defaults. Component and page rules live in later layers. */
+@layer reset, tokens, base, layout, components, pages, charts, utilities;
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body,
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  figure,
+  blockquote,
+  dl,
+  dd,
+  pre {
+    margin: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  img,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Motion means activity, never health; reduced motion removes all of it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer base {
+  html {
+    background-color: var(--bg);
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  body {
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading);
+    font-feature-settings:
+      'cv11' 1,
+      'ss01' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* The canvas: two soft, fixed glows behind every surface. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(56rem 36rem at -8% -12%, var(--bg-glow-1), transparent 62%),
+      radial-gradient(48rem 32rem at 108% -10%, var(--bg-glow-2), transparent 60%);
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: var(--fg);
+  }
+
+  .icon {
+    flex: none;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--fg);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-size: clamp(var(--text-xl), 1.2rem + 1.4vw, var(--text-2xl));
+    font-weight: var(--weight-bold);
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Group labels and in-card sub-sections read as eyebrows. */
+  h4 {
+    color: var(--muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  a {
+    color: var(--accent-fg);
+    text-decoration-line: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color var(--duration-fast) var(--ease-out);
+  }
+
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  strong,
+  b {
+    font-weight: var(--weight-semibold);
+  }
+
+  small {
+    font-size: var(--text-xs);
+  }
+
+  time,
+  td,
+  dd {
+    font-variant-numeric: tabular-nums;
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  :not(pre) > code {
+    padding: 0.08em 0.4em;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    background-color: var(--surface-2);
+    overflow-wrap: anywhere;
+  }
+
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  ul,
+  ol {
+    padding-left: var(--space-5);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--accent);
+  }
+
+  /* One visible focus ring for every focusable element. */
+  :focus-visible,
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  .summary-plot svg[tabindex='0']:focus-visible,
+  .table-wrapper:focus-visible,
+  .retention-scroll:focus-visible,
+  .check-again:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  input[type='datetime-local']::-webkit-calendar-picker-indicator:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Programmatic focus targets (page headings, sections) keep a soft ring. */
+  [tabindex='-1']:focus {
+    outline: none;
+  }
+
+  [tabindex='-1']:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+    border-radius: var(--radius-xs);
+  }
+}

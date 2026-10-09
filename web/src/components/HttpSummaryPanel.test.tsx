@@ -61,3 +61,24 @@ it('labels retained 24 h data when the 7 d request fails', async () => {
   );
   expect(screen.getByText(/Last 24 hours: 280 of 288/)).toBeInTheDocument();
 });
+
+it('mirrors the sentence counts in the stat strip and shares the latency sample gate', async () => {
+  vi.mocked(getMonitorSummary).mockResolvedValueOnce({
+    ...summaryFixture,
+    coveredFrom: '2026-09-27T06:00:00.000Z',
+    latency: { ...summaryFixture.latency, samples: 4 },
+  });
+  render(
+    <HttpSummaryPanel
+      monitorId="monitor-1"
+      createdAt="2026-01-01T00:00:00.000Z"
+      deadlineMs={5000}
+    />,
+  );
+  expect(await screen.findByText(/too few samples \(4 responses;/)).toBeInTheDocument();
+  const strip = screen.getByText('Partial window').closest('.summary-stats')!;
+  expect(strip).toHaveTextContent('280 of 288 expected checks recorded (97 %)');
+  expect(strip).toHaveTextContent('270 healthy, 2 failing, 0 checker problem');
+  expect(strip).toHaveTextContent('too few samples 4 responses');
+  expect(strip).not.toHaveTextContent('median');
+});

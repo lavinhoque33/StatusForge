@@ -1,0 +1,189 @@
+/*
+ * StatusForge design tokens: the one shared vocabulary for the shell, pages and
+ * charts. Names are stable; values may be tuned to keep the contrast targets
+ * below, but never renamed or removed without migrating every use.
+ *
+ * Contrast targets (WCAG 2.2 AA), checked in both schemes:
+ * - text tokens (--fg, --fg-2, --muted, --accent-fg, status tones) >= 4.5:1 on
+ *   --bg, --surface and --surface-2;
+ * - --on-accent >= 4.5:1 on --accent; --on-fail >= 4.5:1 on --fail;
+ * - chart marks (--chart-*) and --focus >= 3:1 on --surface.
+ *
+ * Colour is always an accent next to words: no token may be the only carrier
+ * of a state, and unknown, stale or paused never use an --ok tone.
+ */
+
+/* Every stylesheet places its rules in one of these layers; later layers win. */
+@layer reset, tokens, base, layout, components, pages, charts, utilities;
+
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* Typography: the bundled Inter variable font (@fontsource-variable/inter)
+       comes first. Its files are same-origin assets, so font-src 'self' allows
+       them; the system stack is the fallback while they load. */
+    --font-sans:
+      'Inter Variable', 'InterVariable', 'Inter', 'Adwaita Sans', system-ui, -apple-system,
+      BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Roboto, 'Helvetica Neue',
+      'Noto Sans', Arial, sans-serif;
+    --font-mono:
+      'JetBrains Mono', 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'Adwaita Mono',
+      'Source Code Pro', Menlo, Consolas, monospace;
+    --text-2xs: 0.6875rem;
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.9375rem;
+    --text-md: 1.0625rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.625rem;
+    --text-2xl: 2rem;
+    --leading-tight: 1.25;
+    --leading: 1.55;
+    --tracking-tight: -0.018em;
+    --tracking-wide: 0.06em;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 680;
+
+    /* Space: 4 px grid */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+
+    /* Shape */
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+    --radius-pill: 999px;
+    /* Minimum interactive target (CODING_PRACTICES section 12). */
+    --target: 44px;
+
+    /* Motion: disabled entirely under prefers-reduced-motion. */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --duration-fast: 120ms;
+    --duration: 180ms;
+    --duration-slow: 320ms;
+
+    /* Layout */
+    --sidebar-width: 16.5rem;
+    --content-max: 74rem;
+
+    /* Light scheme */
+    --bg: #f5f6fa;
+    --bg-glow-1: rgb(91 76 240 / 0.09);
+    --bg-glow-2: rgb(14 165 233 / 0.07);
+    --surface: #ffffff;
+    --surface-2: #f3f4f8;
+    --surface-3: #e9ebf2;
+    --surface-inset: #f8f9fc;
+    --overlay: rgb(255 255 255 / 0.8);
+    --border: #e3e6ee;
+    --border-strong: #cbd1dd;
+    --fg: #0f1324;
+    --fg-2: #3a4157;
+    --muted: #5a6378;
+    --accent: #5b4cf0;
+    --accent-2: #0891b2;
+    --accent-fg: #4a3ae0;
+    --on-accent: #ffffff;
+    --focus: #5b4cf0;
+    --brand-gradient: linear-gradient(135deg, #6d5efc 0%, #8b5cf6 45%, #06b6d4 100%);
+
+    /* Status tones (text-safe); tints come from color-mix() at the use site:
+       8-16 % for fills, 24-36 % for borders. Each tone keeps >= 4.5:1 as text
+       on its own 12 % tint over --surface-2 (and on --surface, --bg). */
+    --ok: #0d7349;
+    --warn: #965300;
+    --fail: #b42328;
+    --info: #6b3fd4;
+    --neutral: #5a6378;
+    /* Text on a solid --fail fill (danger button hover). */
+    --on-fail: #ffffff;
+
+    --shadow-xs: 0 1px 1px rgb(15 19 36 / 0.04);
+    --shadow-sm: 0 1px 2px rgb(15 19 36 / 0.06), 0 1px 1px rgb(15 19 36 / 0.03);
+    --shadow: 0 1px 2px rgb(15 19 36 / 0.05), 0 8px 20px -6px rgb(15 19 36 / 0.1);
+    --shadow-lg: 0 2px 4px rgb(15 19 36 / 0.04), 0 20px 44px -14px rgb(15 19 36 / 0.24);
+    --highlight: inset 0 1px 0 rgb(255 255 255 / 0.65);
+
+    /* Chart marks (fills, strokes) >= 3:1 on --surface */
+    --chart-healthy: #059669;
+    --chart-failing: #dc2626;
+    --chart-warning: #c26a04;
+    --chart-not-observed: #64748b;
+    --chart-maintenance: #7c3aed;
+    --chart-not-counted: #0284c7;
+    --chart-median: #0891b2;
+    --chart-max: #c026d3;
+    --chart-deadline: #c26a04;
+    --chart-outage: rgb(220 38 38 / 0.12);
+    --chart-paused: rgb(100 116 139 / 0.14);
+    --chart-grid: rgb(15 19 36 / 0.07);
+    --chart-cursor: rgb(91 76 240 / 0.07);
+    --chart-tick: #5a6378;
+    --chart-pattern-ink: rgb(255 255 255 / 0.55);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #090b11;
+      --bg-glow-1: rgb(124 108 255 / 0.16);
+      --bg-glow-2: rgb(34 211 238 / 0.08);
+      --surface: #10131b;
+      --surface-2: #161a24;
+      --surface-3: #1d2230;
+      --surface-inset: #0c0f16;
+      --overlay: rgb(16 19 27 / 0.74);
+      --border: #222736;
+      --border-strong: #313849;
+      --fg: #eceef5;
+      --fg-2: #b9c0cf;
+      --muted: #8f98ac;
+      --accent: #6a5af9;
+      --accent-2: #22d3ee;
+      --accent-fg: #aba1ff;
+      --on-accent: #ffffff;
+      --focus: #a99fff;
+      --brand-gradient: linear-gradient(135deg, #7c6cff 0%, #a78bfa 45%, #22d3ee 100%);
+
+      --ok: #3ddc97;
+      --warn: #f5b544;
+      --fail: #ff6b6b;
+      --info: #b197fc;
+      --neutral: #8f98ac;
+      --on-fail: #090b11;
+
+      --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+      --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px -10px rgb(0 0 0 / 0.6);
+      --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 28px 56px -18px rgb(0 0 0 / 0.75);
+      --highlight: inset 0 1px 0 rgb(255 255 255 / 0.045);
+
+      --chart-healthy: #34d399;
+      --chart-failing: #f87171;
+      --chart-warning: #fbbf24;
+      --chart-not-observed: #6b7a90;
+      --chart-maintenance: #a78bfa;
+      --chart-not-counted: #38bdf8;
+      --chart-median: #22d3ee;
+      --chart-max: #e879f9;
+      --chart-deadline: #fbbf24;
+      --chart-outage: rgb(248 113 113 / 0.13);
+      --chart-paused: rgb(148 163 184 / 0.12);
+      --chart-grid: rgb(255 255 255 / 0.06);
+      --chart-cursor: rgb(169 159 255 / 0.09);
+      --chart-tick: #8f98ac;
+      --chart-pattern-ink: rgb(9 11 17 / 0.45);
+    }
+  }
+}

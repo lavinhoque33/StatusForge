@@ -7,6 +7,7 @@ import {
   type DependencyStatus,
   type Readiness,
 } from '../api/health';
+import { Icon } from './Icon';
 
 /** Deadline for a single readiness check. */
 const CHECK_TIMEOUT_MS = 5000;
@@ -97,7 +98,7 @@ export function BackendStatus() {
   const observedAt = answered ? new Date(state.readiness.checkedAt) : null;
 
   return (
-    <section className="panel" aria-labelledby="backend-status-heading">
+    <section className="panel backend-status" aria-labelledby="backend-status-heading">
       <h2 id="backend-status-heading">Backend status</h2>
       <p className={`status status--${state.name}`} role="status" aria-live="polite">
         <span className="status-badge">{STATUS_TEXT[state.name]}</span>
@@ -126,7 +127,8 @@ export function BackendStatus() {
           </ul>
         </>
       ) : null}
-      <button type="button" className="check-again" onClick={checkAgain}>
+      <button type="button" className="button check-again" onClick={checkAgain}>
+        <Icon name="refresh" size={16} />
         Check again
       </button>
     </section>

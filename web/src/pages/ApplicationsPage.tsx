@@ -25,6 +25,8 @@ import { effectiveState } from '../lib/statusHeadline';
 import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
+import { CardHead } from '../components/CardHead';
+import { Icon } from '../components/Icon';
 
 function ApplicationCard({
   application,
@@ -161,12 +163,14 @@ function ApplicationCard({
   };
   return (
     <article className="panel application-card" aria-labelledby={`application-${application.id}`}>
-      <h3 ref={headingRef} tabIndex={-1} id={`application-${application.id}`}>
-        {application.name}
-        {archived ? ' — Archived' : ''}
-        {deleting ? ' — Deleting' : ''}
-      </h3>
-      <p>
+      <CardHead icon="applications">
+        <h3 ref={headingRef} tabIndex={-1} id={`application-${application.id}`}>
+          {application.name}
+          {archived ? ' — Archived' : ''}
+          {deleting ? ' — Deleting' : ''}
+        </h3>
+      </CardHead>
+      <p className="application-meta">
         Created{' '}
         <time dateTime={application.createdAt}>
           {formatLocalWithOffset(new Date(application.createdAt))}
@@ -179,18 +183,23 @@ function ApplicationCard({
           {summary.openIncidents} open incident{summary.openIncidents === 1 ? '' : 's'}.
         </p>
         {summary.members.length ? (
-          <ul>
-            {summary.members.map((monitor) => (
-              <li key={monitor.id}>
-                <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —{' '}
-                {monitor.lifecycle === 'active'
-                  ? (monitor.kind === 'heartbeat'
-                      ? heartbeatState(monitor, now)
-                      : effectiveState(monitor.status, now)
-                    ).replaceAll('_', ' ')
-                  : monitor.lifecycle}
-              </li>
-            ))}
+          <ul className="member-states">
+            {summary.members.map((monitor) => {
+              const state =
+                monitor.lifecycle === 'active'
+                  ? monitor.kind === 'heartbeat'
+                    ? heartbeatState(monitor, now)
+                    : effectiveState(monitor.status, now)
+                  : monitor.lifecycle;
+              return (
+                <li key={monitor.id}>
+                  <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link> —{' '}
+                  <span className={`state-word monitor-state--${state}`}>
+                    {state.replaceAll('_', ' ')}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p>No member monitors.</p>
@@ -239,6 +248,7 @@ function ApplicationCard({
       ) : (
         <>
           <form
+            className="field-row"
             onSubmit={(event) => {
               event.preventDefault();
               void act(() => renameApplication(application.id, name), 'Application renamed.');
@@ -288,7 +298,7 @@ function ApplicationCard({
                 <button
                   ref={revokeRef}
                   type="button"
-                  className="button"
+                  className="button button--danger"
                   disabled={pending}
                   onClick={() => setConfirm('revoke')}
                 >
@@ -298,7 +308,7 @@ function ApplicationCard({
               <button
                 ref={archiveRef}
                 type="button"
-                className="button"
+                className="button button--danger"
                 disabled={pending}
                 onClick={() => setConfirm('archive')}
               >
@@ -317,7 +327,9 @@ function ApplicationCard({
                 <button
                   ref={confirmRef}
                   type="button"
-                  className="button"
+                  className={
+                    confirm === 'rotate' ? 'button button--primary' : 'button button--danger'
+                  }
                   disabled={pending}
                   onClick={() =>
                     void act(
@@ -390,7 +402,7 @@ function ApplicationCard({
                 {!archived ? (
                   <button
                     type="button"
-                    className="button"
+                    className="button button--ghost"
                     disabled={pending}
                     aria-label={`Remove ${item.name} from ${application.name}`}
                     onClick={() => void act(() => setMembership(item.id, null), 'Monitor removed.')}
@@ -404,6 +416,7 @@ function ApplicationCard({
         )}
         {!archived ? (
           <form
+            className="field-row"
             onSubmit={(event) => {
               event.preventDefault();
               if (member)
@@ -434,7 +447,7 @@ function ApplicationCard({
         <h4>Deployments</h4>
         {markerError ? <p role="alert">{markerError}</p> : null}
         {!archived ? (
-          <form onSubmit={(event) => void submitMarker(event)}>
+          <form className="marker-form" onSubmit={(event) => void submitMarker(event)}>
             {(['version', 'description', 'link', 'deployedAt', 'deploymentId'] as const).map(
               (key) => (
                 <div key={key} className="field">
@@ -471,17 +484,18 @@ function ApplicationCard({
                 </div>
               ),
             )}
-            <button type="submit" className="button" disabled={markerPending}>
+            <button type="submit" className="button button--primary" disabled={markerPending}>
               Record deployment
             </button>
           </form>
         ) : null}
         {markers.length === 0 ? (
-          <p>No deployment markers recorded.</p>
+          <p className="empty">No deployment markers recorded.</p>
         ) : (
           <ul className="application-markers">
             {markers.map((entry) => (
               <li key={entry.id} className="panel">
+                <Icon name="flag" size={16} className="marker-icon" />
                 <strong>{entry.version}</strong> · {entry.source} ·{' '}
                 <time dateTime={entry.reportedAt}>
                   {formatLocalWithOffset(new Date(entry.reportedAt))}
@@ -568,34 +582,40 @@ export function ApplicationsPage() {
       <p>
         Group monitors and record deployments as context. Markers never change monitoring status.
       </p>
-      <form className="panel" onSubmit={(event) => void create(event)}>
-        <h3>Create application</h3>
-        <label htmlFor="new-application-name">Name</label>
-        <input
-          id="new-application-name"
-          value={name}
-          maxLength={100}
-          required
-          aria-invalid={!!fields.name}
-          aria-describedby={fields.name ? 'new-application-name-error' : undefined}
-          onChange={(event) => setName(event.target.value)}
-        />
-        {fields.name ? (
-          <p id="new-application-name-error" role="alert">
-            {fieldErrorMessage(fields.name)}
-          </p>
-        ) : null}
-        <button type="submit" className="button" disabled={pending}>
-          Create application
-        </button>
+      <form className="panel create-application" onSubmit={(event) => void create(event)}>
+        <CardHead icon="plus">
+          <h3>Create application</h3>
+        </CardHead>
+        <div className="field-row">
+          <label htmlFor="new-application-name">Name</label>
+          <input
+            id="new-application-name"
+            value={name}
+            maxLength={100}
+            required
+            aria-invalid={!!fields.name}
+            aria-describedby={fields.name ? 'new-application-name-error' : undefined}
+            onChange={(event) => setName(event.target.value)}
+          />
+          {fields.name ? (
+            <p id="new-application-name-error" role="alert">
+              {fieldErrorMessage(fields.name)}
+            </p>
+          ) : null}
+          <button type="submit" className="button button--primary" disabled={pending}>
+            Create application
+          </button>
+        </div>
       </form>
       {creationNotice ? <p role="status">{creationNotice}</p> : null}
       {deletionNotice ? <p role="status">{deletionNotice}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {!loaded ? (
-        <p role="status">Loading applications…</p>
+        <p role="status" className="loading">
+          Loading applications…
+        </p>
       ) : applications.length === 0 ? (
-        <p>No applications yet.</p>
+        <p className="empty">No applications yet.</p>
       ) : (
         <div className="applications-list">
           {applications.map((application) => (

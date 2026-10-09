@@ -11,6 +11,7 @@ import { heartbeatDeadlines } from '../lib/heartbeatHeadline';
 import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
+import { Icon } from '../components/Icon';
 
 type ListState =
   | { name: 'loading' }
@@ -94,7 +95,11 @@ export function MonitorListPage() {
         <p role="status">{window.history.state.deletedMonitor} was deleted permanently.</p>
       ) : null}
 
-      {state.name === 'loading' ? <p role="status">Loading monitors…</p> : null}
+      {state.name === 'loading' ? (
+        <p role="status" className="loading">
+          Loading monitors…
+        </p>
+      ) : null}
 
       {state.name === 'ready' ? (
         <p className="updated-at" role="status">
@@ -116,12 +121,18 @@ export function MonitorListPage() {
       ) : null}
 
       {state.name === 'ready' && state.monitors.length === 0 ? (
-        <>
+        <div className="empty-state">
+          <span className="empty-icon" aria-hidden="true">
+            <Icon name="monitors" size={22} />
+          </span>
           <p>No monitors yet. Create one to check the sample target.</p>
           <p>
-            <Link to="/monitors/new">Create a monitor</Link>
+            <Link to="/monitors/new" className="button button--primary">
+              <Icon name="plus" size={16} />
+              Create a monitor
+            </Link>
           </p>
-        </>
+        </div>
       ) : null}
 
       {state.name === 'ready' && state.monitors.length > 0 ? (
@@ -129,14 +140,23 @@ export function MonitorListPage() {
           <ul className="monitor-list">
             {state.monitors.map((monitor) => (
               <li key={monitor.id} className="monitor-card">
-                <h3>
-                  <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link>
-                </h3>
+                <div className="monitor-card-head">
+                  <span className="kind-icon" aria-hidden="true">
+                    <Icon name={monitor.kind === 'heartbeat' ? 'heartbeat' : 'globe'} />
+                  </span>
+                  <h3>
+                    <Link to={`/monitors/${encodeURIComponent(monitor.id)}`}>{monitor.name}</Link>
+                  </h3>
+                  <Icon name="chevron-right" className="monitor-card-chevron" />
+                </div>
                 <p className="monitor-meta">
                   <LifecycleBadge lifecycle={monitor.lifecycle} />
                   {monitor.deletion !== null ? <span className="lifecycle">Deleting</span> : null}
                   {monitor.kind === 'heartbeat' ? (
-                    <span className="type-label">Heartbeat</span>
+                    <span className="type-label">
+                      <Icon name="heartbeat" size={13} />
+                      Heartbeat
+                    </span>
                   ) : null}
                   <span className="version">v{monitor.configVersion}</span>
                 </p>
@@ -161,8 +181,11 @@ export function MonitorListPage() {
               </li>
             ))}
           </ul>
-          <p>
-            <Link to="/monitors/new">Create a monitor</Link>
+          <p className="list-footer">
+            <Link to="/monitors/new" className="button button--primary">
+              <Icon name="plus" size={16} />
+              Create a monitor
+            </Link>
           </p>
         </>
       ) : null}

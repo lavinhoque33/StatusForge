@@ -5,6 +5,7 @@ import { describeApiError } from '../lib/errors';
 import { intervalLabel } from '../lib/intervals';
 import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
+import { CardHead } from '../components/CardHead';
 
 const show = (value: string | number | string[] | number[]) =>
   Array.isArray(value) ? value.join(', ') : String(value);
@@ -56,15 +57,21 @@ export function SettingsPage() {
           )}
         </p>
       ) : null}
-      {!info && !error ? <p role="status">Loading settings…</p> : null}
+      {!info && !error ? (
+        <p role="status" className="loading">
+          Loading settings…
+        </p>
+      ) : null}
       {info ? (
         <>
-          <p role="status">
+          <p role="status" className="updated-at">
             {error ? 'Not updated' : 'Updated'}{' '}
             {updated === null ? '' : time(new Date(updated).toISOString())}
           </p>
           <section className="panel">
-            <h3>Version and data format</h3>
+            <CardHead icon="database">
+              <h3>Version and data format</h3>
+            </CardHead>
             <dl className="config-list">
               <div>
                 <dt>Version</dt>
@@ -89,7 +96,9 @@ export function SettingsPage() {
             </dl>
           </section>
           <section className="panel">
-            <h3>Retention</h3>
+            <CardHead icon="clock">
+              <h3>Retention</h3>
+            </CardHead>
             <div
               className="retention-scroll"
               tabIndex={0}
@@ -123,7 +132,9 @@ export function SettingsPage() {
             </p>
           </section>
           <section className="panel">
-            <h3>Housekeeping</h3>
+            <CardHead icon="refresh">
+              <h3>Housekeeping</h3>
+            </CardHead>
             <dl className="config-list">
               <div>
                 <dt>Backfill</dt>
@@ -151,7 +162,9 @@ export function SettingsPage() {
             </dl>
           </section>
           <section className="panel">
-            <h3>Local limits and boundaries</h3>
+            <CardHead icon="shield">
+              <h3>Local limits and boundaries</h3>
+            </CardHead>
             <p>
               Management and database interfaces bind to loopback only. Only configured local
               targets may be checked; this is not a hosted service.
@@ -208,7 +221,9 @@ export function SettingsPage() {
             </dl>
           </section>
           <section className="panel">
-            <h3>Export and permanent deletion</h3>
+            <CardHead icon="download">
+              <h3>Export and permanent deletion</h3>
+            </CardHead>
             <p>
               Export before deleting an archived monitor or application. Deletion is permanent; an
               export is the recovery path. For export, import, and deletion instructions, see{' '}

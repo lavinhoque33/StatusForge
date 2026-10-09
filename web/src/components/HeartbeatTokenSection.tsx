@@ -4,6 +4,7 @@ import { revokeHeartbeatToken, rotateHeartbeatToken } from '../api/monitors';
 import { describeApiError } from '../lib/errors';
 import { formatLocalWithOffset } from '../lib/time';
 import { HeartbeatTokenPanel } from './HeartbeatTokenPanel';
+import { CardHead } from './CardHead';
 
 export function HeartbeatTokenSection({
   id,
@@ -54,12 +55,14 @@ export function HeartbeatTokenSection({
   };
   return (
     <section className="panel" aria-labelledby="heartbeat-token-heading">
-      <h3 id="heartbeat-token-heading">Token</h3>
+      <CardHead icon="key">
+        <h3 id="heartbeat-token-heading">Token</h3>
+      </CardHead>
       {heartbeat.token === null ? (
         <p>No active token.</p>
       ) : (
         <p>
-          Hint: …{heartbeat.token.hint} · Created{' '}
+          Hint: <span className="mono">…{heartbeat.token.hint}</span> · Created{' '}
           <time dateTime={heartbeat.token.createdAt}>
             {formatLocalWithOffset(new Date(heartbeat.token.createdAt))}
           </time>
@@ -92,7 +95,7 @@ export function HeartbeatTokenSection({
             <button
               ref={revokeRef}
               type="button"
-              className="button"
+              className="button button--danger"
               onClick={() => {
                 setConfirm('revoke');
                 window.setTimeout(() => confirmRef.current?.focus(), 0);
@@ -113,7 +116,7 @@ export function HeartbeatTokenSection({
           <button
             ref={confirmRef}
             type="button"
-            className="button"
+            className={confirm === 'revoke' ? 'button button--danger' : 'button button--primary'}
             disabled={pending}
             onClick={() => void act()}
           >

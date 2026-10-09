@@ -39,6 +39,8 @@ import { FRESHNESS_REFRESH_MS, useNow } from '../lib/useNow';
 import { heartbeatDeadlines } from '../lib/heartbeatHeadline';
 import { Link } from '../router/Link';
 import { navigate } from '../router/history';
+import { CardHead } from '../components/CardHead';
+import { Icon } from '../components/Icon';
 
 type LoadState =
   | { name: 'loading' }
@@ -379,7 +381,11 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
   };
 
   if (load.name === 'loading') {
-    return <p role="status">Loading monitor…</p>;
+    return (
+      <p role="status" className="loading">
+        Loading monitor…
+      </p>
+    );
   }
 
   if (load.name === 'not-found') {
@@ -388,7 +394,10 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         <h2 id="monitor-not-found-heading">Monitor not found</h2>
         <p>This monitor was deleted or does not exist.</p>
         <p>
-          <Link to="/monitors">Back to monitors</Link>
+          <Link to="/monitors" className="back-link">
+            <Icon name="arrow-left" size={16} />
+            Back to monitors
+          </Link>
         </p>
       </section>
     );
@@ -403,7 +412,10 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
           Try again
         </button>
         <p>
-          <Link to="/monitors">Back to monitors</Link>
+          <Link to="/monitors" className="back-link">
+            <Icon name="arrow-left" size={16} />
+            Back to monitors
+          </Link>
         </p>
       </section>
     );
@@ -414,46 +426,61 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
 
   return (
     <article className="monitor-detail" aria-labelledby="monitor-detail-heading">
-      <h2 id="monitor-detail-heading">{monitor.name}</h2>
-      <p className="monitor-meta">
-        <LifecycleBadge lifecycle={monitor.lifecycle} />
-        {monitor.deletion !== null ? <span className="lifecycle">Deleting</span> : null}
-        {monitor.kind === 'heartbeat' ? <span className="type-label">Heartbeat</span> : null}
-        <span className="version">v{monitor.configVersion}</span>
-      </p>
-      <MonitorHeadline
-        status={monitor.status}
-        intervalSeconds={monitor.intervalSeconds ?? monitor.heartbeat!.intervalSeconds}
-        monitor={monitor}
-        now={now}
-        maintenance={monitor.maintenance}
-      />
-      {monitor.openIncident === null ? null : (
-        <p className="panel incident-alert">
-          Open incident since{' '}
-          <time dateTime={monitor.openIncident.openedAt}>
-            {formatLocalWithOffset(new Date(monitor.openIncident.openedAt))}
-          </time>{' '}
-          <Link to={incidentLink(monitor.id, monitor.openIncident.id)}>View incident</Link>
+      <header className="page-header">
+        <div className="page-title-row">
+          <span className="kind-icon kind-icon--lg" aria-hidden="true">
+            <Icon name={monitor.kind === 'heartbeat' ? 'heartbeat' : 'globe'} size={20} />
+          </span>
+          <h2 id="monitor-detail-heading">{monitor.name}</h2>
+        </div>
+        <p className="monitor-meta">
+          <LifecycleBadge lifecycle={monitor.lifecycle} />
+          {monitor.deletion !== null ? <span className="lifecycle">Deleting</span> : null}
+          {monitor.kind === 'heartbeat' ? (
+            <span className="type-label">
+              <Icon name="heartbeat" size={13} />
+              Heartbeat
+            </span>
+          ) : null}
+          <span className="version">v{monitor.configVersion}</span>
         </p>
-      )}
-      <p className="updated-at" role="status">
-        {freshness.name === 'failed'
-          ? notUpdatedText(freshness.reason)
-          : freshness.name === 'updated'
-            ? updatedText(freshness.at, now)
-            : null}
-      </p>
-      {archived ? (
-        <p className="note">
-          {monitor.deletion !== null
-            ? 'Deleting. Changes are no longer allowed.'
-            : 'Archived monitors are read-only. Observations stay available.'}
+        <MonitorHeadline
+          status={monitor.status}
+          intervalSeconds={monitor.intervalSeconds ?? monitor.heartbeat!.intervalSeconds}
+          monitor={monitor}
+          now={now}
+          maintenance={monitor.maintenance}
+        />
+        {monitor.openIncident === null ? null : (
+          <p className="panel incident-alert">
+            Open incident since{' '}
+            <time dateTime={monitor.openIncident.openedAt}>
+              {formatLocalWithOffset(new Date(monitor.openIncident.openedAt))}
+            </time>{' '}
+            <Link to={incidentLink(monitor.id, monitor.openIncident.id)}>View incident</Link>
+          </p>
+        )}
+        <p className="updated-at" role="status">
+          {freshness.name === 'failed'
+            ? notUpdatedText(freshness.reason)
+            : freshness.name === 'updated'
+              ? updatedText(freshness.at, now)
+              : null}
         </p>
-      ) : null}
-      <p>
-        <Link to="/monitors">Back to monitors</Link>
-      </p>
+        {archived ? (
+          <p className="note">
+            {monitor.deletion !== null
+              ? 'Deleting. Changes are no longer allowed.'
+              : 'Archived monitors are read-only. Observations stay available.'}
+          </p>
+        ) : null}
+        <p className="page-actions">
+          <Link to="/monitors" className="back-link">
+            <Icon name="arrow-left" size={16} />
+            Back to monitors
+          </Link>
+        </p>
+      </header>
 
       <MonitorApplicationSection
         monitor={monitor}
@@ -464,7 +491,9 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         }
       />
       <section className="panel" aria-labelledby="monitor-configuration-heading">
-        <h3 id="monitor-configuration-heading">Configuration</h3>
+        <CardHead icon="settings">
+          <h3 id="monitor-configuration-heading">Configuration</h3>
+        </CardHead>
         <dl className="config-list">
           {monitor.kind === 'heartbeat' && monitor.heartbeat ? (
             <>
@@ -501,7 +530,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             <>
               <div>
                 <dt>URL</dt>
-                <dd>{monitor.check.url}</dd>
+                <dd className="mono">{monitor.check.url}</dd>
               </div>
               <div>
                 <dt>Method</dt>
@@ -612,7 +641,9 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             refresh={reload}
           />
           <section className="panel" aria-labelledby="heartbeat-proof-heading">
-            <h3 id="heartbeat-proof-heading">What a heartbeat proves</h3>
+            <CardHead icon="info">
+              <h3 id="heartbeat-proof-heading">What a heartbeat proves</h3>
+            </CardHead>
             <p>
               A request carrying the heartbeat’s token reached StatusForge at the recorded time with
               the recorded fields. It does not prove the job did its work correctly or that its
@@ -627,7 +658,9 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
         </>
       ) : null}
       <section className="panel" aria-labelledby="monitor-lifecycle-heading">
-        <h3 id="monitor-lifecycle-heading">Lifecycle</h3>
+        <CardHead icon="archive">
+          <h3 id="monitor-lifecycle-heading">Lifecycle</h3>
+        </CardHead>
         {archived ? (
           <p className="note">Archiving is final; this monitor accepts no further changes.</p>
         ) : (
@@ -645,7 +678,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             ) : (
               <button
                 type="button"
-                className="button"
+                className="button button--primary"
                 onClick={() => applyLifecycle('resume')}
                 disabled={lifecyclePending !== null}
                 ref={resumeButtonRef}
@@ -658,7 +691,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
                 <span>Archive this monitor? Archiving is final and keeps the observations.</span>
                 <button
                   type="button"
-                  className="button"
+                  className="button button--danger"
                   onClick={() => applyLifecycle('archive')}
                   disabled={lifecyclePending !== null}
                   autoFocus
@@ -681,7 +714,7 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
             ) : (
               <button
                 type="button"
-                className="button"
+                className="button button--danger"
                 onClick={() => setArchiveConfirm(true)}
                 disabled={lifecyclePending !== null}
                 ref={archiveButtonRef}
@@ -722,10 +755,12 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       />
       {monitor.kind === 'http' && monitor.check ? (
         <section className="panel" aria-labelledby="monitor-check-heading">
-          <h3 id="monitor-check-heading">Manual check</h3>
+          <CardHead icon="refresh">
+            <h3 id="monitor-check-heading">Manual check</h3>
+          </CardHead>
           <button
             type="button"
-            className="button"
+            className="button button--primary"
             onClick={startCheckIfIdle}
             disabled={archived}
             aria-disabled={runState.name === 'running' ? true : undefined}
@@ -759,13 +794,15 @@ export function MonitorDetailPage({ monitorId }: { monitorId: string }) {
       ) : null}
 
       <section className="panel" aria-labelledby="monitor-incidents-heading">
-        <h3 id="monitor-incidents-heading">Recent incidents</h3>
+        <CardHead icon="incidents">
+          <h3 id="monitor-incidents-heading">Recent incidents</h3>
+        </CardHead>
         {incidents.length === 0 ? (
-          <p>No incidents recorded for this monitor.</p>
+          <p className="empty">No incidents recorded for this monitor.</p>
         ) : (
-          <ul>
+          <ul className="recent-incidents">
             {incidents.map((incident) => (
-              <li key={incident.id}>
+              <li key={incident.id} className={incident.state === 'open' ? 'tone-fail' : undefined}>
                 <Link to={incidentLink(monitor.id, incident.id)}>
                   {incident.state === 'open' ? 'Open' : 'Resolved'} incident
                 </Link>{' '}

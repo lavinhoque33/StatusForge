@@ -29,6 +29,10 @@ The Go licence walk also follows `cmd/lambda-planner` and `cmd/lambda-worker` as
 builds them (linux/arm64, `-tags lambda.norpc`). `github.com/aws/aws-lambda-go` (Apache-2.0 AND MIT-0) has a
 reasoned entry in `licence-exceptions.json`.
 
+The web bundle ships one font: Inter (`@fontsource-variable/inter`, `OFL-1.1`), as same-origin woff2 files that
+`font-src 'self'` allows. Its entry in `licence-exceptions.json` gives the reason. The OFL text and the copyright
+notice ship with every build at `/fonts/Inter-LICENSE.txt`, and the release binary embeds them.
+
 ## Cloud-path synthesis
 
 | Control | Evidence | Environment and limit |

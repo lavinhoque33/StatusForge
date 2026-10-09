@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { CardHead } from './CardHead';
+import { Icon } from './Icon';
 
 export function HeartbeatTokenPanel({
   token,
@@ -26,13 +28,15 @@ export function HeartbeatTokenPanel({
       className="panel token-panel"
       aria-label={applicationId ? 'New application token' : 'New heartbeat token'}
     >
-      <h3>{applicationId ? 'Application' : 'Heartbeat'} token — Shown once</h3>
+      <CardHead icon="key" tone="warn">
+        <h3>{applicationId ? 'Application' : 'Heartbeat'} token — Shown once</h3>
+      </CardHead>
       <p>Copy this token now. It will not be available again after you leave this page.</p>
       <code>{token}</code>
       <button
         ref={copyRef}
         type="button"
-        className="button"
+        className="button button--primary"
         onClick={() => {
           void navigator.clipboard.writeText(token).then(
             () => setNotice('Token copied.'),
@@ -40,6 +44,7 @@ export function HeartbeatTokenPanel({
           );
         }}
       >
+        <Icon name="copy" size={16} />
         Copy token
       </button>
       <p role="status">{notice}</p>

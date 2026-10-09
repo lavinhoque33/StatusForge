@@ -66,9 +66,13 @@ export function ActivityPage() {
       </p>
       <p className="note">Deployment markers are kept for 365 days.</p>
       {error ? <p role="alert">{error}</p> : null}
-      {updated === null && error === null ? <p role="status">Loading activity…</p> : null}
+      {updated === null && error === null ? (
+        <p role="status" className="loading">
+          Loading activity…
+        </p>
+      ) : null}
       {updated !== null ? (
-        <p role="status">
+        <p role="status" className="updated-at">
           Updated{' '}
           <time dateTime={new Date(updated).toISOString()}>
             {formatLocalWithOffset(new Date(updated))}
@@ -76,52 +80,58 @@ export function ActivityPage() {
           {error ? ' — not updated' : ''}
         </p>
       ) : null}
-      <div className="activity-filters">
-        <label htmlFor="activity-application">Application</label>
-        <select
-          id="activity-application"
-          value={applicationFilter}
-          onChange={(event) => setApplicationFilter(event.target.value)}
-        >
-          <option value="all">All applications</option>
-          {applications.map((application) => (
-            <option key={application.id} value={application.id}>
-              {application.name}
-              {application.archivedAt ? ' (archived)' : ''}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="activity-heartbeat">Heartbeat</label>
-        <select
-          id="activity-heartbeat"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        >
-          <option value="all">All heartbeats</option>
-          {monitors.map((monitor) => (
-            <option key={monitor.id} value={monitor.id}>
-              {monitor.name}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="activity-counted">Evaluation</label>
-        <select
-          id="activity-counted"
-          value={counted}
-          onChange={(event) => setCounted(event.target.value)}
-        >
-          <option value="all">All reports</option>
-          <option value="counted">Counted</option>
-          <option value="not-counted">Not counted</option>
-        </select>
+      <div className="activity-filters toolbar">
+        <div className="filter-field">
+          <label htmlFor="activity-application">Application</label>
+          <select
+            id="activity-application"
+            value={applicationFilter}
+            onChange={(event) => setApplicationFilter(event.target.value)}
+          >
+            <option value="all">All applications</option>
+            {applications.map((application) => (
+              <option key={application.id} value={application.id}>
+                {application.name}
+                {application.archivedAt ? ' (archived)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="filter-field">
+          <label htmlFor="activity-heartbeat">Heartbeat</label>
+          <select
+            id="activity-heartbeat"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          >
+            <option value="all">All heartbeats</option>
+            {monitors.map((monitor) => (
+              <option key={monitor.id} value={monitor.id}>
+                {monitor.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="filter-field">
+          <label htmlFor="activity-counted">Evaluation</label>
+          <select
+            id="activity-counted"
+            value={counted}
+            onChange={(event) => setCounted(event.target.value)}
+          >
+            <option value="all">All reports</option>
+            <option value="counted">Counted</option>
+            <option value="not-counted">Not counted</option>
+          </select>
+        </div>
       </div>
       {updated !== null && visible.length === 0 ? (
-        <p>No activity matches these filters.</p>
+        <p className="empty">No activity matches these filters.</p>
       ) : (
         <ul className="activity-list">
           {visible.map((item) =>
             item.kind === 'deployment' ? (
-              <li key={`deployment-${item.marker.id}`} className="panel">
+              <li key={`deployment-${item.marker.id}`} className="panel activity-item--deployment">
                 <Link to="/applications">{item.application.name}</Link> · Deployment{' '}
                 {item.marker.version} ·{' '}
                 <time dateTime={item.marker.reportedAt}>
@@ -130,7 +140,10 @@ export function ActivityPage() {
                 {item.marker.description ? <> · {item.marker.description}</> : null}
               </li>
             ) : (
-              <li key={`${item.monitor.id}-${item.observation.id}`} className="panel">
+              <li
+                key={`${item.monitor.id}-${item.observation.id}`}
+                className={item.observation.report?.late ? 'panel activity-item--late' : 'panel'}
+              >
                 <Link to={`/monitors/${encodeURIComponent(item.monitor.id)}`}>
                   {item.monitor.name}
                 </Link>{' '}

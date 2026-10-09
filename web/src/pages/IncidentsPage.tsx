@@ -16,6 +16,7 @@ import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
 import { ApplicationReference } from '../components/ApplicationReference';
+import { Icon } from '../components/Icon';
 
 export function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
@@ -79,16 +80,29 @@ export function IncidentsPage() {
           )}
         </p>
       )}
-      {updated === null && error === null ? <p role="status">Loading incidents…</p> : null}
+      {updated === null && error === null ? (
+        <p role="status" className="loading">
+          Loading incidents…
+        </p>
+      ) : null}
       {updated === null ? null : (
-        <p role="status">Updated {formatRelativeAge(new Date(updated).toISOString(), now)}</p>
+        <p role="status" className="updated-at">
+          Updated {formatRelativeAge(new Date(updated).toISOString(), now)}
+        </p>
       )}
-      <section aria-labelledby="open-incidents-heading">
-        <h3 id="open-incidents-heading">Open incidents</h3>
-        {incidents !== null && open.length === 0 ? <p>No open incidents.</p> : null}
+      <section className="page-group tone-fail" aria-labelledby="open-incidents-heading">
+        <div className="section-head">
+          <span className="section-icon" aria-hidden="true">
+            <Icon name="incidents" />
+          </span>
+          <h3 id="open-incidents-heading">Open incidents</h3>
+        </div>
+        {incidents !== null && open.length === 0 ? (
+          <p className="empty">No open incidents.</p>
+        ) : null}
         <ul className="incident-list">
           {open.map((incident) => (
-            <li key={incident.id} className="panel">
+            <li key={incident.id} className="panel incident-item--open">
               <h4>
                 <Link to={incidentLink(incident.monitorId, incident.id)}>
                   {incident.monitorName} — Open incident
@@ -120,12 +134,22 @@ export function IncidentsPage() {
           ))}
         </ul>
       </section>
-      <section aria-labelledby="resolved-incidents-heading">
-        <h3 id="resolved-incidents-heading">Resolved incidents</h3>
-        {incidents !== null && resolved.length === 0 ? <p>No resolved incidents.</p> : null}
+      <section className="page-group tone-neutral" aria-labelledby="resolved-incidents-heading">
+        <div className="section-head">
+          <span className="section-icon" aria-hidden="true">
+            <Icon name="check-circle" />
+          </span>
+          <h3 id="resolved-incidents-heading">Resolved incidents</h3>
+        </div>
+        {incidents !== null && resolved.length === 0 ? (
+          <p className="empty">No resolved incidents.</p>
+        ) : null}
         <ul className="incident-list">
           {resolved.map((incident) => (
-            <li key={incident.id} className="panel">
+            <li
+              key={incident.id}
+              className={`panel incident-item--${incident.resolution === 'recovered' ? 'recovered' : 'archived'}`}
+            >
               <h4>
                 <Link to={incidentLink(incident.monitorId, incident.id)}>
                   {incident.monitorName} — {resolutionWords(incident.resolution)}
@@ -154,16 +178,30 @@ export function IncidentsPage() {
           ))}
         </ul>
       </section>
-      <section id="notifications-attention" tabIndex={-1} aria-labelledby="attention-list-heading">
-        <h3 id="attention-list-heading" tabIndex={-1}>
-          Failed notifications needing attention
-          {attention?.length === ATTENTION_LIMIT ? ` (${ATTENTION_LIMIT}+)` : null}
-        </h3>
-        {attention !== null && attention.length === 0 ? <p>No failed notifications.</p> : null}
-        {attention === null && error === null ? <p>Loading notifications…</p> : null}
+      <section
+        id="notifications-attention"
+        className="page-group tone-fail"
+        tabIndex={-1}
+        aria-labelledby="attention-list-heading"
+      >
+        <div className="section-head">
+          <span className="section-icon" aria-hidden="true">
+            <Icon name="bell" />
+          </span>
+          <h3 id="attention-list-heading" tabIndex={-1}>
+            Failed notifications needing attention
+            {attention?.length === ATTENTION_LIMIT ? ` (${ATTENTION_LIMIT}+)` : null}
+          </h3>
+        </div>
+        {attention !== null && attention.length === 0 ? (
+          <p className="empty">No failed notifications.</p>
+        ) : null}
+        {attention === null && error === null ? (
+          <p className="loading">Loading notifications…</p>
+        ) : null}
         <ul className="incident-list">
           {attention?.map((note) => (
-            <li key={`${note.monitorId}:${note.id}`} className="panel">
+            <li key={`${note.monitorId}:${note.id}`} className="panel attention-item">
               <Link to={`${incidentLink(note.monitorId, note.incidentId)}#notifications`}>
                 {note.monitorName} — {note.kind} notification
               </Link>

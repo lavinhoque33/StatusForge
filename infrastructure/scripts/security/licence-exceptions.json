@@ -5,6 +5,9 @@
     }
   },
   "npm": {
+    "@fontsource-variable/inter": {
+      "OFL-1.1": "Font files only (the Inter variable woff2 files plus @font-face CSS), bundled into the web build. The SIL Open Font License 1.1 permits bundling and redistributing the font with software when the copyright notice and licence accompany it (shipped at web/public/fonts/Inter-LICENSE.txt, copied into every build and embedded in the release binary); the font is never sold on its own."
+    },
     "case": {
       "(MIT OR GPL-3.0-or-later)": "Bundled inside aws-cdk-lib (infra/ synthesis only; never shipped in a StatusForge binary or web bundle). A disjunctive dual licence: StatusForge elects MIT, which is on the allowlist, so the GPL alternative never applies."
     },

@@ -7,6 +7,8 @@ import {
 } from '../api/deletion';
 import { ApiRequestError, ApiValidationError, isAbortError } from '../api/http';
 import { describeApiError, fieldErrorMessage } from '../lib/errors';
+import { CardHead } from './CardHead';
+import { Icon } from './Icon';
 
 export function PermanentDeletion({
   resource,
@@ -95,8 +97,10 @@ export function PermanentDeletion({
     }
   };
   return (
-    <section className="panel" aria-label={`Permanently delete ${name}`}>
-      <h3>Delete permanently</h3>
+    <section className="panel danger-zone" aria-label={`Permanently delete ${name}`}>
+      <CardHead icon="trash" tone="fail">
+        <h3>Delete permanently</h3>
+      </CardHead>
       <p>
         {resource === 'monitors'
           ? 'All checks, gap records, incidents, their notifications, maintenance windows, and pause history for this monitor will be removed. Application deployment markers are separate and remain available.'
@@ -108,7 +112,7 @@ export function PermanentDeletion({
         deletion instructions.
       </p>
       {progress !== null ? (
-        <p role="status" aria-live="polite">
+        <p role="status" aria-live="polite" className="loading">
           {progress.state === 'waiting_for_notifications'
             ? 'Waiting for pending notifications to finish'
             : `Deleting — ${progress.removedItems} records removed`}
@@ -131,7 +135,11 @@ export function PermanentDeletion({
             aria-invalid={!!error}
             aria-describedby={error ? `delete-error-${resource}-${id}` : undefined}
           />
-          <button type="submit" className="button" disabled={pending || typed !== name}>
+          <button
+            type="submit"
+            className="button button--danger"
+            disabled={pending || typed !== name}
+          >
             Confirm permanent deletion
           </button>
           <button type="button" className="button" disabled={pending} onClick={cancel}>
@@ -139,7 +147,13 @@ export function PermanentDeletion({
           </button>
         </form>
       ) : (
-        <button ref={triggerRef} type="button" className="button" onClick={() => setConfirm(true)}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="button button--danger"
+          onClick={() => setConfirm(true)}
+        >
+          <Icon name="trash" size={16} />
           Delete permanently
         </button>
       )}

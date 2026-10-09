@@ -1,0 +1,41 @@
+/* Single-purpose helpers; the last layer, so they win over components and pages. */
+@layer reset, tokens, base, layout, components, pages, charts, utilities;
+
+@layer utilities {
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Hidden until focused; then a clear chip at the top left. */
+  .skip-link {
+    position: fixed;
+    top: var(--space-3);
+    left: var(--space-3);
+    z-index: 100;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+    padding: 0 var(--space-4);
+    border-radius: var(--radius);
+    background-color: var(--accent);
+    box-shadow: var(--shadow-lg);
+    color: var(--on-accent);
+    font-weight: var(--weight-semibold);
+    transform: translateY(calc(-100% - 4rem));
+    transition: transform var(--duration) var(--ease-out);
+  }
+
+  .skip-link:focus,
+  .skip-link:focus-visible {
+    transform: none;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

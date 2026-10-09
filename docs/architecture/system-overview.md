@@ -91,6 +91,11 @@ the backend and the web never recomputes them. Pages: Overview, Monitors (list, 
 summary, maintenance, incidents), Incidents, Activity, Applications, Settings. Lists poll every 15 s while
 the tab is visible; summaries refresh every 60 s.
 
+Styling is plain CSS in cascade layers, built on one set of design tokens for the light and dark schemes. There
+is no CSS framework and no inline style, so the CSP keeps `style-src 'self'`, and the Inter variable font is
+bundled as same-origin assets. Every status has a text label and a shape as well as a colour, and nothing
+animates under `prefers-reduced-motion`.
+
 ## Persistence
 
 One table, `PK`/`SK` string keys, `entityType` discriminator, no secondary index, TTL on `expiresAt`. Every

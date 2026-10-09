@@ -1,0 +1,724 @@
+/*
+ * Summary panel and charts (HttpSummaryPanel, SummaryCharts). Colours come only
+ * from tokens.css: SVG marks get them through these classes (CSS properties win
+ * over Recharts' presentation-attribute defaults), never through hex literals.
+ */
+@layer reset, tokens, base, layout, components, pages, charts, utilities;
+
+@layer charts {
+  /* ---------- Panel header and window segmented control ---------- */
+
+  .summary-panel__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+    margin-block-end: var(--space-4);
+  }
+
+  .summary-panel__header h3 {
+    margin: 0;
+  }
+
+  .summary-window {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  /* A floated legend is laid out as an ordinary flex item, beside the segments. */
+  .summary-window legend {
+    float: left;
+    padding: 0;
+    color: var(--muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .summary-window__segments {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 3px);
+    background: var(--surface-2);
+    box-shadow: inset 0 1px 2px color-mix(in srgb, var(--fg) 6%, transparent);
+  }
+
+  .summary-window__segments label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: var(--target);
+    min-inline-size: 4.25rem;
+    padding: 0 var(--space-4);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .summary-window__segments label:hover {
+    color: var(--fg);
+  }
+
+  .summary-window__segments label:has(:checked) {
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-sm), var(--highlight);
+  }
+
+  .summary-window__segments label:has(:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* The native radio stays the real, focusable control under the whole segment. */
+  .summary-window__segments input {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  @media (forced-colors: active) {
+    .summary-window__segments label:has(:checked) {
+      border: 2px solid Highlight;
+    }
+  }
+
+  /* ---------- Stat strip ---------- */
+
+  .summary-stats {
+    container-type: inline-size;
+    margin-block-end: var(--space-4);
+  }
+
+  .summary-stats__partial {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 var(--space-2);
+    padding: 2px 10px;
+    border: 1px solid color-mix(in srgb, var(--neutral) 28%, transparent);
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--neutral) 12%, transparent);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+  }
+
+  .summary-stats__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+  }
+
+  .summary-stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-inline-size: 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-inset);
+  }
+
+  /* An odd tile out (the latency tile, or the third heartbeat tile) takes the full row. */
+  .summary-stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .summary-stat dt {
+    color: var(--muted);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .summary-stat dd {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+    margin: 0;
+  }
+
+  .summary-stat__value {
+    color: var(--fg);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-tight);
+  }
+
+  .summary-stat__value--quiet {
+    color: var(--fg-2);
+    font-size: var(--text-base);
+  }
+
+  .summary-stat__detail {
+    color: var(--muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+
+  /* Keeps "(98 %)" together so the unit never wraps away from its number. */
+  .summary-stat__ratio {
+    white-space: nowrap;
+  }
+
+  .summary-stat__trio {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px var(--space-4);
+    color: var(--muted);
+    font-size: var(--text-xs);
+  }
+
+  .summary-stat__trio .summary-stat__value {
+    font-size: var(--text-md);
+  }
+
+  @container (min-width: 40rem) {
+    .summary-stats__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .summary-stats__grid:has(.summary-stat--wide) {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.6fr);
+    }
+
+    .summary-stat:last-child:nth-child(odd) {
+      grid-column: auto;
+    }
+  }
+
+  /* ---------- Loading skeleton ---------- */
+
+  .summary-skeleton {
+    margin-block-start: var(--space-5);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-inset);
+  }
+
+  .summary-skeleton [role='status'] {
+    margin: 0 0 var(--space-3);
+  }
+
+  .summary-skeleton__plot {
+    block-size: 13rem;
+    border-radius: var(--radius);
+    background: linear-gradient(
+      100deg,
+      var(--surface-2) 20%,
+      var(--surface-3) 50%,
+      var(--surface-2) 80%
+    );
+    background-size: 220% 100%;
+    animation: summary-shimmer 1.6s var(--ease-in-out) infinite;
+  }
+
+  @keyframes summary-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+
+    to {
+      background-position: -120% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .summary-skeleton__plot {
+      animation: none;
+    }
+  }
+
+  /* ---------- Figures (inner sub-cards) ---------- */
+
+  .summary-charts {
+    display: grid;
+    gap: var(--space-4);
+    margin-block-start: var(--space-5);
+  }
+
+  .summary-figure {
+    position: relative;
+    min-inline-size: 0;
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-inset);
+  }
+
+  .summary-figure__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+  }
+
+  .summary-figure__caption {
+    flex: 1 1 18rem;
+    min-inline-size: 0;
+  }
+
+  .summary-figure__title {
+    display: block;
+    color: var(--fg);
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  .summary-figure__description {
+    display: block;
+    margin-block-start: 2px;
+    color: var(--muted);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
+  /* Kept in the caption text (and accessible name), hidden visually where title and description stack. */
+  .summary-figure__separator {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .summary-toggle {
+    flex: none;
+    font-size: var(--text-sm);
+  }
+
+  .summary-shading-key {
+    margin: var(--space-3) 0 0;
+    color: var(--muted);
+    font-size: var(--text-xs);
+    line-height: 1.9;
+  }
+
+  .shade-key--outage,
+  .shade-key--paused {
+    display: inline-block;
+    padding: 0 8px;
+    border: 1px solid;
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-weight: var(--weight-semibold);
+    line-height: 1.5;
+  }
+
+  .shade-key--outage {
+    border-color: color-mix(in srgb, var(--chart-failing) 32%, transparent);
+    background: var(--chart-outage);
+  }
+
+  .shade-key--paused {
+    border-color: color-mix(in srgb, var(--chart-not-observed) 32%, transparent);
+    background: var(--chart-paused);
+  }
+
+  /* ---------- Legends and swatches ---------- */
+
+  .chart-defs {
+    position: absolute;
+    inline-size: 0;
+    block-size: 0;
+    overflow: hidden;
+  }
+
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .chart-legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-inline-size: 0;
+    padding: 3px 10px 3px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    line-height: 1.4;
+  }
+
+  .chart-swatch {
+    display: block;
+    flex: none;
+  }
+
+  .chart-swatch__mark {
+    stroke: color-mix(in srgb, var(--fg) 16%, transparent);
+    stroke-width: 1;
+  }
+
+  .chart-swatch__line {
+    stroke-linecap: round;
+  }
+
+  .chart-swatch__dot {
+    stroke: var(--surface);
+    stroke-width: 1.5;
+  }
+
+  .chart-swatch__line--median {
+    stroke: var(--chart-median);
+    stroke-width: 2.5;
+  }
+
+  .chart-swatch__line--max {
+    stroke: var(--chart-max);
+    stroke-width: 1.5;
+  }
+
+  .chart-swatch__dot--median {
+    fill: var(--chart-median);
+  }
+
+  .chart-swatch__dot--max {
+    fill: var(--chart-max);
+  }
+
+  /* ---------- Series fills (pattern bases and ink) ---------- */
+
+  .chart-fill--healthy {
+    fill: var(--chart-healthy);
+  }
+
+  .chart-fill--failing {
+    fill: var(--chart-failing);
+  }
+
+  .chart-fill--warning {
+    fill: var(--chart-warning);
+  }
+
+  .chart-fill--not-observed {
+    fill: var(--chart-not-observed);
+  }
+
+  .chart-fill--maintenance {
+    fill: var(--chart-maintenance);
+  }
+
+  .chart-fill--not-counted {
+    fill: var(--chart-not-counted);
+  }
+
+  .chart-ink {
+    fill: var(--chart-pattern-ink);
+  }
+
+  .chart-ink--faint {
+    fill-opacity: 0.35;
+  }
+
+  /* ---------- Plot surface ---------- */
+
+  .summary-plot {
+    position: relative;
+    inline-size: 100%;
+    min-inline-size: 0;
+    margin-block-start: var(--space-4);
+  }
+
+  .summary-plot .recharts-surface {
+    overflow: visible;
+  }
+
+  .summary-plot svg[tabindex='0'] {
+    border-radius: var(--radius-sm);
+  }
+
+  .summary-plot svg[tabindex='0']:focus {
+    outline: none;
+  }
+
+  .summary-plot svg[tabindex='0']:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .summary-plot .recharts-cartesian-grid-horizontal line {
+    stroke: var(--chart-grid);
+    stroke-dasharray: none;
+  }
+
+  .summary-plot .recharts-cartesian-axis-tick-value {
+    fill: var(--chart-tick);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary-plot .chart-cursor {
+    fill: var(--chart-cursor);
+  }
+
+  .summary-plot .chart-cursor-line {
+    stroke: color-mix(in srgb, var(--fg) 24%, transparent);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+  }
+
+  .chart-segment {
+    stroke: none;
+  }
+
+  .chart-band .recharts-reference-area-rect {
+    fill-opacity: 1;
+    stroke: none;
+  }
+
+  /* A hairline edge keeps a minutes-long outage visible on a 7-day axis. */
+  .chart-band--outage .recharts-reference-area-rect {
+    fill: var(--chart-outage);
+    stroke: color-mix(in srgb, var(--chart-failing) 30%, transparent);
+    stroke-width: 1;
+  }
+
+  .chart-band--paused .recharts-reference-area-rect {
+    fill: var(--chart-paused);
+  }
+
+  .chart-pill__shape {
+    stroke-width: 1;
+  }
+
+  .chart-pill__text {
+    font-size: 11px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.01em;
+  }
+
+  .chart-pill--outage .chart-pill__shape {
+    fill: color-mix(in srgb, var(--chart-failing) 14%, var(--surface));
+    stroke: color-mix(in srgb, var(--chart-failing) 40%, transparent);
+  }
+
+  .chart-pill--outage .chart-pill__text {
+    fill: var(--fail);
+  }
+
+  .chart-pill--paused .chart-pill__shape {
+    fill: color-mix(in srgb, var(--neutral) 14%, var(--surface));
+    stroke: color-mix(in srgb, var(--neutral) 36%, transparent);
+  }
+
+  .chart-pill--paused .chart-pill__text {
+    fill: var(--fg-2);
+  }
+
+  .chart-pill--deadline .chart-pill__shape {
+    fill: color-mix(in srgb, var(--chart-deadline) 14%, var(--surface));
+    stroke: color-mix(in srgb, var(--chart-deadline) 45%, transparent);
+  }
+
+  .chart-pill--deadline .chart-pill__text {
+    fill: var(--warn);
+  }
+
+  .chart-deadline .recharts-reference-line-line {
+    stroke: var(--chart-deadline);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+  }
+
+  /* ---------- Latency lines ---------- */
+
+  .chart-line .recharts-line-curve {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .chart-line--median .recharts-line-curve {
+    stroke: var(--chart-median);
+    stroke-width: 2.25;
+  }
+
+  .chart-line--max .recharts-line-curve {
+    stroke: var(--chart-max);
+    stroke-width: 1.5;
+    stroke-opacity: 0.9;
+  }
+
+  .chart-gradient-stop--top {
+    stop-color: var(--chart-median);
+    stop-opacity: 0.24;
+  }
+
+  .chart-gradient-stop--bottom {
+    stop-color: var(--chart-median);
+    stop-opacity: 0;
+  }
+
+  .chart-dot,
+  .chart-active-dot {
+    stroke: var(--surface-inset);
+    stroke-width: 1.5;
+  }
+
+  .chart-active-dot {
+    stroke-width: 2;
+  }
+
+  .chart-dot--median,
+  .chart-active-dot--median {
+    fill: var(--chart-median);
+  }
+
+  .chart-dot--max,
+  .chart-active-dot--max {
+    fill: var(--chart-max);
+  }
+
+  /* ---------- Tooltip card ---------- */
+
+  .summary-plot .recharts-tooltip-wrapper {
+    z-index: 2;
+    outline: none;
+  }
+
+  .chart-tooltip {
+    min-inline-size: 12.5rem;
+    max-inline-size: min(20rem, 80vw);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--overlay);
+    box-shadow: var(--shadow-lg);
+    color: var(--fg);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    backdrop-filter: blur(14px) saturate(1.5);
+  }
+
+  .chart-tooltip__title {
+    margin: 0 0 var(--space-2);
+    color: var(--fg);
+    font-weight: var(--weight-semibold);
+  }
+
+  .chart-tooltip__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px var(--space-4);
+    margin: 0 0 var(--space-2);
+    padding-block-end: var(--space-2);
+    border-block-end: 1px solid var(--border);
+  }
+
+  .chart-tooltip__facts div {
+    display: flex;
+    gap: 6px;
+  }
+
+  .chart-tooltip__facts dt {
+    color: var(--muted);
+  }
+
+  .chart-tooltip__facts dd {
+    margin: 0;
+    font-weight: var(--weight-semibold);
+  }
+
+  .chart-tooltip__rows {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .chart-tooltip__rows li {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .chart-tooltip__label {
+    color: var(--fg-2);
+  }
+
+  .chart-tooltip__value {
+    font-weight: var(--weight-semibold);
+    text-align: end;
+  }
+
+  /* ---------- Table equivalents ---------- */
+
+  .summary-figure .table-wrapper {
+    margin-block-start: var(--space-4);
+  }
+
+  .summary-table th,
+  .summary-table td {
+    white-space: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 600px) {
+    .summary-figure {
+      padding: var(--space-3);
+    }
+
+    .summary-table th[scope='row'] {
+      display: block;
+      white-space: normal;
+    }
+
+    .summary-table td::before {
+      content: attr(data-label) ': ';
+      font-weight: var(--weight-semibold);
+    }
+
+    .chart-tooltip {
+      min-inline-size: 11rem;
+    }
+  }
+}

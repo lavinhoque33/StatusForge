@@ -6,36 +6,68 @@ export function duration(seconds: number): string {
   if (seconds % 3600 === 0) return `${seconds / 3600} h`;
   return `${Math.round(seconds / 60)} min`;
 }
+/** Recorded share of expected slots, exactly as the coverage sentence prints it. */
+export function coverageRatio(summary: MonitorSummary): string {
+  const c = summary.coverage;
+  if (c.expected === 0)
+    return summary.kind === 'heartbeat' ? 'no expected deadlines' : 'no expected checks';
+  return `${Math.round((c.recorded / c.expected) * 100)} %`;
+}
+/** Outcomes the coverage sentence counts: recorded minus maintenance for heartbeats. */
+export function countedOutcomes(summary: MonitorSummary): number {
+  if (summary.kind === 'heartbeat') return summary.coverage.recorded - summary.coverage.maintenance;
+  const o = summary.coverage.outcomes;
+  return o.healthy + o.failing + o.checkerProblem;
+}
 export function coverageSentence(summary: MonitorSummary): string {
+  const ratio = coverageRatio(summary);
+  const counted = countedOutcomes(summary);
   if (summary.kind === 'heartbeat') {
     const c = summary.coverage;
-    const ratio =
-      c.expected === 0
-        ? 'no expected deadlines'
-        : `${Math.round((c.recorded / c.expected) * 100)} %`;
-    return `${summary.window === '24h' ? 'Last 24 hours' : 'Last 7 days'}: ${c.recorded} of ${c.expected} expected heartbeat deadlines recorded (${ratio}); ${c.notObserved} not observed. Of ${c.recorded - c.maintenance} counted deadlines: ${c.outcomes.onTime} on time, ${c.outcomes.late} late, ${c.outcomes.missed} missed; ${c.outcomes.failureReports} failure reports (included in on time or late). Paused ${duration(c.pausedSeconds)}; maintenance ${c.maintenance} deadlines; ${c.notCounted} not counted.`;
+    return `${summary.window === '24h' ? 'Last 24 hours' : 'Last 7 days'}: ${c.recorded} of ${c.expected} expected heartbeat deadlines recorded (${ratio}); ${c.notObserved} not observed. Of ${counted} counted deadlines: ${c.outcomes.onTime} on time, ${c.outcomes.late} late, ${c.outcomes.missed} missed; ${c.outcomes.failureReports} failure reports (included in on time or late). Paused ${duration(c.pausedSeconds)}; maintenance ${c.maintenance} deadlines; ${c.notCounted} not counted.`;
   }
   const c = summary.coverage;
-  const counted = c.outcomes.healthy + c.outcomes.failing + c.outcomes.checkerProblem;
-  const ratio =
-    c.expected === 0 ? 'no expected checks' : `${Math.round((c.recorded / c.expected) * 100)} %`;
   const label = summary.window === '24h' ? 'Last 24 hours' : 'Last 7 days';
   return `${label}: ${c.recorded} of ${c.expected} expected checks recorded (${ratio}); ${c.notObserved} not observed. Of ${counted} counted: ${c.outcomes.healthy} healthy, ${c.outcomes.failing} failing, ${c.outcomes.checkerProblem} checker problem. Paused ${duration(c.pausedSeconds)}; maintenance ${c.maintenance} checks; ${c.notCounted} not counted. Manual checks ${c.manualChecks} (excluded from expected checks).`;
+}
+/**
+ * Round latency axis ticks from 0 up to at least `maximum`, stepping by 1, 2,
+ * 2.5 or 5 × 10^n so `latencyValue` labels read cleanly (`1 s`, `250 ms`).
+ */
+export function latencyTicks(maximum: number, intervals = 4): number[] {
+  if (maximum <= 0) return [0];
+  const raw = maximum / intervals;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((s) => s >= raw)!;
+  return Array.from({ length: Math.ceil(maximum / step) + 1 }, (_, index) =>
+    Math.round(index * step),
+  );
 }
 export function latencyValue(ms: number): string {
   return ms >= 1000 ? `${Number((ms / 1000).toFixed(1))} s` : `${ms} ms`;
 }
+export type LatencyFigures = { medianMs: number; p95Ms: number; maxMs: number | null };
+/** The one sample gate for window latency: `null` means too few samples to state figures. */
+export function latencyFigures(latency: HttpSummary['latency']): LatencyFigures | null {
+  if (latency.samples < 5 || latency.medianMs === null || latency.p95Ms === null) return null;
+  return { medianMs: latency.medianMs, p95Ms: latency.p95Ms, maxMs: latency.maxMs };
+}
 export function latencySentence(summary: HttpSummary): string {
   const latency = summary.latency;
-  if (latency.samples < 5 || latency.medianMs === null || latency.p95Ms === null) {
+  const figures = latencyFigures(latency);
+  if (figures === null) {
     return `Response time (from this machine): too few samples (${latency.samples} responses; ${latency.noResponse} without response; ${latency.checkerProblems} checker problems).`;
   }
-  return `Response time (from this machine): median ${latencyValue(latency.medianMs)}, p95 ${latencyValue(latency.p95Ms)}, max ${latency.maxMs === null ? 'unknown' : latencyValue(latency.maxMs)} over ${latency.samples} responses; ${latency.noResponse} without response; ${latency.checkerProblems} checker problems.`;
+  return `Response time (from this machine): median ${latencyValue(figures.medianMs)}, p95 ${latencyValue(figures.p95Ms)}, max ${figures.maxMs === null ? 'unknown' : latencyValue(figures.maxMs)} over ${latency.samples} responses; ${latency.noResponse} without response; ${latency.checkerProblems} checker problems.`;
+}
+/** The window starts later than requested (truncated or newer coverage). */
+export function isPartialWindow(summary: MonitorSummary): boolean {
+  return summary.truncated || Date.parse(summary.coveredFrom) > Date.parse(summary.from);
 }
 /** `monitorCreatedAt` suppresses the pause-history note when lifecycle history starts at creation. */
 export function summaryNotes(summary: MonitorSummary, monitorCreatedAt: string): string[] {
   const notes: string[] = [];
-  if (summary.truncated || Date.parse(summary.coveredFrom) > Date.parse(summary.from))
+  if (isPartialWindow(summary))
     notes.push(
       `Partial window — covers from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`,
     );
@@ -162,11 +194,14 @@ export function latencyAxisMaximum(summary: HttpSummary, deadlineMs: number): nu
 export type ShadedSpan = {
   from: number;
   to: number;
-  outage: boolean;
-  paused: boolean;
+  kind: 'outage' | 'paused';
 };
 
-/** Merge touching outage/pause spans before drawing labels at narrow widths. */
+/**
+ * Receive-outage and paused spans, sorted by start. Touching or overlapping
+ * spans merge only within the same kind, so a pause is never drawn as an
+ * outage; spans of different kinds may touch or overlap.
+ */
 export function shadedSpans(
   summary: MonitorSummary,
   rows: Pick<ChartRow, 'from' | 'to' | 'pausedSeconds'>[],
@@ -175,32 +210,27 @@ export function shadedSpans(
   const spans: ShadedSpan[] = summary.outages.map((outage) => ({
     from: Date.parse(outage.from),
     to: Date.parse(outage.to ?? summary.to),
-    outage: true,
-    paused: false,
+    kind: 'outage',
   }));
   if (includePaused) {
     // Paused seconds only locate a bucket, not exact pause boundaries.
     for (const row of rows) {
       if (row.pausedSeconds > 0) {
-        spans.push({
-          from: Date.parse(row.from),
-          to: Date.parse(row.to),
-          outage: false,
-          paused: true,
-        });
+        spans.push({ from: Date.parse(row.from), to: Date.parse(row.to), kind: 'paused' });
       }
     }
   }
   spans.sort((left, right) => left.from - right.from);
   const merged: ShadedSpan[] = [];
+  const open: Partial<Record<ShadedSpan['kind'], ShadedSpan>> = {};
   for (const span of spans) {
-    const previous = merged[merged.length - 1];
+    const previous = open[span.kind];
     if (previous && span.from <= previous.to) {
       previous.to = Math.max(previous.to, span.to);
-      previous.outage ||= span.outage;
-      previous.paused ||= span.paused;
     } else {
-      merged.push({ ...span });
+      const next = { ...span };
+      open[span.kind] = next;
+      merged.push(next);
     }
   }
   return merged;

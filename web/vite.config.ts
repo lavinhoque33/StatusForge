@@ -23,6 +23,12 @@ export default defineConfig({
     port: webPort,
     strictPort: true,
   },
+  build: {
+    // The release server sends font-src 'self', which blocks data: URLs, so font
+    // files are always emitted as separate assets; other assets keep Vite's
+    // default 4 KiB inlining threshold.
+    assetsInlineLimit: (filePath) => (/\.(woff2?|ttf|otf)$/i.test(filePath) ? false : undefined),
+  },
   test: {
     environment: 'jsdom',
     globals: false,

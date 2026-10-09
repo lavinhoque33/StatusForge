@@ -4,6 +4,7 @@ import { cancelMaintenance, scheduleMaintenance, type Window } from '../api/main
 import { describeApiError, fieldErrorMessage } from '../lib/errors';
 import { localDateTimeToUtc, scheduleZoneLabel } from '../lib/maintenanceTime';
 import { formatLocalWithOffset } from '../lib/time';
+import { CardHead } from './CardHead';
 
 export function MaintenanceSection({
   monitorId,
@@ -115,9 +116,11 @@ export function MaintenanceSection({
   });
   return (
     <section className="panel" aria-labelledby="maintenance-heading">
-      <h3 id="maintenance-heading" tabIndex={-1}>
-        Maintenance
-      </h3>
+      <CardHead icon="calendar" tone="info">
+        <h3 id="maintenance-heading" tabIndex={-1}>
+          Maintenance
+        </h3>
+      </CardHead>
       <p>Checks continue during maintenance; labelled results do not open or resolve incidents.</p>
       {archived ? (
         <p>Archived monitors cannot schedule or change windows.</p>
@@ -179,7 +182,7 @@ export function MaintenanceSection({
                 {fieldErrorMessage(issue)}
               </p>
             ))}
-          <button className="button" type="submit" disabled={pending}>
+          <button className="button button--primary" type="submit" disabled={pending}>
             Schedule maintenance
           </button>
         </form>
@@ -191,7 +194,7 @@ export function MaintenanceSection({
       ) : null}
       <h4>Windows</h4>
       {ordered.length === 0 ? (
-        <p>No maintenance windows recorded.</p>
+        <p className="empty">No maintenance windows recorded.</p>
       ) : (
         <ul className="maintenance-windows">
           {ordered.map((window) => {
@@ -199,8 +202,14 @@ export function MaintenanceSection({
               !archived && (window.state === 'active' || window.state === 'scheduled');
             const action = window.state === 'active' ? 'End now' : 'Cancel';
             return (
-              <li key={window.id} className="maintenance-window">
-                <strong>{window.state[0].toUpperCase() + window.state.slice(1)}</strong> —{' '}
+              <li
+                key={window.id}
+                className={`maintenance-window maintenance-window--${window.state}`}
+              >
+                <strong className="window-state">
+                  {window.state[0].toUpperCase() + window.state.slice(1)}
+                </strong>{' '}
+                —{' '}
                 <time dateTime={window.startAt}>
                   {formatLocalWithOffset(new Date(window.startAt))}
                 </time>{' '}
@@ -217,7 +226,7 @@ export function MaintenanceSection({
                       </span>
                       <button
                         type="button"
-                        className="button"
+                        className="button button--danger"
                         disabled={pending}
                         autoFocus
                         onClick={() => void close(window)}
@@ -239,7 +248,7 @@ export function MaintenanceSection({
                   ) : (
                     <button
                       type="button"
-                      className="button"
+                      className="button button--danger"
                       disabled={pending}
                       ref={(node) => {
                         if (node) buttons.current.set(`window-${window.id}`, node);

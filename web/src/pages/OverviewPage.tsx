@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { listApplications, type Application } from '../api/applications';
 import { getOverview, type Overview } from '../api/dailyUse';
 import { incidentLink } from '../api/incidents';
@@ -10,9 +10,22 @@ import { formatLocalWithOffset, formatRelativeAge } from '../lib/time';
 import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
+import { Icon, type IconName } from '../components/Icon';
 
 function When({ at }: { at: string }) {
   return <time dateTime={at}>{formatLocalWithOffset(new Date(at))}</time>;
+}
+
+/** Problem-section header: a toned icon tile beside the unchanged heading. */
+function GroupHead({ icon, id, children }: { icon: IconName; id: string; children: ReactNode }) {
+  return (
+    <div className="section-head">
+      <span className="section-icon" aria-hidden="true">
+        <Icon name={icon} />
+      </span>
+      <h3 id={id}>{children}</h3>
+    </div>
+  );
 }
 export function OverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
@@ -60,9 +73,15 @@ export function OverviewPage() {
           )}
         </p>
       ) : null}
-      {data === null && error === null ? <p role="status">Loading overview…</p> : null}
+      {data === null && error === null ? (
+        <p role="status" className="loading">
+          Loading overview…
+        </p>
+      ) : null}
       {updatedAt !== null ? (
-        <p role="status">Updated {formatRelativeAge(new Date(updatedAt).toISOString(), now)}</p>
+        <p role="status" className="updated-at">
+          Updated {formatRelativeAge(new Date(updatedAt).toISOString(), now)}
+        </p>
       ) : null}
       {data === null ? null : (
         <>
@@ -71,11 +90,16 @@ export function OverviewPage() {
           data.coverageProblems.length === 0 &&
           data.notifications.count === 0 &&
           data.scheduler.state !== 'behind' ? (
-            <p className="panel">
-              All clear — {data.counts.active} active monitor{data.counts.active === 1 ? '' : 's'}{' '}
-              checked recently; {data.counts.paused} paused. Evaluated{' '}
-              <When at={data.evaluatedAt} />.
-            </p>
+            <div className="panel all-clear">
+              <span className="all-clear-icon" aria-hidden="true">
+                <Icon name="check-circle" size={22} />
+              </span>
+              <p>
+                All clear — {data.counts.active} active monitor
+                {data.counts.active === 1 ? '' : 's'} checked recently; {data.counts.paused} paused.
+                Evaluated <When at={data.evaluatedAt} />.
+              </p>
+            </div>
           ) : null}
           {data.scheduler.state === 'disabled' ? (
             <p className="note">
@@ -84,8 +108,10 @@ export function OverviewPage() {
             </p>
           ) : null}
           {data.receiveOutages.length > 0 ? (
-            <section aria-labelledby="outages-heading">
-              <h3 id="outages-heading">StatusForge was not receiving</h3>
+            <section className="overview-group tone-warn" aria-labelledby="outages-heading">
+              <GroupHead icon="database" id="outages-heading">
+                StatusForge was not receiving
+              </GroupHead>
               <ul className="overview-list">
                 {data.receiveOutages.map((outage) => (
                   <li className="panel" key={outage.from}>
@@ -103,8 +129,13 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.scheduler.state === 'behind' ? (
-            <section aria-labelledby="scheduler-behind-heading">
-              <h3 id="scheduler-behind-heading">Scheduler is behind</h3>
+            <section
+              className="overview-group tone-warn"
+              aria-labelledby="scheduler-behind-heading"
+            >
+              <GroupHead icon="clock" id="scheduler-behind-heading">
+                Scheduler is behind
+              </GroupHead>
               <div className="panel">
                 <p>
                   Scheduler is behind — {data.scheduler.missedChecks} of {data.scheduler.dueChecks}{' '}
@@ -121,8 +152,13 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.openIncidents.length > 0 ? (
-            <section aria-labelledby="overview-incidents-heading">
-              <h3 id="overview-incidents-heading">Open incidents</h3>
+            <section
+              className="overview-group tone-fail"
+              aria-labelledby="overview-incidents-heading"
+            >
+              <GroupHead icon="incidents" id="overview-incidents-heading">
+                Open incidents
+              </GroupHead>
               {groupByApplication(data.openIncidents, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
@@ -144,8 +180,10 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.failingWithoutIncident.length > 0 ? (
-            <section aria-labelledby="failing-heading">
-              <h3 id="failing-heading">Failing — incident not open yet</h3>
+            <section className="overview-group tone-fail" aria-labelledby="failing-heading">
+              <GroupHead icon="x-circle" id="failing-heading">
+                Failing — incident not open yet
+              </GroupHead>
               {groupByApplication(data.failingWithoutIncident, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
@@ -164,8 +202,13 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.coverageProblems.length > 0 ? (
-            <section aria-labelledby="coverage-problems-heading">
-              <h3 id="coverage-problems-heading">Coverage problems</h3>
+            <section
+              className="overview-group tone-warn"
+              aria-labelledby="coverage-problems-heading"
+            >
+              <GroupHead icon="alert-circle" id="coverage-problems-heading">
+                Coverage problems
+              </GroupHead>
               {groupByApplication(data.coverageProblems, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>
@@ -200,8 +243,13 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.notifications.count > 0 ? (
-            <section aria-labelledby="overview-notifications-heading">
-              <h3 id="overview-notifications-heading">Notifications need attention</h3>
+            <section
+              className="overview-group tone-warn"
+              aria-labelledby="overview-notifications-heading"
+            >
+              <GroupHead icon="bell" id="overview-notifications-heading">
+                Notifications need attention
+              </GroupHead>
               <p>
                 {data.notifications.count} failed notification
                 {data.notifications.count === 1 ? '' : 's'} (newest {data.limits.notifications}{' '}
@@ -232,8 +280,10 @@ export function OverviewPage() {
             </section>
           ) : null}
           {data.recentRecoveries.length > 0 ? (
-            <section aria-labelledby="recoveries-heading">
-              <h3 id="recoveries-heading">Recovered in the last 24 hours</h3>
+            <section className="overview-group tone-ok" aria-labelledby="recoveries-heading">
+              <GroupHead icon="check-circle" id="recoveries-heading">
+                Recovered in the last 24 hours
+              </GroupHead>
               {groupByApplication(data.recentRecoveries, applicationNames).map((group) => (
                 <section key={group.name}>
                   <h4>{group.name}</h4>

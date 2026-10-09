@@ -3,10 +3,15 @@ import { summaryFixture } from '../test/summaryFixture';
 import { formatLocalWithOffset } from './time';
 import {
   chartRows,
+  countedOutcomes,
+  coverageRatio,
   coverageSentence,
+  isPartialWindow,
+  latencyFigures,
   latencyPlotRows,
   latencyAxisMaximum,
   latencySentence,
+  latencyTicks,
   summaryNotes,
   shadedSpans,
   statusBucketLabel,
@@ -21,6 +26,31 @@ describe('HTTP summary presentation', () => {
     expect(latencySentence(summaryFixture)).toContain(
       'median 12 ms, p95 40 ms, max 1.5 s over 272 responses; 0 without response',
     );
+  });
+  it('shares the coverage ratio, counted total, partial flag and latency gate with the sentences', () => {
+    expect(coverageRatio(summaryFixture)).toBe('97 %');
+    expect(
+      coverageRatio({ ...summaryFixture, coverage: { ...summaryFixture.coverage, expected: 0 } }),
+    ).toBe('no expected checks');
+    expect(countedOutcomes(summaryFixture)).toBe(272);
+    expect(isPartialWindow(summaryFixture)).toBe(false);
+    expect(isPartialWindow({ ...summaryFixture, coveredFrom: '2026-09-27T06:00:00.000Z' })).toBe(
+      true,
+    );
+    expect(latencyFigures(summaryFixture.latency)).toEqual({
+      medianMs: 12,
+      p95Ms: 40,
+      maxMs: 1510,
+    });
+    const sparse = { ...summaryFixture, latency: { ...summaryFixture.latency, samples: 4 } };
+    expect(latencyFigures(sparse.latency)).toBeNull();
+    expect(latencySentence(sparse)).toContain('too few samples (4 responses;');
+  });
+  it('steps latency ticks in round values that cover the axis maximum', () => {
+    expect(latencyTicks(3300)).toEqual([0, 1000, 2000, 3000, 4000]);
+    expect(latencyTicks(5500)).toEqual([0, 2000, 4000, 6000]);
+    expect(latencyTicks(880)).toEqual([0, 250, 500, 750, 1000]);
+    expect(latencyTicks(0)).toEqual([0]);
   });
   it('labels partial windows, pending slots, and unknown pause history without making missing results healthy', () => {
     const partial = {
@@ -90,29 +120,51 @@ describe('HTTP summary presentation', () => {
     };
     expect(latencyAxisMaximum(slow, 5000)).toBe(8800);
   });
-  it('merges touching outages and pauses into one labelled shaded span', () => {
+  it('merges touching spans of the same kind only', () => {
     const summary = {
       ...summaryFixture,
       outages: [
         { from: '2026-09-27T00:05:00.000Z', to: '2026-09-27T00:20:00.000Z' },
         { from: '2026-09-27T00:20:00.000Z', to: '2026-09-27T00:35:00.000Z' },
       ],
+      buckets: [
+        { ...summaryFixture.buckets[0], pausedSeconds: 300 },
+        { ...summaryFixture.buckets[1], pausedSeconds: 300 },
+      ],
+    };
+    const spans = shadedSpans(summary, chartRows(summary), true);
+    expect(spans.filter((span) => span.kind === 'outage')).toEqual([
+      {
+        from: Date.parse('2026-09-27T00:05:00.000Z'),
+        to: Date.parse('2026-09-27T00:35:00.000Z'),
+        kind: 'outage',
+      },
+    ]);
+    expect(spans.filter((span) => span.kind === 'paused')).toHaveLength(1);
+  });
+  it('keeps an outage touching a pause as two spans of different kinds', () => {
+    const paused = {
+      ...summaryFixture,
+      buckets: [{ ...summaryFixture.buckets[0], pausedSeconds: 300 }],
+    };
+    const pausedTo = chartRows(paused)[0].to;
+    const summary = { ...paused, outages: [{ from: pausedTo, to: paused.to }] };
+    expect(shadedSpans(summary, chartRows(summary), true)).toEqual([
+      { from: Date.parse(summary.from), to: Date.parse(pausedTo), kind: 'paused' },
+      { from: Date.parse(pausedTo), to: Date.parse(summary.to), kind: 'outage' },
+    ]);
+  });
+  it('yields outages only when pauses are excluded', () => {
+    const summary = {
+      ...summaryFixture,
+      outages: [{ from: '2026-09-27T00:05:00.000Z', to: '2026-09-27T00:35:00.000Z' }],
       buckets: [{ ...summaryFixture.buckets[0], pausedSeconds: 300 }],
     };
     expect(shadedSpans(summary, chartRows(summary), false)).toEqual([
       {
         from: Date.parse('2026-09-27T00:05:00.000Z'),
         to: Date.parse('2026-09-27T00:35:00.000Z'),
-        outage: true,
-        paused: false,
-      },
-    ]);
-    expect(shadedSpans(summary, chartRows(summary), true)).toEqual([
-      {
-        from: Date.parse(summary.from),
-        to: Date.parse('2026-09-27T01:00:00.000Z'),
-        outage: true,
-        paused: true,
+        kind: 'outage',
       },
     ]);
   });

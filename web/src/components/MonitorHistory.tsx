@@ -15,6 +15,7 @@ import { mergeHistory } from '../lib/historyPages';
 import { formatLocalWithOffset } from '../lib/time';
 import { usePolling } from '../lib/usePolling';
 import { TimelineTable } from './TimelineTable';
+import { CardHead } from './CardHead';
 
 type Collection<T> = {
   items: T[];
@@ -170,12 +171,14 @@ export function MonitorHistory({
       : null;
   return (
     <section className="panel" aria-labelledby="monitor-timeline-heading">
-      <h3 id="monitor-timeline-heading">
-        {monitorKind === 'heartbeat' ? 'Reports and gaps' : 'Checks and gaps'}
-      </h3>
+      <CardHead icon="table">
+        <h3 id="monitor-timeline-heading">
+          {monitorKind === 'heartbeat' ? 'Reports and gaps' : 'Checks and gaps'}
+        </h3>
+      </CardHead>
       {driftNote ? <p className="drift-note">{driftNote}</p> : null}
       <form
-        className="history-filters"
+        className="history-filters toolbar"
         onSubmit={(event) => {
           event.preventDefault();
           if (from && to && from > to) {
@@ -261,7 +264,9 @@ export function MonitorHistory({
       </form>
       {error ? <p role="alert">{error}</p> : null}
       {!observations.loaded || !gaps.loaded ? (
-        <p role="status">Loading history…</p>
+        <p role="status" className="loading">
+          Loading history…
+        </p>
       ) : (
         <>
           {observations.items.length === 0 && hasFilters ? (

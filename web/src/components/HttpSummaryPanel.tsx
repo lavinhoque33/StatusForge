@@ -2,11 +2,106 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { getMonitorSummary, type MonitorSummary, type SummaryWindow } from '../api/dailyUse';
 import { isAbortError } from '../api/http';
 import { describeApiError } from '../lib/errors';
-import { coverageSentence, latencySentence, summaryNotes } from '../lib/summaryPresentation';
+import {
+  countedOutcomes,
+  coverageRatio,
+  coverageSentence,
+  isPartialWindow,
+  latencyFigures,
+  latencySentence,
+  latencyValue,
+  summaryNotes,
+} from '../lib/summaryPresentation';
 import { usePolling } from '../lib/usePolling';
+import { Icon } from './Icon';
+import '../styles/summary.css';
 
 const SummaryCharts = lazy(() => import('./SummaryCharts'));
 export const SUMMARY_REFRESH_MS = 60_000;
+/**
+ * Glanceable figures above the sentences: the same counts and denominator
+ * words as `coverageSentence` and `latencySentence`, which stay verbatim below.
+ */
+function SummaryStats({ summary }: { summary: MonitorSummary }) {
+  const c = summary.coverage;
+  const unit = summary.kind === 'heartbeat' ? 'expected heartbeat deadlines' : 'expected checks';
+  const latency = summary.kind === 'http' ? summary.latency : null;
+  const figures = latency === null ? null : latencyFigures(latency);
+  return (
+    <div className="summary-stats">
+      {isPartialWindow(summary) ? (
+        <p className="summary-stats__partial">
+          <Icon name="clock" size={14} />
+          Partial window
+        </p>
+      ) : null}
+      <dl className="summary-stats__grid">
+        <div className="summary-stat">
+          <dt>Recorded</dt>
+          <dd>
+            <span className="summary-stat__value">
+              {c.recorded} of {c.expected}
+            </span>{' '}
+            <span className="summary-stat__detail">
+              {unit} recorded{' '}
+              <span className="summary-stat__ratio">({coverageRatio(summary)})</span>
+            </span>
+          </dd>
+        </div>
+        <div className="summary-stat">
+          <dt>Not observed</dt>
+          <dd>
+            <span className="summary-stat__value">{c.notObserved}</span>{' '}
+            <span className="summary-stat__detail">{unit}</span>
+          </dd>
+        </div>
+        <div className="summary-stat">
+          <dt>Counted</dt>
+          <dd>
+            <span className="summary-stat__value">{countedOutcomes(summary)}</span>{' '}
+            <span className="summary-stat__detail">
+              {summary.kind === 'heartbeat'
+                ? `${summary.coverage.outcomes.onTime} on time, ${summary.coverage.outcomes.late} late, ${summary.coverage.outcomes.missed} missed`
+                : `${summary.coverage.outcomes.healthy} healthy, ${summary.coverage.outcomes.failing} failing, ${summary.coverage.outcomes.checkerProblem} checker problem`}
+            </span>
+          </dd>
+        </div>
+        {latency === null ? null : (
+          <div className="summary-stat summary-stat--wide">
+            <dt>Response time</dt>
+            <dd>
+              {figures === null ? (
+                <span className="summary-stat__value summary-stat__value--quiet">
+                  too few samples
+                </span>
+              ) : (
+                <span className="summary-stat__trio">
+                  <span>
+                    <span className="summary-stat__value">{latencyValue(figures.medianMs)}</span>{' '}
+                    median
+                  </span>
+                  <span>
+                    <span className="summary-stat__value">{latencyValue(figures.p95Ms)}</span> p95
+                  </span>
+                  <span>
+                    <span className="summary-stat__value">
+                      {figures.maxMs === null ? 'unknown' : latencyValue(figures.maxMs)}
+                    </span>{' '}
+                    max
+                  </span>
+                </span>
+              )}{' '}
+              <span className="summary-stat__detail">
+                {figures === null ? '' : 'over '}
+                {latency.samples} responses
+              </span>
+            </dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
 export function HttpSummaryPanel({
   monitorId,
   createdAt,
@@ -43,28 +138,32 @@ export function HttpSummaryPanel({
   usePolling({ refresh: poll, intervalMs: SUMMARY_REFRESH_MS });
   return (
     <section className="panel summary-panel" aria-labelledby="summary-heading">
-      <h3 id="summary-heading">Summary</h3>
-      <fieldset className="summary-window">
-        <legend>Summary window</legend>
-        <label>
-          <input
-            type="radio"
-            name={`summary-window-${monitorId}`}
-            checked={window === '24h'}
-            onChange={() => setWindow('24h')}
-          />
-          24 h
-        </label>
-        <label>
-          <input
-            type="radio"
-            name={`summary-window-${monitorId}`}
-            checked={window === '7d'}
-            onChange={() => setWindow('7d')}
-          />
-          7 d
-        </label>
-      </fieldset>
+      <div className="summary-panel__header">
+        <h3 id="summary-heading">Summary</h3>
+        <fieldset className="summary-window">
+          <legend>Summary window</legend>
+          <div className="summary-window__segments">
+            <label>
+              <input
+                type="radio"
+                name={`summary-window-${monitorId}`}
+                checked={window === '24h'}
+                onChange={() => setWindow('24h')}
+              />
+              24 h
+            </label>
+            <label>
+              <input
+                type="radio"
+                name={`summary-window-${monitorId}`}
+                checked={window === '7d'}
+                onChange={() => setWindow('7d')}
+              />
+              7 d
+            </label>
+          </div>
+        </fieldset>
+      </div>
       {error === null ? null : (
         <p role="alert">
           {error}{' '}
@@ -86,6 +185,7 @@ export function HttpSummaryPanel({
       ) : null}
       {summary !== null && (summary.window === window || error !== null) ? (
         <>
+          <SummaryStats summary={summary} />
           <p>{coverageSentence(summary)}</p>
           {summaryNotes(summary, createdAt).map((note) => (
             <p className="note" key={note}>
@@ -93,7 +193,14 @@ export function HttpSummaryPanel({
             </p>
           ))}
           {summary.kind === 'http' ? <p>{latencySentence(summary)}</p> : null}
-          <Suspense fallback={<p role="status">Loading charts…</p>}>
+          <Suspense
+            fallback={
+              <div className="summary-skeleton">
+                <p role="status">Loading charts…</p>
+                <div className="summary-skeleton__plot" aria-hidden="true" />
+              </div>
+            }
+          >
             <SummaryCharts summary={summary} deadlineMs={deadlineMs} />
           </Suspense>
         </>

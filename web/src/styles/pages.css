@@ -1,0 +1,983 @@
+/* Page- and feature-specific composition built from the primitives. */
+@layer reset, tokens, base, layout, components, pages, charts, utilities;
+
+@layer pages {
+  /* ------------------------------------------------------- Shell banners */
+  /* The banner is a label, not a replacement for the current health state. */
+  .demo-banner {
+    --tone: var(--warn);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 2.5rem;
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
+    border-radius: var(--radius);
+    background-color: color-mix(in srgb, var(--tone) 8%, var(--surface));
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent 0 10px,
+      color-mix(in srgb, var(--tone) 7%, transparent) 10px 20px
+    );
+    color: var(--tone);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-bold);
+    letter-spacing: 0.01em;
+  }
+
+  .demo-banner::before {
+    content: '';
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    background-color: currentColor;
+    mask: var(--mask-flask) center / contain no-repeat;
+  }
+
+  .attention-banner,
+  .incident-alert {
+    --tone: var(--fail);
+    position: relative;
+    padding: var(--space-3) var(--space-4) var(--space-3) 2.6rem;
+    border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+    border-left: 3px solid var(--tone);
+    border-radius: var(--radius);
+    background-color: color-mix(in srgb, var(--tone) 8%, var(--surface));
+    color: var(--fg);
+    font-size: var(--text-sm);
+  }
+
+  .attention-banner::before,
+  .incident-alert::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--space-3) + 0.15rem);
+    left: var(--space-4);
+    width: 1.05rem;
+    height: 1.05rem;
+    background-color: var(--tone);
+    mask: var(--mask-alert) center / contain no-repeat;
+  }
+
+  .attention-banner::before {
+    mask-image: var(--mask-bell);
+  }
+
+  .attention-banner a,
+  .incident-alert a {
+    position: relative;
+    color: var(--fail);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* The banner link is its only action: extend its hit area to the 44 px target. */
+  .attention-banner a::after,
+  .incident-alert a::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--target) - 1lh) / -2) -0.25rem;
+  }
+
+  /* -------------------------------------------------------- Backend status */
+  .backend-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-xs), var(--highlight);
+    font-size: var(--text-xs);
+  }
+
+  .backend-status > * {
+    margin: 0;
+  }
+
+  .backend-status h2,
+  .backend-status h3 {
+    color: var(--muted);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .backend-status .checked-at {
+    color: var(--muted);
+  }
+
+  .backend-status .dependencies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+    padding: 0;
+    list-style: none;
+    color: var(--fg-2);
+  }
+
+  .backend-status .check-again {
+    margin-left: auto;
+    min-height: var(--target);
+    font-size: var(--text-xs);
+  }
+
+  /* Strip layout: the check time takes its own row so dependencies start a new one. */
+  @media (max-width: 1023.98px) {
+    .backend-status .checked-at {
+      flex: 1 1 100%;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .backend-status {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      gap: var(--space-2);
+      margin-top: auto;
+      padding: var(--space-3);
+      border-radius: var(--radius-lg);
+    }
+
+    .backend-status .status {
+      margin-top: var(--space-1);
+    }
+
+    .backend-status .dependencies {
+      flex-direction: column;
+    }
+
+    .backend-status .check-again {
+      width: 100%;
+      margin: var(--space-1) 0 0;
+    }
+  }
+
+  /* ---------------------------------------------------------- Page header */
+  .page-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .page-header > * {
+    margin: 0;
+  }
+
+  .page-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .page-title-row > h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .kind-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    box-shadow: var(--highlight);
+    color: var(--fg-2);
+  }
+
+  .kind-icon--lg {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-sm), var(--highlight);
+  }
+
+  .section-icon--lg {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--radius-lg);
+  }
+
+  .page-lede {
+    max-width: 65ch;
+    color: var(--fg-2);
+  }
+
+  .page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    color: var(--muted);
+  }
+
+  /* -------------------------------------------------------------- Overview */
+  .all-clear {
+    --tone: var(--ok);
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    border-color: color-mix(in srgb, var(--tone) 28%, transparent);
+    background-image: linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--tone) 10%, var(--surface)) 0%,
+      var(--surface) 70%
+    );
+  }
+
+  .all-clear > * {
+    margin: 0;
+  }
+
+  .all-clear-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+    border-radius: var(--radius);
+    background-color: color-mix(in srgb, var(--tone) 12%, var(--surface));
+    color: var(--tone);
+  }
+
+  .all-clear p {
+    color: var(--fg);
+    font-weight: var(--weight-medium);
+  }
+
+  .overview-group {
+    margin-top: var(--space-8);
+  }
+
+  .overview-group > section > h4 {
+    margin-top: var(--space-5);
+  }
+
+  .overview-group > .section-head + p {
+    color: var(--fg-2);
+  }
+
+  .overview-group > .panel {
+    border-left: 3px solid var(--tone);
+  }
+
+  .page-group {
+    margin-top: var(--space-8);
+  }
+
+  .page-group:first-of-type {
+    margin-top: var(--space-6);
+  }
+
+  .overview-list,
+  .incident-list {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  * + .overview-list,
+  * + .incident-list {
+    margin-top: var(--space-3);
+  }
+
+  .overview-list > li,
+  .incident-list > li.panel {
+    --panel-pad: var(--space-4);
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border-left: 3px solid var(--tone, var(--border-strong));
+    overflow-wrap: anywhere;
+  }
+
+  .overview-list > li > a,
+  .incident-list > li > a,
+  .incident-list h4 a {
+    color: var(--fg);
+    font-weight: var(--weight-semibold);
+    text-decoration-color: color-mix(in srgb, var(--fg) 25%, transparent);
+  }
+
+  .overview-list > li > a:hover,
+  .incident-list > li > a:hover,
+  .incident-list h4 a:hover {
+    color: var(--accent-fg);
+    text-decoration-color: currentColor;
+  }
+
+  .overview .panel > p,
+  .overview .note {
+    max-width: 80ch;
+  }
+
+  /* ------------------------------------------------------------- Monitors */
+  .monitor-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
+    gap: var(--space-4);
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .monitor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-4) var(--space-5) var(--space-5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-sm), var(--highlight);
+    overflow-wrap: anywhere;
+    transition:
+      border-color var(--duration) var(--ease-out),
+      box-shadow var(--duration) var(--ease-out),
+      transform var(--duration) var(--ease-out);
+  }
+
+  .monitor-card > * {
+    margin: 0;
+  }
+
+  .monitor-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow), var(--highlight);
+    transform: translateY(-1px);
+  }
+
+  .monitor-card:has(h3 a:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .monitor-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .monitor-card h3 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--text-md);
+  }
+
+  .monitor-card h3 a {
+    color: var(--fg);
+    text-decoration: none;
+  }
+
+  .monitor-card h3 a:focus-visible {
+    outline: none;
+  }
+
+  /* The title link covers the card; other links sit above it. */
+  .monitor-card h3 a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .monitor-card .incident-alert a {
+    position: relative;
+    z-index: 1;
+  }
+
+  .monitor-card-chevron {
+    color: var(--muted);
+    transition:
+      transform var(--duration) var(--ease-out),
+      color var(--duration) var(--ease-out);
+  }
+
+  .monitor-card:hover .monitor-card-chevron {
+    color: var(--accent-fg);
+    transform: translateX(2px);
+  }
+
+  .monitor-card .monitor-headline {
+    font-size: var(--text-sm);
+  }
+
+  .list-footer {
+    margin-top: var(--space-5);
+  }
+
+  .monitor-detail > .page-header + * {
+    margin-top: var(--space-6);
+  }
+
+  .monitor-form-card {
+    max-width: 44rem;
+  }
+
+  .monitor-form {
+    max-width: 40rem;
+  }
+
+  .panel .monitor-form {
+    margin-top: var(--space-5);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border);
+  }
+
+  .monitor-form-card .monitor-form {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .history-filters {
+    margin-top: var(--space-4);
+  }
+
+  .history-filters.toolbar {
+    align-items: flex-end;
+  }
+
+  .history-filters .button {
+    align-self: end;
+  }
+
+  .monitor-application-field {
+    margin-top: var(--space-4);
+  }
+
+  /* Maintenance windows */
+  .maintenance-windows {
+    display: grid;
+    gap: var(--space-2);
+    padding: 0;
+    list-style: none;
+  }
+
+  .maintenance-window {
+    --tone: var(--info);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tone);
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .maintenance-window > p {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--fg-2);
+  }
+
+  .maintenance-window > .button,
+  .maintenance-window > .confirm-step {
+    margin: 0;
+  }
+
+  .maintenance-window > .confirm-step {
+    flex: 1 1 100%;
+  }
+
+  .maintenance-window--ended,
+  .maintenance-window--cancelled {
+    --tone: var(--neutral);
+    background-color: var(--surface);
+  }
+
+  .window-state {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem;
+    padding: 0 var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--tone) 12%, transparent);
+    color: var(--fg);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Token panels: the secret reads as a code block. */
+  .token-panel {
+    border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  }
+
+  .token-panel > code {
+    display: block;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background-color: var(--surface-inset);
+    color: var(--fg);
+    font-size: var(--text-sm);
+    letter-spacing: 0.02em;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+
+  .token-panel pre {
+    max-width: 100%;
+    padding: var(--space-3) var(--space-4);
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface-inset);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .token-panel pre code {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  /* Danger zone */
+  .danger-zone {
+    border-color: color-mix(in srgb, var(--fail) 30%, var(--border));
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--fail) 5%, var(--surface)),
+      var(--surface) 8rem
+    );
+  }
+
+  .danger-zone > .card-head {
+    border-bottom-color: color-mix(in srgb, var(--fail) 22%, var(--border));
+  }
+
+  .danger-zone .confirm-step {
+    border-color: color-mix(in srgb, var(--fail) 30%, transparent);
+    background-color: color-mix(in srgb, var(--fail) 6%, var(--surface));
+  }
+
+  .recent-incidents {
+    display: grid;
+    gap: var(--space-2);
+    padding: 0;
+    list-style: none;
+  }
+
+  .recent-incidents > li {
+    --tone: var(--neutral);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tone);
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    font-size: var(--text-sm);
+  }
+
+  .recent-incidents > li.tone-fail {
+    --tone: var(--fail);
+  }
+
+  /* -------------------------------------------------------------- Incidents */
+  .incident-item--open,
+  .attention-item {
+    --tone: var(--fail);
+  }
+
+  .incident-item--recovered {
+    --tone: var(--ok);
+  }
+
+  .incident-item--archived {
+    --tone: var(--neutral);
+  }
+
+  .attention-item {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+  }
+
+  .incident-list > li.panel > * {
+    margin: 0;
+  }
+
+  .incident-list > li.panel > * + * {
+    margin-top: var(--space-1);
+  }
+
+  .incident-list > li.panel > p {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+  }
+
+  .incident-list h4 {
+    color: var(--fg);
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    text-transform: none;
+  }
+
+  .incident-list > li:not(.panel, .notification-card) {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    font-size: var(--text-sm);
+  }
+
+  .incident-list > li:not(.panel, .notification-card) > * {
+    margin: 0;
+  }
+
+  .incident-list > li:not(.panel, .notification-card) > * + * {
+    margin-top: var(--space-1);
+  }
+
+  .incident-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    color: var(--fg-2);
+  }
+
+  .incident-facts > * {
+    margin: 0;
+  }
+
+  .evidence-list {
+    padding-left: var(--space-5);
+  }
+
+  .evidence-list li + li {
+    margin-top: var(--space-1);
+  }
+
+  /* Vertical timeline with a rail and tone dots */
+  .incident-timeline {
+    position: relative;
+    padding: 0;
+    list-style: none;
+  }
+
+  .incident-timeline > li {
+    position: relative;
+    padding: 0 0 var(--space-4) var(--space-6);
+    overflow-wrap: anywhere;
+  }
+
+  .incident-timeline > li:last-child {
+    padding-bottom: 0;
+  }
+
+  .incident-timeline > li::before {
+    content: '';
+    position: absolute;
+    top: 0.45em;
+    left: 0.25rem;
+    width: 0.625rem;
+    height: 0.625rem;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    background-color: var(--surface);
+  }
+
+  .incident-timeline > li::after {
+    content: '';
+    position: absolute;
+    top: 1.35em;
+    bottom: -0.1em;
+    left: calc(0.25rem + 0.3125rem - 1px);
+    width: 2px;
+    background-color: var(--border);
+  }
+
+  .incident-timeline > li:last-child::after {
+    display: none;
+  }
+
+  .incident-timeline time {
+    color: var(--fg);
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Notification cards with delivery tone */
+  .notification-card {
+    --tone: var(--neutral);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tone);
+    border-radius: var(--radius);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-xs);
+    overflow-wrap: anywhere;
+  }
+
+  .notification-card > * {
+    margin: 0;
+  }
+
+  .notification-card > * + * {
+    margin-top: var(--space-2);
+  }
+
+  .notification--delivered {
+    --tone: var(--ok);
+  }
+
+  .notification--failed {
+    --tone: var(--fail);
+  }
+
+  .notification--retry_wait {
+    --tone: var(--warn);
+  }
+
+  .notification-card h4 {
+    color: var(--fg);
+    font-size: var(--text-base);
+    letter-spacing: var(--tracking-tight);
+    text-transform: none;
+  }
+
+  .notification-card > p,
+  .notification-card > ol {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+  }
+
+  .notification-card > ol {
+    padding-left: var(--space-5);
+  }
+
+  /* --------------------------------------------------------------- Activity */
+  .activity-filters {
+    margin-top: var(--space-5);
+  }
+
+  .activity-list {
+    position: relative;
+    display: grid;
+    gap: var(--space-2);
+    margin: var(--space-5) 0 0;
+    padding: 0 0 0 var(--space-6);
+    list-style: none;
+  }
+
+  .activity-list::before {
+    content: '';
+    position: absolute;
+    top: var(--space-3);
+    bottom: var(--space-3);
+    left: 0.5rem;
+    width: 2px;
+    border-radius: 1px;
+    background-color: var(--border);
+  }
+
+  .activity-list > li {
+    --tone: var(--neutral);
+    position: relative;
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .activity-list > li::before {
+    content: '';
+    position: absolute;
+    top: 1.05rem;
+    left: calc(var(--space-6) * -1 + 0.5rem - 4px);
+    width: 0.625rem;
+    height: 0.625rem;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background-color: var(--tone);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 40%, transparent);
+  }
+
+  .activity-item--deployment {
+    --tone: var(--accent);
+  }
+
+  .activity-item--late {
+    --tone: var(--warn);
+  }
+
+  .activity-list > li > a {
+    font-weight: var(--weight-semibold);
+  }
+
+  /* The monitor or application name reads as the entry's title line. */
+  .activity-list > li > a:first-child {
+    display: table;
+    margin-bottom: var(--space-1);
+  }
+
+  /* ------------------------------------------------------------ Applications */
+  .applications-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+    align-items: start;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+  }
+
+  .applications-list > .panel {
+    max-width: 56rem;
+    margin: 0;
+  }
+
+  .create-application {
+    max-width: 44rem;
+  }
+
+  .application-card > section {
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+  }
+
+  .application-card > section > * + * {
+    margin-top: var(--space-2);
+  }
+
+  .application-card > form {
+    margin-top: var(--space-4);
+  }
+
+  .application-meta {
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+
+  .member-states {
+    display: grid;
+    gap: var(--space-1);
+    padding: 0;
+    list-style: none;
+  }
+
+  .member-states > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .application-members {
+    display: grid;
+    gap: var(--space-1);
+    padding: 0;
+    list-style: none;
+  }
+
+  .application-members > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    min-width: 0;
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .marker-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+    align-items: end;
+    gap: var(--space-3);
+  }
+
+  .marker-form > * {
+    margin: 0;
+  }
+
+  .marker-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .marker-form .field > * {
+    margin: 0;
+  }
+
+  .marker-form .field input {
+    width: 100%;
+  }
+
+  .marker-form > .button {
+    justify-self: start;
+  }
+
+  .application-markers {
+    display: grid;
+    gap: var(--space-2);
+    padding: 0;
+    list-style: none;
+  }
+
+  .application-markers > li.panel {
+    position: relative;
+    margin: 0;
+    padding: var(--space-3) var(--space-4) var(--space-3) 2.75rem;
+    border-radius: var(--radius);
+    background-color: var(--surface-2);
+    box-shadow: none;
+    font-size: var(--text-sm);
+  }
+
+  .application-markers > li.panel > * + * {
+    margin-top: var(--space-1);
+  }
+
+  .application-markers .marker-icon {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-4);
+    color: var(--accent-fg);
+  }
+
+  .application-markers p {
+    color: var(--fg-2);
+  }
+
+  /* ---------------------------------------------------------------- Settings */
+  .settings-grid > .panel > p {
+    color: var(--fg-2);
+  }
+
+  /* --------------------------------------------------------------- Not found */
+  .empty-state .back-link {
+    justify-content: center;
+  }
+}

@@ -1,10 +1,9 @@
-import { useId, useState } from 'react';
+import { useId, useState, useSyncExternalStore } from 'react';
 import {
+  Area,
   Bar,
   CartesianGrid,
   ComposedChart,
-  Label,
-  Legend,
   Line,
   ReferenceArea,
   ReferenceLine,
@@ -12,6 +11,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type BarShapeProps,
+  type DotItemDotProps,
 } from 'recharts';
 import type { HttpSummary, MonitorSummary, Span } from '../api/dailyUse';
 import {
@@ -19,29 +20,46 @@ import {
   heartbeatChartRows,
   latencyAxisMaximum,
   latencyPlotRows,
+  latencyTicks,
   latencyValue,
   shadedSpans,
   statusBucketLabel,
+  type ChartRow,
 } from '../lib/summaryPresentation';
 import { formatLocalWithOffset } from '../lib/time';
+import { BandPills, ChartTooltipCard, DeadlineLabel } from './charts/chartOverlays';
+import {
+  LineLegend,
+  LineSwatch,
+  PatternSwatch,
+  SeriesLegend,
+  SeriesPatternDefs,
+  type LineSeries,
+  type PatternSeries,
+} from './charts/seriesPatterns';
+import { Icon } from './Icon';
 import { ScrollRegion } from './ScrollRegion';
 
 const httpSeries = [
-  { key: 'healthy', label: 'Healthy', color: '#217949' },
-  { key: 'failing', label: 'Failing', color: '#b43535' },
-  { key: 'checkerProblem', label: 'Checker problem', color: '#985c09' },
-  { key: 'notObserved', label: 'Not observed', color: '#555b69' },
-  { key: 'maintenance', label: 'Maintenance', color: '#6560a2' },
-  { key: 'notCounted', label: 'Not counted', color: '#537e94' },
-] as const;
+  { key: 'healthy', label: 'Healthy', tone: 'healthy' },
+  { key: 'failing', label: 'Failing', tone: 'failing' },
+  { key: 'checkerProblem', label: 'Checker problem', tone: 'warning' },
+  { key: 'notObserved', label: 'Not observed', tone: 'not-observed' },
+  { key: 'maintenance', label: 'Maintenance', tone: 'maintenance' },
+  { key: 'notCounted', label: 'Not counted', tone: 'not-counted' },
+] as const satisfies readonly PatternSeries[];
 const heartbeatSeries = [
-  { key: 'onTime', label: 'On time', color: '#217949' },
-  { key: 'late', label: 'Late', color: '#985c09' },
-  { key: 'missed', label: 'Missed', color: '#b43535' },
-  { key: 'notObserved', label: 'Not observed', color: '#555b69' },
-  { key: 'maintenance', label: 'Maintenance', color: '#6560a2' },
-  { key: 'notCounted', label: 'Not counted', color: '#537e94' },
-] as const;
+  { key: 'onTime', label: 'On time', tone: 'healthy' },
+  { key: 'late', label: 'Late', tone: 'warning' },
+  { key: 'missed', label: 'Missed', tone: 'failing' },
+  { key: 'notObserved', label: 'Not observed', tone: 'not-observed' },
+  { key: 'maintenance', label: 'Maintenance', tone: 'maintenance' },
+  { key: 'notCounted', label: 'Not counted', tone: 'not-counted' },
+] as const satisfies readonly PatternSeries[];
+const latencySeries = [
+  { key: 'medianMs', label: 'Median response time', tone: 'median' },
+  { key: 'maxMs', label: 'Maximum response time', tone: 'max' },
+] as const satisfies readonly LineSeries[];
 const statusRows = (summary: MonitorSummary) =>
   summary.kind === 'http'
     ? chartRows(summary).map((row) => ({
@@ -63,12 +81,37 @@ const statusRows = (summary: MonitorSummary) =>
 const statusSeries = (summary: MonitorSummary) =>
   summary.kind === 'http' ? httpSeries : heartbeatSeries;
 
+/** Chart sizing and labels follow the viewport; jsdom has no `matchMedia`. */
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia?.(query);
+      list?.addEventListener('change', onChange);
+      return () => list?.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia?.(query).matches ?? false,
+  );
+}
+/** `useId` output made safe for `url(#…)` references. */
+function useSvgId(): string {
+  return `sf${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
 function timeTick(value: number) {
   return new Date(value).toLocaleDateString(undefined, {
     month: 'numeric',
     day: 'numeric',
     hour: 'numeric',
   });
+}
+const tick = { fontSize: 11 };
+function ChartToggle({ table, onToggle }: { table: boolean; onToggle: () => void }) {
+  return (
+    <button className="button summary-toggle" type="button" aria-pressed={table} onClick={onToggle}>
+      <Icon name={table ? 'chart' : 'table'} size={16} />
+      {table ? 'Show as chart' : 'Show as table'}
+    </button>
+  );
 }
 function ChartTable({
   summary,
@@ -177,122 +220,158 @@ function ChartTable({
     </ScrollRegion>
   );
 }
+/** Stacked segment with a hairline gap above it, so buckets read as discrete counts. */
+function StatusSegment({ x, y, width, height, fill }: BarShapeProps) {
+  if (!(height > 0) || !(width > 0)) return <g />;
+  const gap = Math.min(1.5, height / 3);
+  return (
+    <rect
+      className="chart-segment"
+      x={x}
+      y={y + gap}
+      width={width}
+      height={height - gap}
+      rx={Math.min(2.5, width / 4, (height - gap) / 2)}
+      fill={fill}
+    />
+  );
+}
 function HistoryChart({
   summary,
   reducedMotion,
+  wide,
 }: {
   summary: MonitorSummary;
   reducedMotion: boolean;
+  wide: boolean;
 }) {
   const [table, setTable] = useState(false);
   const rows = statusRows(summary);
+  // Paused bands first so receive outages paint on top of them.
+  const bands = shadedSpans(summary, rows, true).sort(
+    (left, right) => Number(left.kind === 'outage') - Number(right.kind === 'outage'),
+  );
+  const series = statusSeries(summary);
   const captionId = useId();
+  const patternPrefix = useSvgId();
   return (
     <figure className="summary-figure">
-      <figcaption id={captionId}>
-        Status history — {summary.window}, {summary.bucketSeconds / 3600} h buckets. Denominator:
-        expected {summary.kind === 'http' ? 'scheduled checks' : 'heartbeat deadlines'}; paused time
-        excluded.
-        {summary.truncated
-          ? ` Partial window from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`
-          : ' Unobserved slots are not treated as healthy or failing.'}
-      </figcaption>
+      <div className="summary-figure__header">
+        <figcaption id={captionId} className="summary-figure__caption">
+          <span className="summary-figure__title">Status history</span>
+          <span className="summary-figure__description">
+            <span className="summary-figure__separator"> — </span>
+            {`${summary.window}, ${summary.bucketSeconds / 3600} h buckets. Denominator: expected ${summary.kind === 'http' ? 'scheduled checks' : 'heartbeat deadlines'}; paused time excluded.`}
+            {summary.truncated
+              ? ` Partial window from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`
+              : ' Unobserved slots are not treated as healthy or failing.'}
+          </span>
+        </figcaption>
+        <ChartToggle table={table} onToggle={() => setTable(!table)} />
+      </div>
       <p className="summary-shading-key">
         Shaded spans: <span className="shade-key--outage">Receive outage</span> — StatusForge was
         not receiving; <span className="shade-key--paused">Paused</span> — monitoring paused.
       </p>
-      <button
-        className="button"
-        type="button"
-        aria-pressed={table}
-        onClick={() => setTable(!table)}
-      >
-        {table ? 'Show as chart' : 'Show as table'}
-      </button>
       {table ? (
         <ChartTable summary={summary} latency={false} />
       ) : (
-        <div className="summary-plot">
-          <ResponsiveContainer width="100%" height={290}>
-            <ComposedChart
-              data={rows}
-              accessibilityLayer
-              aria-labelledby={captionId}
-              margin={{ top: 12, right: 8, bottom: 16, left: 0 }}
-            >
-              <defs>
-                {statusSeries(summary).map((item, index) => (
-                  <pattern
-                    key={item.key}
-                    id={`status-pattern-${item.key}`}
-                    patternUnits="userSpaceOnUse"
-                    width="8"
-                    height="8"
-                    patternTransform={`rotate(${index * 17 + 30})`}
-                  >
-                    <rect width="8" height="8" fill={item.color} />
-                    <path d="M 0 0 L 0 8" stroke="#fff" strokeWidth="2" />
-                  </pattern>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                xAxisId="buckets"
-                dataKey="at"
-                tickFormatter={timeTick}
-                interval="preserveStartEnd"
-              />
-              <XAxis
-                xAxisId="time"
-                type="number"
-                dataKey="at"
-                hide
-                domain={[Date.parse(summary.from), Date.parse(summary.to)]}
-              />
-              <YAxis allowDecimals={false} />
-              <Tooltip
-                axisId="buckets"
-                labelFormatter={(value) => statusBucketLabel(rows, value)}
-              />
-              <Legend />
-              {shadedSpans(summary, rows, true).map((area) => (
-                <ReferenceArea
-                  key={`${area.from}-${area.to}`}
-                  xAxisId="time"
-                  x1={area.from}
-                  x2={area.to}
-                  fill={area.outage ? '#e3a4a4' : '#d4d4dc'}
-                  fillOpacity={0.32}
-                  label={
-                    window.innerWidth >= 600
-                      ? {
-                          value:
-                            area.outage && area.paused
-                              ? 'Outage + pause'
-                              : area.outage
-                                ? 'Outage'
-                                : 'Paused',
-                          position: 'insideTop',
-                          fontSize: 10,
-                        }
-                      : false
-                  }
-                />
-              ))}
-              {statusSeries(summary).map((item) => (
-                <Bar
+        <>
+          <SeriesPatternDefs prefix={patternPrefix} series={series} />
+          <SeriesLegend prefix={patternPrefix} series={series} />
+          <div className="summary-plot">
+            <ResponsiveContainer width="100%" height={wide ? 280 : 232}>
+              <ComposedChart
+                data={rows}
+                accessibilityLayer
+                aria-labelledby={captionId}
+                barCategoryGap={wide ? '24%' : '16%'}
+                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              >
+                <CartesianGrid xAxisId="buckets" vertical={false} />
+                <XAxis
                   xAxisId="buckets"
-                  key={item.key}
-                  dataKey={item.key}
-                  name={item.label}
-                  stackId="slots"
-                  fill={`url(#status-pattern-${item.key})`}
-                  isAnimationActive={!reducedMotion}
+                  dataKey="at"
+                  tickFormatter={timeTick}
+                  interval="preserveStartEnd"
+                  minTickGap={18}
+                  tickMargin={8}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={tick}
                 />
-              ))}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+                <XAxis
+                  xAxisId="time"
+                  type="number"
+                  dataKey="at"
+                  hide
+                  domain={[Date.parse(summary.from), Date.parse(summary.to)]}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={tick}
+                  tickMargin={6}
+                  width={36}
+                />
+                <Tooltip
+                  axisId="buckets"
+                  cursor={{ className: 'chart-cursor' }}
+                  isAnimationActive={!reducedMotion}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const row = payload[0].payload as (typeof rows)[number];
+                    return (
+                      <ChartTooltipCard
+                        title={statusBucketLabel(rows, row.at)}
+                        facts={[
+                          { label: 'Expected', value: row.expected },
+                          { label: 'Recorded', value: row.recorded },
+                        ]}
+                        rows={series.map((item) => ({
+                          key: item.key,
+                          swatch: <PatternSwatch prefix={patternPrefix} item={item} />,
+                          label: item.label,
+                          value: row[item.key],
+                        }))}
+                      />
+                    );
+                  }}
+                />
+                {bands.map((area) => (
+                  <ReferenceArea
+                    key={`${area.kind}-${area.from}-${area.to}`}
+                    xAxisId="time"
+                    x1={area.from}
+                    x2={area.to}
+                    className={`chart-band chart-band--${area.kind}`}
+                  />
+                ))}
+                {wide ? (
+                  <BandPills
+                    spans={bands}
+                    domain={[Date.parse(summary.from), Date.parse(summary.to)]}
+                  />
+                ) : null}
+                {series.map((item) => (
+                  <Bar
+                    xAxisId="buckets"
+                    key={item.key}
+                    dataKey={item.key}
+                    name={item.label}
+                    stackId="slots"
+                    className={`chart-bar chart-bar--${item.tone}`}
+                    fill={`url(#${patternPrefix}-${item.key})`}
+                    maxBarSize={28}
+                    shape={StatusSegment}
+                    isAnimationActive={!reducedMotion}
+                  />
+                ))}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
     </figure>
   );
@@ -301,110 +380,184 @@ function LatencyChart({
   summary,
   deadlineMs,
   reducedMotion,
+  wide,
 }: {
   summary: HttpSummary;
   deadlineMs: number;
   reducedMotion: boolean;
+  wide: boolean;
 }) {
   const [table, setTable] = useState(false);
   const rows = latencyPlotRows(summary);
   const captionId = useId();
+  const gradientId = useSvgId();
+  const yTicks = latencyTicks(latencyAxisMaximum(summary, deadlineMs));
+  const outageSpans = shadedSpans(summary, chartRows(summary), false);
+  /** A dot only where neither neighbour has a value, so an isolated bucket is never invisible. */
+  const isolatedDot =
+    (key: 'medianMs' | 'maxMs') =>
+    ({ index, cx, cy }: DotItemDotProps) => {
+      if (rows[index]?.[key] == null || cx == null || cy == null) return null;
+      if (rows[index - 1]?.[key] != null || rows[index + 1]?.[key] != null) return null;
+      return (
+        <circle
+          className={`chart-dot chart-dot--${key === 'medianMs' ? 'median' : 'max'}`}
+          cx={cx}
+          cy={cy}
+          r={key === 'medianMs' ? 3 : 2.5}
+        />
+      );
+    };
   return (
     <figure className="summary-figure">
-      <figcaption id={captionId}>
-        Response time — {summary.window}, {summary.bucketSeconds / 3600} h buckets. Denominator:
-        responses within the check deadline ({deadlineMs} ms); no-response and checker problems
-        excluded. Empty buckets have no line.{' '}
-        {summary.truncated
-          ? `Partial window from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`
-          : 'Measured from this machine, not user experience.'}
-      </figcaption>
+      <div className="summary-figure__header">
+        <figcaption id={captionId} className="summary-figure__caption">
+          <span className="summary-figure__title">Response time</span>
+          <span className="summary-figure__description">
+            <span className="summary-figure__separator"> — </span>
+            {`${summary.window}, ${summary.bucketSeconds / 3600} h buckets. Denominator: responses within the check deadline (${deadlineMs} ms); no-response and checker problems excluded. Empty buckets have no line. `}
+            {summary.truncated
+              ? `Partial window from ${formatLocalWithOffset(new Date(summary.coveredFrom))}.`
+              : 'Measured from this machine, not user experience.'}
+          </span>
+        </figcaption>
+        <ChartToggle table={table} onToggle={() => setTable(!table)} />
+      </div>
       <p className="summary-shading-key">
         Shaded spans: <span className="shade-key--outage">Receive outage</span> — StatusForge was
         not receiving.
       </p>
-      <button
-        className="button"
-        type="button"
-        aria-pressed={table}
-        onClick={() => setTable(!table)}
-      >
-        {table ? 'Show as chart' : 'Show as table'}
-      </button>
       {table ? (
         <ChartTable summary={summary} latency deadlineMs={deadlineMs} />
       ) : (
-        <div className="summary-plot">
-          <ResponsiveContainer width="100%" height={290}>
-            <ComposedChart
-              data={rows}
-              accessibilityLayer
-              aria-labelledby={captionId}
-              margin={{ top: 12, right: 16, bottom: 16, left: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                type="number"
-                dataKey="at"
-                domain={[Date.parse(summary.from), Date.parse(summary.to)]}
-                tickFormatter={timeTick}
-                scale="time"
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                width={68}
-                domain={[0, latencyAxisMaximum(summary, deadlineMs)]}
-                tickFormatter={(value: number) => latencyValue(value).replace(' ', '\u00a0')}
-              />
-              <Tooltip labelFormatter={(value) => formatLocalWithOffset(new Date(Number(value)))} />
-              <Legend />
-              {shadedSpans(summary, chartRows(summary), false).map((area) => (
-                <ReferenceArea
-                  key={`${area.from}-${area.to}`}
-                  x1={area.from}
-                  x2={area.to}
-                  fill="#e3a4a4"
-                  fillOpacity={0.32}
-                  label={
-                    window.innerWidth >= 600
-                      ? {
-                          value: 'Outage',
-                          position: 'insideTop',
-                          fontSize: 10,
-                        }
-                      : false
-                  }
-                />
-              ))}
-              <ReferenceLine
-                y={deadlineMs}
-                ifOverflow="extendDomain"
-                stroke="#985c09"
-                strokeDasharray="5 3"
+        <>
+          <LineLegend series={latencySeries} />
+          <div className="summary-plot">
+            <ResponsiveContainer width="100%" height={wide ? 280 : 232}>
+              <ComposedChart
+                data={rows}
+                accessibilityLayer
+                aria-labelledby={captionId}
+                margin={{ top: 12, right: 12, bottom: 0, left: 0 }}
               >
-                <Label value="Check deadline" position="insideTopRight" />
-              </ReferenceLine>
-              <Line
-                type="linear"
-                dataKey="medianMs"
-                name="Median response time"
-                stroke="#276d9c"
-                strokeWidth={2}
-                connectNulls={false}
-                isAnimationActive={!reducedMotion}
-              />
-              <Line
-                type="linear"
-                dataKey="maxMs"
-                name="Maximum response time"
-                stroke="#a74268"
-                strokeWidth={2}
-                connectNulls={false}
-                isAnimationActive={!reducedMotion}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" className="chart-gradient-stop chart-gradient-stop--top" />
+                    <stop
+                      offset="100%"
+                      className="chart-gradient-stop chart-gradient-stop--bottom"
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  type="number"
+                  dataKey="at"
+                  domain={[Date.parse(summary.from), Date.parse(summary.to)]}
+                  tickFormatter={timeTick}
+                  scale="time"
+                  interval="preserveStartEnd"
+                  minTickGap={18}
+                  tickMargin={8}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={tick}
+                />
+                <YAxis
+                  width={54}
+                  domain={[0, yTicks[yTicks.length - 1]]}
+                  ticks={yTicks}
+                  tickFormatter={(value: number) => latencyValue(value).replace(' ', '\u00a0')}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={tick}
+                  tickMargin={6}
+                />
+                <Tooltip
+                  cursor={{ className: 'chart-cursor-line' }}
+                  isAnimationActive={!reducedMotion}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const row = payload[0].payload as ChartRow;
+                    return (
+                      <ChartTooltipCard
+                        title={formatLocalWithOffset(new Date(row.at))}
+                        facts={[{ label: 'Responses', value: row.samples }]}
+                        rows={[
+                          {
+                            key: 'median',
+                            swatch: <LineSwatch tone="median" />,
+                            label: 'Median',
+                            value: row.medianMs === null ? 'No median' : latencyValue(row.medianMs),
+                          },
+                          {
+                            key: 'max',
+                            swatch: <LineSwatch tone="max" />,
+                            label: 'Max',
+                            value: row.maxMs === null ? 'No response' : latencyValue(row.maxMs),
+                          },
+                        ]}
+                      />
+                    );
+                  }}
+                />
+                {outageSpans.map((area) => (
+                  <ReferenceArea
+                    key={`${area.from}-${area.to}`}
+                    x1={area.from}
+                    x2={area.to}
+                    className="chart-band chart-band--outage"
+                  />
+                ))}
+                {wide ? (
+                  <BandPills
+                    spans={outageSpans}
+                    domain={[Date.parse(summary.from), Date.parse(summary.to)]}
+                    deadline={{ ms: deadlineMs, yMax: yTicks[yTicks.length - 1] }}
+                  />
+                ) : null}
+                <ReferenceLine
+                  y={deadlineMs}
+                  ifOverflow="extendDomain"
+                  className="chart-deadline"
+                  label={<DeadlineLabel />}
+                />
+                <Area
+                  type="linear"
+                  dataKey="medianMs"
+                  className="chart-area chart-area--median"
+                  fill={`url(#${gradientId})`}
+                  stroke="none"
+                  connectNulls={false}
+                  activeDot={false}
+                  tooltipType="none"
+                  legendType="none"
+                  isAnimationActive={!reducedMotion}
+                />
+                <Line
+                  type="linear"
+                  dataKey="maxMs"
+                  name="Maximum response time"
+                  className="chart-line chart-line--max"
+                  connectNulls={false}
+                  dot={isolatedDot('maxMs')}
+                  activeDot={{ r: 3.5, className: 'chart-active-dot chart-active-dot--max' }}
+                  isAnimationActive={!reducedMotion}
+                />
+                <Line
+                  type="linear"
+                  dataKey="medianMs"
+                  name="Median response time"
+                  className="chart-line chart-line--median"
+                  connectNulls={false}
+                  dot={isolatedDot('medianMs')}
+                  activeDot={{ r: 4.5, className: 'chart-active-dot chart-active-dot--median' }}
+                  isAnimationActive={!reducedMotion}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
     </figure>
   );
@@ -416,12 +569,18 @@ export default function SummaryCharts({
   summary: MonitorSummary;
   deadlineMs?: number;
 }) {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const wide = useMediaQuery('(min-width: 600px)');
   return (
     <div className="summary-charts">
-      <HistoryChart summary={summary} reducedMotion={reducedMotion} />
+      <HistoryChart summary={summary} reducedMotion={reducedMotion} wide={wide} />
       {summary.kind === 'http' && deadlineMs !== undefined ? (
-        <LatencyChart summary={summary} deadlineMs={deadlineMs} reducedMotion={reducedMotion} />
+        <LatencyChart
+          summary={summary}
+          deadlineMs={deadlineMs}
+          reducedMotion={reducedMotion}
+          wide={wide}
+        />
       ) : null}
     </div>
   );

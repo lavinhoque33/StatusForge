@@ -288,7 +288,7 @@ export function MonitorForm({
           {formMessage}
         </p>
       )}
-      <button type="submit" className="button" disabled={pending || disabled}>
+      <button type="submit" className="button button--primary" disabled={pending || disabled}>
         {pending ? 'Saving…' : submitLabel}
       </button>
     </form>

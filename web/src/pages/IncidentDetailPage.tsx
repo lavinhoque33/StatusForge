@@ -23,10 +23,12 @@ import { useNow } from '../lib/useNow';
 import { usePolling } from '../lib/usePolling';
 import { Link } from '../router/Link';
 import { ApplicationReference } from '../components/ApplicationReference';
+import { CardHead } from '../components/CardHead';
+import { Icon } from '../components/Icon';
 
 function EvidenceList({ items }: { items: Evidence[] }) {
   return (
-    <ul>
+    <ul className="evidence-list">
       {items.map((item) => (
         <li key={item.observationId}>
           <time dateTime={item.startedAt}>{formatLocalWithOffset(new Date(item.startedAt))}</time>:{' '}
@@ -122,7 +124,10 @@ export function IncidentDetailPage({
       <section>
         <h2>Incident not found</h2>
         <p>No incident exists at this address.</p>
-        <Link to="/incidents">Back to incidents</Link>
+        <Link to="/incidents" className="back-link">
+          <Icon name="arrow-left" size={16} />
+          Back to incidents
+        </Link>
       </section>
     );
   if (detail === null)
@@ -130,7 +135,9 @@ export function IncidentDetailPage({
       <section>
         <h2>Incident</h2>
         {error === null ? (
-          <p role="status">Loading incident…</p>
+          <p role="status" className="loading">
+            Loading incident…
+          </p>
         ) : (
           <p role="alert">
             {error}{' '}
@@ -148,38 +155,56 @@ export function IncidentDetailPage({
   const { incident, events, gaps, notifications, nearbyDeployments } = detail;
   return (
     <article aria-labelledby="incident-heading">
-      <h2 id="incident-heading">
-        {incident.monitorName} —{' '}
-        {incident.state === 'open' ? 'Open incident' : resolutionWords(incident.resolution)}
-      </h2>
-      <p>
-        <Link to={`/monitors/${encodeURIComponent(monitorId)}`}>Back to monitor</Link> ·{' '}
-        <Link to="/incidents">All incidents</Link>
-      </p>
-      <p>
-        Opened{' '}
-        <time dateTime={incident.openedAt}>
-          {formatLocalWithOffset(new Date(incident.openedAt))}
-        </time>
-        ; {incident.state === 'open' ? 'open for' : 'duration'} {durationWords(incident, now)}.
-      </p>
-      {incident.resolvedAt === null ? null : (
-        <p>
-          Resolved{' '}
-          <time dateTime={incident.resolvedAt}>
-            {formatLocalWithOffset(new Date(incident.resolvedAt))}
-          </time>{' '}
-          — {resolutionWords(incident.resolution)}
+      <header className="page-header">
+        <div className="page-title-row">
+          <span
+            className={`section-icon section-icon--lg tone-${incident.state === 'open' ? 'fail' : incident.resolution === 'recovered' ? 'ok' : 'neutral'}`}
+            aria-hidden="true"
+          >
+            <Icon name={incident.state === 'open' ? 'incidents' : 'check-circle'} size={20} />
+          </span>
+          <h2 id="incident-heading">
+            {incident.monitorName} —{' '}
+            {incident.state === 'open' ? 'Open incident' : resolutionWords(incident.resolution)}
+          </h2>
+        </div>
+        <p className="page-actions">
+          <Link to={`/monitors/${encodeURIComponent(monitorId)}`} className="back-link">
+            <Icon name="arrow-left" size={16} />
+            Back to monitor
+          </Link>{' '}
+          ·{' '}
+          <Link to="/incidents" className="back-link">
+            All incidents
+          </Link>
         </p>
-      )}
-      {incident.monitoringPaused ? <p>Monitoring paused</p> : null}
-      {incident.inMaintenance ? <p>In maintenance</p> : null}
-      {incident.applicationId !== null ? (
-        <p>
-          Application:{' '}
-          <ApplicationReference id={incident.applicationId} applications={applications} />
-        </p>
-      ) : null}
+        <div className="incident-facts">
+          <p>
+            Opened{' '}
+            <time dateTime={incident.openedAt}>
+              {formatLocalWithOffset(new Date(incident.openedAt))}
+            </time>
+            ; {incident.state === 'open' ? 'open for' : 'duration'} {durationWords(incident, now)}.
+          </p>
+          {incident.resolvedAt === null ? null : (
+            <p>
+              Resolved{' '}
+              <time dateTime={incident.resolvedAt}>
+                {formatLocalWithOffset(new Date(incident.resolvedAt))}
+              </time>{' '}
+              — {resolutionWords(incident.resolution)}
+            </p>
+          )}
+          {incident.monitoringPaused ? <p>Monitoring paused</p> : null}
+          {incident.inMaintenance ? <p>In maintenance</p> : null}
+          {incident.applicationId !== null ? (
+            <p>
+              Application:{' '}
+              <ApplicationReference id={incident.applicationId} applications={applications} />
+            </p>
+          ) : null}
+        </div>
+      </header>
       {error === null ? null : (
         <p role="alert">Could not refresh: {error}. Showing last available data.</p>
       )}
@@ -190,11 +215,15 @@ export function IncidentDetailPage({
         </p>
       ) : null}
       <section className="panel" aria-labelledby="opening-heading">
-        <h3 id="opening-heading">Opening evidence</h3>
+        <CardHead icon="alert-circle" tone="fail">
+          <h3 id="opening-heading">Opening evidence</h3>
+        </CardHead>
         <EvidenceList items={incident.openingEvidence} />
       </section>
       <section className="panel" aria-labelledby="failure-heading">
-        <h3 id="failure-heading">Failure summary</h3>
+        <CardHead icon="x-circle" tone="fail">
+          <h3 id="failure-heading">Failure summary</h3>
+        </CardHead>
         <p>
           {incident.failureCount} failed checks between{' '}
           <time dateTime={incident.firstFailureAt}>
@@ -216,7 +245,9 @@ export function IncidentDetailPage({
         <p>{incident.maintenanceObservationCount} observations during maintenance.</p>
       </section>
       <section className="panel" aria-labelledby="nearby-deployments-heading">
-        <h3 id="nearby-deployments-heading">Nearby deployments</h3>
+        <CardHead icon="flag">
+          <h3 id="nearby-deployments-heading">Nearby deployments</h3>
+        </CardHead>
         <p>Context only — a deployment near an incident does not show it caused the incident.</p>
         {nearbyDeployments.length === 0 ? (
           <p>No deployments near this incident.</p>
@@ -247,7 +278,9 @@ export function IncidentDetailPage({
         )}
       </section>
       <section className="panel" aria-labelledby="incident-timeline-heading">
-        <h3 id="incident-timeline-heading">Timeline</h3>
+        <CardHead icon="clock">
+          <h3 id="incident-timeline-heading">Timeline</h3>
+        </CardHead>
         {events.length === 0 && gaps.length === 0 ? (
           <p>No timeline events recorded.</p>
         ) : (
@@ -263,7 +296,9 @@ export function IncidentDetailPage({
       </section>
       {incident.recoveryEvidence.length === 0 ? null : (
         <section className="panel" aria-labelledby="recovery-heading">
-          <h3 id="recovery-heading">Recovery evidence</h3>
+          <CardHead icon="check-circle" tone="ok">
+            <h3 id="recovery-heading">Recovery evidence</h3>
+          </CardHead>
           <EvidenceList items={incident.recoveryEvidence} />
         </section>
       )}
@@ -273,16 +308,18 @@ export function IncidentDetailPage({
         className="panel"
         aria-labelledby="notifications-heading"
       >
-        <h3 id="notifications-heading" tabIndex={-1}>
-          Notifications
-        </h3>
+        <CardHead icon="bell">
+          <h3 id="notifications-heading" tabIndex={-1}>
+            Notifications
+          </h3>
+        </CardHead>
         {notice === null ? null : <p role="status">{notice}</p>}
         {notifications.length === 0 ? (
           <p>No notifications recorded.</p>
         ) : (
           <ul className="incident-list">
             {notifications.map((note) => (
-              <li key={note.id} className="notification-card">
+              <li key={note.id} className={`notification-card notification--${note.state}`}>
                 <h4
                   tabIndex={-1}
                   ref={(node) => {
@@ -332,7 +369,7 @@ export function IncidentDetailPage({
                 {note.state === 'failed' ? (
                   <button
                     type="button"
-                    className="button"
+                    className="button button--primary"
                     aria-disabled={pendingId === note.id ? true : undefined}
                     onClick={() => void retry(note)}
                   >

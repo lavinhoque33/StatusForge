@@ -15,6 +15,7 @@ import {
 } from '../lib/monitorForm';
 import { navigate } from '../router/history';
 import { Link } from '../router/Link';
+import { Icon } from '../components/Icon';
 
 /**
  * Create form for a new monitor. The interval defaults to the
@@ -93,25 +94,27 @@ export function MonitorCreatePage() {
   return (
     <section aria-labelledby="create-monitor-heading">
       <h2 id="create-monitor-heading">New monitor</h2>
-      <p>
+      <p className="page-lede">
         Choose an HTTP check for a loopback target, or a heartbeat to receive completion reports
         from a job.
       </p>
       {issued === null ? (
-        <MonitorForm
-          allowKindChoice
-          fields={fields}
-          onFieldsChange={setFields}
-          fieldErrors={fieldErrors}
-          formMessage={formMessage}
-          pending={pending}
-          intervals={intervals}
-          onIntervalChange={(seconds) => {
-            choice.current.current = seconds;
-          }}
-          submitLabel="Create monitor"
-          onSubmit={submit}
-        />
+        <div className="panel monitor-form-card">
+          <MonitorForm
+            allowKindChoice
+            fields={fields}
+            onFieldsChange={setFields}
+            fieldErrors={fieldErrors}
+            formMessage={formMessage}
+            pending={pending}
+            intervals={intervals}
+            onIntervalChange={(seconds) => {
+              choice.current.current = seconds;
+            }}
+            submitLabel="Create monitor"
+            onSubmit={submit}
+          />
+        </div>
       ) : (
         <>
           <p role="status">Heartbeat created. Token shown once.</p>
@@ -124,7 +127,10 @@ export function MonitorCreatePage() {
         </>
       )}
       <p>
-        <Link to="/monitors">Back to monitors</Link>
+        <Link to="/monitors" className="back-link">
+          <Icon name="arrow-left" size={16} />
+          Back to monitors
+        </Link>
       </p>
     </section>
   );
