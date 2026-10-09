@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Web client
+
+- The web client is restyled in light and dark schemes with a layered design system: design tokens and cascade
+  layers, a sidebar shell (a top header below 1024 px, a navigation grid below 520 px), card headers with icons,
+  tone rails, shape-coded state pills, and tables that stack on small screens. A "Skip to content" link moves focus
+  to the page heading. Wording, roles and behaviour are unchanged. Icons are self-authored inline SVG.
+- The monitor summary gets a segmented window control and a stat strip above the unchanged sentences. Its charts
+  gain patterned stacked status bars, labelled outage and paused bands, a latency chart with a gradient median
+  area, an isolated-point marker and a labelled check deadline, and token-coloured tooltips. The chart code is
+  still a separate lazy chunk.
+- Summary charts shade a paused span and a touching receive outage separately, each in its own tone with its own
+  "Paused" or "Outage" label. They were merged into one outage-coloured "Outage + pause" band, which painted paused
+  time as an outage. Band labels now stack in rows, so nearby labels never cover each other or the check-deadline
+  label.
+- The UI bundles the Inter variable font (`@fontsource-variable/inter`, SIL Open Font License 1.1) as same-origin
+  woff2 files, so it renders the same on every OS. Vite never inlines font files, so the CSP's `font-src 'self'`
+  holds. The licence text ships at `/fonts/Inter-LICENSE.txt`, and `licence-exceptions.json` records the reasoned
+  `OFL-1.1` exception.
+
+### Demo
+
+- `make demo` seeds a varied week: five monitors in one application, per-service response-time profiles with daily
+  cycles and spikes, isolated failures and timeouts below the incident threshold, a checker-problem burst, a past
+  pause, a worker that is paused now, and irregular late and missed heartbeats. A fixed seed keeps the scene the
+  same on every run, and the seed fails unless its self-check finds every feature. Seeded error responses carry the
+  checker's own `wrong_status` reason, so they count as latency samples, as live ones do. The open incident gets
+  its reminders as the live scheduler would send them (every 6 h by default). Seeding takes about four and a half
+  minutes.
+- The README shows twenty new captures of that scene, including dark-scheme and 390 px views.
+
+### Toolchain
+
+- Local setup asks for the newest Go 1.27 patch, the one CI installs. On go1.27.1, `govulncheck` in
+  `make security-check` reports four standard-library `net/http` advisories fixed in 1.27.2.
+
 ### Cloud path (code and synthesis only; nothing deployed)
 
 - `lambda-planner` and `lambda-worker` binaries (`make lambda-build`, linux/arm64) reuse the store and domain

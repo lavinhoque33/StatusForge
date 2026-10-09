@@ -15,7 +15,10 @@ report that period as healthy. Every scheduled check is a durable row that ends 
 an explicit **gap**; summaries count slots, not wall-clock time; "we did not hear from the job" is kept
 apart from "the job did not run". The [engineering notes](docs/engineering.md) walk through how.
 
-![Overview: a receive gap, an open incident, and a failed notification, all shown as what they are](docs/images/overview.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
+  <img src="docs/images/overview.png" alt="Overview: a receive gap, an open incident and a failed notification, each shown as what it is">
+</picture>
 
 ## Capabilities and boundaries
 
@@ -41,9 +44,12 @@ make setup   # .env from .env.example, Go modules, npm ci
 make demo    # seeds a separate demo table and runs UI + API + fixtures at http://127.0.0.1:8080/
 ```
 
-The demo shows seven days of synthetic history: healthy, failing and slow periods, a coverage gap, open and
-resolved incidents, delivered and failed notifications, a maintenance window, a heartbeat with late and
-missed reports, and an application with deployment markers. Every page carries a **Demo data** banner.
+The demo seeds seven days of synthetic history for one application with five monitors: three HTTP services with
+their own response-time profiles (a daily load cycle, spikes, a slow period), a worker that is paused now, and a
+heartbeat with irregular late and missed reports. It includes a resolved incident whose recovery notice the
+receiver rejected, an open incident after a deployment with its reminders, a maintenance window with a planned
+restart, isolated failures and timeouts below the incident threshold, a checker-problem burst, a paused span, and
+a coverage gap. A fixed seed makes every run look the same, and every page carries a **Demo data** banner.
 
 For your own data:
 
@@ -57,47 +63,57 @@ for the walkthrough, every configuration variable, and the heartbeat and deploym
 
 | Monitor detail with 7-day summary | Incident with notification history |
 | --- | --- |
-| ![Monitor detail](docs/images/monitor-detail.png) | ![Incident detail](docs/images/incident-detail.png) |
+| ![Seven-day summary of the demo API: 98 % of expected checks recorded, isolated failures, checker problems, a not-observed gap, a labelled paused span, and a response-time cycle below the 1200 ms check deadline](docs/images/monitor-detail.png) | ![Open incident after a deployment: opening evidence, failure summary, the nearby demo-2 deployment shown as context, and the opened notice and four reminders, all delivered](docs/images/incident-detail.png) |
 
 <details>
-<summary><strong>More screenshots</strong> (12): status windows and response times, monitors and heartbeats, incidents and notifications, applications, accessible tables, mobile</summary>
+<summary><strong>More screenshots</strong> (16): status history and response time, monitors and heartbeats, incidents and notifications, applications, accessible tables, dark scheme, narrow screens</summary>
 
 All captures show the built-in demo data (`make demo`).
 
-#### Status windows and response times
+#### Status history and response time
 
-![Seven-day status history of a demo HTTP monitor in 6-hour buckets: mostly healthy, with failing checks, a maintenance window and not-observed slots](docs/images/status-history-7d.png)
+![Seven-day status history of a demo HTTP monitor in 6-hour buckets: a three-hour incident, isolated failures, a not-observed gap and a maintenance window](docs/images/status-history-7d.png)
 
-![24-hour status history of a demo HTTP monitor in 1-hour buckets during an open incident: every bucket failing](docs/images/status-history-24h.png)
+![24-hour status history of the monitor with the open incident, in 1-hour buckets: every check failing](docs/images/status-history-24h.png)
 
-![Seven-day response-time chart with maximum and median lines: a 2.2 s spike in maximum response time, below the 3000 ms check deadline](docs/images/response-time-7d.png)
+![24-hour status history of the demo API: a shaded, labelled paused span with no expected checks, and one failed check](docs/images/status-history-paused-24h.png)
+
+![Seven-day response time with median and maximum lines: a 2.5 s spike in maximum response time, below the 3000 ms check deadline](docs/images/response-time-7d.png)
+
+![24-hour response time of the demo API: a rising and falling load cycle, with both lines broken while the monitor was paused](docs/images/response-time-24h.png)
+
+![Seven-day status history of a worker monitor created mid-week and paused a day later: checks between creation and the pause, then a labelled paused span](docs/images/paused-worker-7d.png)
 
 #### Monitors and heartbeats
 
-![Monitors list: an on-time heartbeat, a healthy HTTP monitor, and a failing HTTP monitor linked to its open incident](docs/images/monitors.png)
+![Monitors list: two healthy HTTP monitors, a failing one linked to its open incident, a paused worker, and an on-time heartbeat](docs/images/monitors.png)
 
-![Seven-day summary of a demo heartbeat: expected deadlines counted as on time, late or missed, with three late and three missed reports in the status history](docs/images/heartbeat-summary-7d.png)
+![Seven-day summary of the demo heartbeat: every expected deadline recorded, 680 on time, 22 late and 6 missed](docs/images/heartbeat-summary-7d.png)
 
 #### Incidents and notifications
 
-![Incidents page: an open incident, a resolved incident, and a failed notification that needs attention](docs/images/incidents.png)
+![Incidents page: an open incident with five delivered notifications, a resolved incident, and a failed notification that needs attention](docs/images/incidents.png)
 
-![Notifications of a resolved incident: the opened notification delivered; the resolved notification rejected with HTTP 400, then delivered by a manual retry](docs/images/notification-retry.png)
+![Notifications of a resolved incident: the opened notice delivered; the resolved notice rejected with HTTP 400, then delivered by a manual retry](docs/images/notification-retry.png)
 
 #### Applications
 
-![Demo application summary: three member monitors with their current health, one open incident, and the last recorded deployment](docs/images/application-summary.png)
+![Demo application summary: five member monitors with their current health (healthy, failing or paused), one open incident, and the last deployment marker](docs/images/application-summary.png)
 
 #### Accessible tables
 
-![Status history shown as a table instead of a chart: per-bucket expected, recorded, healthy, failing, checker-problem, not-observed, maintenance, not-counted, paused and receive-outage columns](docs/images/status-history-table.png)
+![Status history shown as a table instead of a chart: per-bucket expected, recorded, healthy, failing, checker-problem, not-observed, maintenance and not-counted counts, including a failing bucket and a checker-problem bucket](docs/images/status-history-table.png)
 
-#### Mobile (390 CSS px)
+#### Dark scheme
+
+![Seven-day monitor summary in the dark scheme: status bars with an incident, a maintenance window and a not-observed gap, and a response-time spike](docs/images/monitor-detail-dark.png)
+
+#### Narrow screens (390 CSS px)
 
 <p>
-<img src="docs/images/overview-mobile.png" alt="Overview on mobile: the Demo data banner, a StatusForge was not receiving gap, an open incident and a failed notification" width="260">
-<img src="docs/images/monitor-summary-mobile.png" alt="Seven-day monitor summary on mobile, with status-history and response-time charts" width="260">
-<img src="docs/images/incidents-mobile.png" alt="Incidents on mobile: open and resolved incidents and a failed notification" width="260">
+<img src="docs/images/overview-mobile.png" alt="Overview at 390 px: navigation, backend status, the Demo data banner, a receive gap, an open incident and a failed notification" width="260">
+<img src="docs/images/monitor-summary-mobile.png" alt="Seven-day summary of the failing monitor at 390 px, with status-history and response-time charts" width="260">
+<img src="docs/images/incidents-mobile.png" alt="Incidents at 390 px: open and resolved incidents and a failed notification" width="260">
 </p>
 
 </details>
@@ -181,3 +197,6 @@ Makefile            Every developer entry point (make help)
 
 Stack: Go 1.27 (stdlib HTTP, `aws-sdk-go-v2` DynamoDB client), React 19 + TypeScript + Vite + Recharts,
 DynamoDB Local 3.3.1, AWS CDK (synthesis only). MIT [LICENSE](LICENSE).
+
+The UI bundles the [Inter](https://github.com/rsms/inter) typeface by The Inter Project Authors under the SIL Open
+Font License 1.1 ([licence text](web/public/fonts/Inter-LICENSE.txt)).
