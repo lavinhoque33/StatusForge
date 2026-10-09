@@ -8,7 +8,7 @@ access once.
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| Go | 1.27.1 (`backend/go.mod`) | Install from https://go.dev/dl/ and put `go` on `PATH`. |
+| Go | 1.27, newest patch (`backend/go.mod` declares `go 1.27`; CI installs the newest 1.27 patch) | Install from https://go.dev/dl/ and put `go` on `PATH`. An older patch can fail `govulncheck` in `make security-check`. |
 | Node.js | 24.x (`.nvmrc`) | Node 24 with npm 11; `make infra-synth` also needs `unshare` (util-linux) with unprivileged user namespaces. |
 | Docker + Compose v2 | any current | Runs DynamoDB Local only. |
 | GNU Make, git, curl | any | |
