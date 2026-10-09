@@ -131,17 +131,23 @@ DEMO_RESET=yes make demo   # deletes and reseeds statusforge_demo only
 
 `make demo` builds the release binary, seeds the dedicated table `statusforge_demo` through the store's own
 write paths with a simulated clock, then runs the embedded UI and API with the sample target, notification
-receiver, and sample heartbeat job on loopback. The scene covers the seven days before seeding, at 15-minute
-check and heartbeat intervals:
-- checks with healthy, failing, and slow periods and a coverage gap;
-- open and resolved incidents with delivered and failed notifications;
-- a maintenance window;
-- a heartbeat with late and missed reports;
-- an application with deployment markers.
+receiver, and sample heartbeat job on loopback. The scene covers the seven days before seeding. Its
+pseudo-random values come from a fixed seed, so the scene looks the same on every run. One application holds
+five monitors:
+- three HTTP services, each with its own response-time profile (a daily load cycle, spikes, a slow period). They
+  are checked every 15 minutes, and every 10 minutes on the final day so that each hourly bucket of the 24-hour
+  charts holds enough checks for a median;
+- isolated failures and timeouts below the incident threshold, a short checker-problem burst, a paused span,
+  and a three-hour coverage gap;
+- open and resolved incidents with delivered and failed notifications, and reminders for the open one;
+- a maintenance window with a planned restart;
+- a worker monitor that is currently paused;
+- a heartbeat, due every 15 minutes, with irregular late and missed reports;
+- deployment markers.
 
-Every page shows a **Demo data** banner. Seeding takes about two minutes on the reference workstation. The
-Overview then shows **StatusForge was not receiving** for that span, because nothing was checked while the
-scene was written.
+Every page shows a **Demo data** banner. Seeding takes about four and a half minutes on the reference
+workstation. The Overview then shows **StatusForge was not receiving** for that span, because nothing was
+checked while the scene was written.
 
 It refuses any other table name, and refuses a populated demo table unless `DEMO_RESET=yes`. Ports default to
 8080/8090/8091/8092; override them with `STATUSFORGE_HTTP_ADDR`, `STATUSFORGE_SAMPLE_TARGET_ADDR`,

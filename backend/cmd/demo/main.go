@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,32 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// service is one seeded HTTP monitor and the plan that decides its synthetic checks.
+type service struct {
+	monitor.Monitor
+	plan    func(age, every time.Duration) result
+	active  bool
+	healthy int       // consecutive healthy checks
+	last    time.Time // due time of the latest check
+}
+
+// demo drives the HTTP monitors through the live store's write paths with a simulated clock.
+type demo struct {
+	ctx   context.Context
+	s     *store.Store
+	now   time.Time
+	scene time.Time // start of the synthetic week
+	end   time.Time // seed start: history stops here
+	url   string    // base URL of the first allowed target
+	app   store.Application
+	step  time.Duration // current interval between checks
+	// reminder is the interval between reminders for an open incident.
+	reminder time.Duration
+
+	recoveries, incident, curve, worker *service
+	deployed                            bool
 }
 
 func seed(ctx context.Context) error {
@@ -47,352 +74,372 @@ func seed(ctx context.Context) error {
 	if err := store.PrepareDemo(ctx, client, cfg.DynamoDBTable, os.Getenv("DEMO_RESET") == "yes"); err != nil {
 		return err
 	}
-	realNow := time.Now().UTC().Truncate(time.Second)
-	scene := realNow.Add(-7*24*time.Hour + time.Minute)
-	now := scene
-	s := store.New(
-		client.DynamoDB(),
-		cfg.DynamoDBTable,
-		cfg.ReadinessTimeout,
-		func() time.Time { return now },
-	)
-	if err := s.Initialize(ctx); err != nil {
-		return err
-	}
-	app, _, err := s.CreateApplication(ctx, "Demo application", scene)
-	if err != nil {
-		return err
-	}
-	check := monitor.Check{
-		URL: "http://" + strings.TrimSpace(
-			strings.Split(cfg.AllowedTargets, ",")[0],
-		) + "/healthy",
-		Method:         "GET",
-		ExpectedStatus: 200,
-		DeadlineMs:     3000,
-		MaxBodyBytes:   monitor.MaxBodyBytes,
-	}
-	healthy := monitor.New("Demo service · recoveries and slow responses", check, scene)
-	healthy.IntervalSeconds = 900
-	failing := monitor.New("Demo service · current incident", check, scene)
-	failing.IntervalSeconds = 900
-	for _, m := range []monitor.Monitor{healthy, failing} {
-		if err := s.Create(ctx, m); err != nil {
-			return err
-		}
-		if _, err := s.SetApplication(ctx, m.ID, app.ID); err != nil {
-			return err
-		}
-	}
-	// All synthetic events pass through the live store's scheduling and receipt
-	// transitions. At 15-minute intervals, the scene stays dense without
-	// pretending that one request was made per minute for seven days.
-	if _, err := s.PutDeployment(ctx, app.ID, "", store.Marker{
-		Version: "demo-1", Source: "ingest", ReportedAt: monitor.Stamp(scene.Add(24 * time.Hour)),
-	}); err != nil {
-		return err
-	}
-	record := func(id string, at time.Time, outcome string, duration int64) error {
-		m, err := s.Get(ctx, id)
-		if err != nil {
-			return err
-		}
-		now = at.Add(time.Second)
-		works, err := s.Works(ctx, m, now)
-		if err != nil {
-			return err
-		}
-		var selected *store.Work
-		for i := range works {
-			if works[i].State == "pending" && (selected == nil || works[i].DueAt > selected.DueAt) {
-				selected = &works[i]
-			}
-		}
-		if selected == nil {
-			return fmt.Errorf("no pending work for %s at %s", id, now)
-		}
-		claimed, token, err := s.Claim(ctx, *selected, now)
-		if err != nil {
-			return err
-		}
-		started := now
-		completed := now.Add(time.Duration(duration) * time.Millisecond)
-		now = completed
-		reason := "ok"
-		code := 200
-		if outcome == "failing" {
-			reason = "unexpected_status"
-			code = 500
-		}
-		due := selected.DueAt
-		_, err = s.RecordResult(
-			ctx,
-			monitor.Observation{
-				ID:             fmt.Sprintf("demo-%s-%d", id, started.UnixNano()),
-				MonitorID:      id,
-				ConfigVersion:  claimed.ConfigVersion,
-				InitiatedBy:    "scheduler",
-				Trigger:        &selected.Trigger,
-				DueAt:          &due,
-				Request:        claimed.Check,
-				StartedAt:      monitor.Stamp(started),
-				CompletedAt:    monitor.Stamp(completed),
-				DurationMs:     duration,
-				Outcome:        outcome,
-				Reason:         reason,
-				ObservedStatus: &code,
-			},
-			token,
+	// Each seeding thread owns a store with its own simulated clock.
+	newStore := func(clock *time.Time) *store.Store {
+		return store.New(
+			client.DynamoDB(),
+			cfg.DynamoDBTable,
+			cfg.ReadinessTimeout,
+			func() time.Time { return *clock },
 		)
+	}
+	realNow := time.Now().UTC().Truncate(time.Second)
+	d := &demo{
+		scene:    realNow.Add(-7*day + time.Minute),
+		end:      realNow,
+		url:      "http://" + strings.TrimSpace(strings.Split(cfg.AllowedTargets, ",")[0]),
+		step:     interval,
+		reminder: time.Duration(cfg.ReminderIntervalSeconds) * time.Second,
+	}
+	d.now = d.scene
+	d.s = newStore(&d.now)
+	d.s.SetReminderInterval(d.reminder)
+	if err := d.s.Initialize(ctx); err != nil {
 		return err
 	}
-	// Deliver each notification when its transition happens, as the live worker would. One receiver
-	// rejection leaves a failed notification that can be retried against the live receiver.
-	deliver := func() error {
-		dues, err := s.Due(ctx, now)
-		if err != nil {
-			return err
-		}
-		for _, d := range dues {
-			n, a, claim, err := s.ClaimDelivery(ctx, d, now)
-			if errors.Is(err, store.ErrNotEligible) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			result, status := "delivered", 204
-			if d.MonitorID == healthy.ID && n.Kind == "resolved" {
-				result, status = "rejected", 400
-			}
-			if _, err := s.CompleteDelivery(ctx, d, n, a, claim, result, &status, 1, now, nil); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	interval := 15 * time.Minute
-	first := scene.Truncate(interval).Add(interval)
-	// History ends at seed start; the live API then truthfully reports the seeding time as not receiving.
-	last := realNow
-	gapStart := scene.Add(3*24*time.Hour + 6*time.Hour)
-	gapEnd := gapStart.Add(3 * time.Hour)
-	maintenanceAt := scene.Add(4 * 24 * time.Hour)
-	deployAt := scene.Add(6 * 24 * time.Hour)
-	maintenanceCreated, deployed := false, false
-	for base := first; base.Before(last); base = base.Add(interval) {
-		if !maintenanceCreated && !base.Before(maintenanceAt) {
-			now = base
-			if _, err := s.CreateMaintenance(ctx, healthy.ID, base.Add(interval), base.Add(2*time.Hour),
-				"Demo planned maintenance", now); err != nil {
-				return err
-			}
-			maintenanceCreated = true
-		}
-		if !deployed && !base.Before(deployAt) {
-			now = base
-			if _, err := s.PutDeployment(ctx, app.ID, "", store.Marker{
-				Version: "demo-2", Source: "ingest", ReportedAt: monitor.Stamp(now),
-			}); err != nil {
-				return err
-			}
-			failedCheck := check
-			failedCheck.URL = strings.TrimSuffix(check.URL, "/healthy") + "/failing"
-			current, err := s.Get(ctx, failing.ID)
-			if err != nil {
-				return err
-			}
-			if _, err := s.Patch(ctx, failing.ID, current.ConfigVersion, nil, &failedCheck, now); err != nil {
-				return err
-			}
-			deployed = true
-		}
-		if !base.Before(gapStart) && base.Before(gapEnd) {
-			continue // one deliberate asleep-machine gap, recorded by the next Tick
-		}
-		due := []struct {
-			id string
-			at time.Time
-		}{
-			{healthy.ID, monitor.GridSlot(healthy.ID, 900, base.Add(interval-time.Second))},
-			{failing.ID, monitor.GridSlot(failing.ID, 900, base.Add(interval-time.Second))},
-		}
-		if due[1].at.Before(due[0].at) {
-			due[0], due[1] = due[1], due[0]
-		}
-		for _, step := range due {
-			if !step.at.Add(5 * time.Second).Before(realNow) {
-				continue // never record a check after seed start
-			}
-			now = step.at.Add(time.Second)
-			if _, _, _, err := s.Tick(ctx, now); err != nil {
-				return fmt.Errorf("demo tick at %s: %w", now, err)
-			}
-			age := step.at.Sub(scene)
-			outcome, duration := "healthy", int64(40)
-			if step.id == healthy.ID {
-				switch {
-				case age >= 2*24*time.Hour && age < 2*24*time.Hour+3*time.Hour:
-					outcome, duration = "failing", 75
-				case age >= 3*24*time.Hour && age < 3*24*time.Hour+3*time.Hour:
-					duration = 2200
-				}
-			} else if deployed {
-				outcome, duration = "failing", 115
-			}
-			if err := record(step.id, step.at, outcome, duration); err != nil {
-				return fmt.Errorf("demo check %s at %s: %w", step.id, step.at, err)
-			}
-			if err := deliver(); err != nil {
-				return fmt.Errorf("demo delivery at %s: %w", now, err)
-			}
-		}
+	if d.app, _, err = d.s.CreateApplication(ctx, "Demo application", d.scene); err != nil {
+		return err
 	}
 	token := os.Getenv("STATUSFORGE_SAMPLE_JOB_TOKEN")
 	if token == "" {
-		token, err = heartbeat.Generate()
-		if err != nil {
+		if token, err = heartbeat.Generate(); err != nil {
 			return err
 		}
 	}
-	hb := monitor.New("Demo heartbeat · late and missed", check, scene)
-	hb.Kind = "heartbeat"
-	hb.Check = monitor.Check{}
-	hb.IntervalSeconds = 0
-	hb.Heartbeat = &heartbeat.Configuration{
-		Schedule: heartbeat.Schedule{IntervalSeconds: 900, GraceSeconds: 60},
-		Token: &heartbeat.Token{
-			Hash: heartbeat.Hash(
-				token,
-			), Hint: heartbeat.Hint(token), CreatedAt: monitor.Stamp(scene),
-		},
-		IngestPath: "/ingest/heartbeats/" + hb.ID,
+	// The heartbeat shares no records with the HTTP monitors except the
+	// application, so its week is seeded concurrently to bound the seed time.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	d.ctx = ctx
+	pulse := &heartbeatWeek{ctx: ctx, scene: d.scene, end: d.end, app: d.app.ID, token: token}
+	pulse.s = newStore(&pulse.now)
+	done := make(chan error, 1)
+	go func() { done <- pulse.run() }()
+	err = d.httpWeek()
+	if err != nil {
+		cancel()
 	}
-	expectation := heartbeat.Expect(scene, hb.Heartbeat.Schedule)
-	hb.Expectation = &expectation
-	now = scene
-	if err := s.Create(ctx, hb); err != nil {
+	if err := errors.Join(err, <-done); err != nil {
 		return err
 	}
-	if _, err := s.SetApplication(ctx, hb.ID, app.ID); err != nil {
+	d.now = d.end
+	if _, err := d.s.WriteLiveness(ctx, d.now, time.Hour); err != nil {
 		return err
 	}
-	for index := 0; ; index++ {
-		current, err := s.Get(ctx, hb.ID)
-		if err != nil {
-			return err
-		}
-		dueAt, err := time.Parse(time.RFC3339Nano, current.Expectation.DueAt)
-		if err != nil {
-			return err
-		}
-		if !dueAt.Add(61 * time.Second).Before(last) {
-			break
-		}
-		switch {
-		case index > 0 && index%200 == 100:
-			now = dueAt.Add(61 * time.Second)
-			live, err := s.WriteLiveness(ctx, now, time.Hour)
-			if err != nil {
-				return err
-			}
-			if err := s.Deadline(ctx, current, now, live); err != nil {
-				return err
-			}
-		default:
-			now = dueAt.Add(-10 * time.Second)
-			if index > 0 && index%200 == 90 {
-				now = dueAt.Add(30 * time.Second)
-			}
-			if _, err := s.WriteLiveness(ctx, now, time.Hour); err != nil {
-				return err
-			}
-			if _, err := s.RecordHeartbeat(ctx, hb.ID, heartbeat.Hash(token), heartbeat.Report{}, now); err != nil {
-				return err
-			}
-		}
-	}
-	now = last
-	if _, err := s.WriteLiveness(ctx, now, time.Hour); err != nil {
-		return err
-	}
-	for _, m := range []monitor.Monitor{healthy, failing} {
-		current, err := s.Get(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		sum, err := s.Summary(ctx, current, "7d", realNow)
-		if err != nil {
-			return err
-		}
-		if sum.Coverage.Recorded*100 < sum.Coverage.Expected*95 ||
-			sum.Coverage.NotObserved == 0 ||
-			sum.Coverage.Expected != sum.Coverage.Recorded+sum.Coverage.NotObserved {
-			return fmt.Errorf("inconsistent demo summary for %s: %+v", m.Name, sum.Coverage)
-		}
-	}
-	current, err := s.Get(ctx, hb.ID)
+	incidents, err := d.verify(pulse.monitor)
 	if err != nil {
 		return err
 	}
-	hbSummary, err := s.HeartbeatSummary(ctx, current, "7d", realNow)
-	if err != nil {
-		return err
-	}
-	if hbSummary.Coverage.Recorded*100 < hbSummary.Coverage.Expected*95 ||
-		hbSummary.Coverage.Outcomes.OnTime <= hbSummary.Coverage.Outcomes.Late ||
-		hbSummary.Coverage.Outcomes.Late == 0 || hbSummary.Coverage.Outcomes.Missed == 0 ||
-		hbSummary.Coverage.Expected != hbSummary.Coverage.Recorded+hbSummary.Coverage.NotObserved {
-		return fmt.Errorf("inconsistent demo heartbeat summary: %+v", hbSummary.Coverage)
-	}
-	windows, err := s.ListMaintenance(ctx, healthy.ID, 10, realNow)
-	if err != nil || len(windows) != 1 {
-		return fmt.Errorf("demo maintenance missing: %d windows, %w", len(windows), err)
-	}
-	current, err = s.Get(ctx, healthy.ID)
-	if err != nil {
-		return err
-	}
-	healthySummary, err := s.Summary(ctx, current, "7d", realNow)
-	if err != nil || healthySummary.Coverage.Maintenance == 0 {
-		return fmt.Errorf("demo maintenance slots missing: %+v %w", healthySummary.Coverage, err)
-	}
-	markers, err := s.Deployments(ctx, app.ID, 10)
-	if err != nil || len(markers) != 2 {
-		return fmt.Errorf("demo deployments missing: %d markers, %w", len(markers), err)
-	}
-	application, err := s.Application(ctx, app.ID)
-	if err != nil || len(application.Members) != 3 {
-		return fmt.Errorf(
-			"demo application members missing: %d members, %w",
-			len(application.Members),
-			err,
-		)
-	}
-	incidents, err := s.ListIncidents(ctx, "", "", 100, realNow)
-	if err != nil {
-		return err
-	}
-	open, resolved, delivered, failed := false, false, false, false
-	for _, in := range incidents {
-		open = open || in.State == "open"
-		resolved = resolved || in.State == "resolved"
-		delivered = delivered || in.NotificationSummary.Delivered > 0
-		failed = failed || in.NotificationSummary.Failed > 0
-	}
-	if !open || !resolved || !delivered || !failed {
-		return fmt.Errorf("demo incidents incomplete: open=%t resolved=%t delivered=%t failed=%t",
-			open, resolved, delivered, failed)
-	}
-	if err := s.MarkDemo(ctx); err != nil {
+	if err := d.s.MarkDemo(ctx); err != nil {
 		return err
 	}
 	fmt.Printf(
 		"demo seeded table=statusforge_demo heartbeat=%s monitors=%d incidents=%d seed_seconds=%.2f (open and resolved), 7-day summaries verified\n",
-		hb.ID,
-		3,
-		len(incidents),
+		pulse.monitor.ID,
+		len(d.services())+1,
+		incidents,
 		time.Since(seedStarted).Seconds(),
 	)
+	return nil
+}
+
+func (d *demo) services() []*service {
+	return []*service{d.recoveries, d.incident, d.curve, d.worker}
+}
+
+// create stores a monitor at the current clock, joins it to the application and
+// records its creation check as a worker would.
+func (d *demo) create(
+	name string,
+	p profile,
+	plan func(age, every time.Duration) result,
+) (*service, error) {
+	m := monitor.New(name, monitor.Check{
+		URL:            d.url + "/healthy",
+		Method:         "GET",
+		ExpectedStatus: 200,
+		DeadlineMs:     int(p.deadline),
+		MaxBodyBytes:   monitor.MaxBodyBytes,
+	}, d.now)
+	m.IntervalSeconds = int(d.step / time.Second)
+	if err := d.s.Create(d.ctx, m); err != nil {
+		return nil, err
+	}
+	if _, err := d.s.SetApplication(d.ctx, m.ID, d.app.ID); err != nil {
+		return nil, err
+	}
+	svc := &service{Monitor: m, plan: plan, active: true}
+	return svc, d.run(svc, d.now)
+}
+
+func (d *demo) lifecycle(svc *service, action string) error {
+	if _, err := d.s.Lifecycle(d.ctx, svc.ID, action, d.now); err != nil {
+		return fmt.Errorf("demo %s %s: %w", action, svc.Name, err)
+	}
+	svc.active = action == "resume"
+	if svc.active {
+		return d.run(svc, d.now) // the resume check
+	}
+	return nil
+}
+
+// tighten moves every active monitor to the final interval.
+func (d *demo) tighten() error {
+	d.step = finalInterval
+	every := int(finalInterval / time.Second)
+	for _, svc := range d.services() {
+		if svc == nil || !svc.active {
+			continue
+		}
+		current, err := d.s.Get(d.ctx, svc.ID)
+		if err != nil {
+			return err
+		}
+		if _, err := d.s.PatchInterval(
+			d.ctx, svc.ID, current.ConfigVersion, nil, nil, &every, d.now,
+		); err != nil {
+			return fmt.Errorf("demo interval %s: %w", svc.Name, err)
+		}
+		svc.IntervalSeconds = every
+	}
+	return nil
+}
+
+// deploy reports demo-2 and points the current-incident monitor at a failing endpoint.
+func (d *demo) deploy() error {
+	if _, err := d.s.PutDeployment(d.ctx, d.app.ID, "", store.Marker{
+		Version: "demo-2", Source: "ingest", ReportedAt: monitor.Stamp(d.now),
+	}); err != nil {
+		return err
+	}
+	current, err := d.s.Get(d.ctx, d.incident.ID)
+	if err != nil {
+		return err
+	}
+	failing := current.Check
+	failing.URL = d.url + "/failing"
+	if _, err := d.s.Patch(d.ctx, d.incident.ID, current.ConfigVersion, nil, &failing, d.now); err != nil {
+		return err
+	}
+	d.deployed = true
+	return d.run(d.incident, d.now) // the configuration-change check
+}
+
+// httpWeek seeds the HTTP monitors with one deliberate receive gap. Story events
+// take effect at the first interval boundary at or after their time.
+func (d *demo) httpWeek() error {
+	var err error
+	if d.recoveries, err = d.create(
+		"Demo service · recoveries and slow responses", recoveriesProfile, recoveriesCheck,
+	); err != nil {
+		return err
+	}
+	if d.incident, err = d.create(
+		"Demo service · current incident", incidentProfile,
+		func(age, every time.Duration) result { return currentIncidentCheck(age, every, d.deployed) },
+	); err != nil {
+		return err
+	}
+	if d.curve, err = d.create(
+		"Demo API · daily load, timeouts and a pause", curveProfile, curveCheck,
+	); err != nil {
+		return err
+	}
+	if _, err := d.s.PutDeployment(d.ctx, d.app.ID, "", store.Marker{
+		Version: "demo-1", Source: "ingest", ReportedAt: monitor.Stamp(d.scene.Add(day)),
+	}); err != nil {
+		return err
+	}
+	events := []struct {
+		at   time.Duration
+		fire func() error
+	}{
+		{maintenanceAt, func() error {
+			_, err := d.s.CreateMaintenance(d.ctx, d.recoveries.ID, d.now.Add(interval),
+				d.now.Add(2*time.Hour), "Demo planned maintenance", d.now)
+			return err
+		}},
+		{workerCreatedAt, func() error {
+			var err error
+			d.worker, err = d.create("Demo worker · paused", workerProfile, workerCheck)
+			return err
+		}},
+		{workerPausedAt, func() error { return d.lifecycle(d.worker, "pause") }},
+		{tightenAt, d.tighten},
+		{deployAt, d.deploy},
+		{curvePausedAt, func() error { return d.lifecycle(d.curve, "pause") }},
+		{curveResumedAt, func() error { return d.lifecycle(d.curve, "resume") }},
+	}
+	// Each window is as long as the monitors' interval, so it holds exactly one slot per monitor.
+	for base := d.scene.Truncate(interval); base.Before(d.end); base = base.Add(d.step) {
+		for len(events) > 0 && !base.Before(d.scene.Add(events[0].at)) {
+			d.now = base
+			if err := events[0].fire(); err != nil {
+				return err
+			}
+			events = events[1:]
+		}
+		age := base.Sub(d.scene)
+		if age >= receiveGapAt && age < receiveGapEnd {
+			continue // an asleep machine: the next tick records the missed slots
+		}
+		type step struct {
+			svc *service
+			at  time.Time
+		}
+		var steps []step
+		for _, svc := range d.services() {
+			if svc == nil || !svc.active {
+				continue
+			}
+			slot := monitor.GridSlot(svc.ID, svc.IntervalSeconds, base.Add(d.step-time.Second))
+			// Skip a slot already covered by a creation, resume or configuration check,
+			// and never record a check after seed start.
+			if slot.After(svc.last) && slot.Add(5*time.Second).Before(d.end) {
+				steps = append(steps, step{svc, slot})
+			}
+		}
+		if len(steps) == 0 {
+			continue
+		}
+		slices.SortFunc(steps, func(a, b step) int { return a.at.Compare(b.at) })
+		// One scheduler pass after the window's last slot creates every slot's work.
+		d.now = steps[len(steps)-1].at.Add(time.Second)
+		report, err := d.s.TickCycle(d.ctx, d.now)
+		if err == nil && report.Failed > 0 {
+			err = store.ErrUnavailable
+		}
+		if err != nil {
+			return fmt.Errorf("demo tick at %s: %w", d.now, err)
+		}
+		for _, st := range steps {
+			if err := d.check(st.svc, st.at, report.Open[st.svc.ID]); err != nil {
+				return err
+			}
+		}
+	}
+	if len(events) > 0 {
+		return fmt.Errorf("demo week ended before %d story events", len(events))
+	}
+	return nil
+}
+
+// run performs the check of work created outside a scheduler pass.
+func (d *demo) run(svc *service, at time.Time) error {
+	works, err := d.s.Works(d.ctx, svc.Monitor, at.Add(time.Second))
+	if err != nil {
+		return err
+	}
+	return d.check(svc, at, works)
+}
+
+// check claims the newest pending work for svc at its due time, records the
+// planned result, runs the reminder pass and delivers any notification the
+// transition produced. Notifications follow only failures and the recovery checks
+// after them, so both passes run only until a monitor has been healthy for three checks.
+func (d *demo) check(svc *service, at time.Time, works []store.Work) error {
+	every := time.Duration(svc.IntervalSeconds) * time.Second
+	r := svc.plan(at.Sub(d.scene), every)
+	svc.last = at
+	if err := d.record(svc, at, r, works); err != nil {
+		return fmt.Errorf("demo check %s at %s: %w", svc.Name, at, err)
+	}
+	if r.outcome != "healthy" {
+		svc.healthy = 0
+	} else if svc.healthy++; svc.healthy > 3 {
+		return nil
+	}
+	if err := d.remind(svc); err != nil {
+		return fmt.Errorf("demo reminder %s at %s: %w", svc.Name, d.now, err)
+	}
+	if err := d.deliver(); err != nil {
+		return fmt.Errorf("demo delivery at %s: %w", d.now, err)
+	}
+	return nil
+}
+
+// remind creates a reminder for an open incident once its reminder is due, as
+// the scheduler's maintenance pass does for every active monitor.
+func (d *demo) remind(svc *service) error {
+	current, err := d.s.Get(d.ctx, svc.ID)
+	if err != nil || current.OpenIncident == nil {
+		return err
+	}
+	if err := d.s.Reminder(d.ctx, current, d.now, d.reminder); err != nil &&
+		!errors.Is(err, store.ErrNotEligible) {
+		return err
+	}
+	return nil
+}
+
+func (d *demo) record(svc *service, at time.Time, r result, works []store.Work) error {
+	d.now = at.Add(time.Second)
+	var selected *store.Work
+	for i := range works {
+		if works[i].State == "pending" && (selected == nil || works[i].DueAt > selected.DueAt) {
+			selected = &works[i]
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("no pending work at %s", d.now)
+	}
+	claimed, token, err := d.s.Claim(d.ctx, *selected, d.now)
+	if err != nil {
+		return err
+	}
+	started := d.now
+	completed := started.Add(time.Duration(r.duration) * time.Millisecond)
+	d.now = completed
+	var status *int
+	if r.status != 0 {
+		status = &r.status
+	}
+	due := selected.DueAt
+	_, err = d.s.RecordResult(
+		d.ctx,
+		monitor.Observation{
+			ID:             fmt.Sprintf("demo-%s-%d", svc.ID, started.UnixNano()),
+			MonitorID:      svc.ID,
+			ConfigVersion:  claimed.ConfigVersion,
+			InitiatedBy:    "scheduler",
+			Trigger:        &selected.Trigger,
+			DueAt:          &due,
+			Request:        claimed.Check,
+			StartedAt:      monitor.Stamp(started),
+			CompletedAt:    monitor.Stamp(completed),
+			DurationMs:     r.duration,
+			Outcome:        r.outcome,
+			Reason:         r.reason,
+			ObservedStatus: status,
+		},
+		token,
+	)
+	return err
+}
+
+// deliver sends each notification when its transition happens, as the live
+// worker would. The receiver rejects the recovery notice of the resolved
+// incident, leaving a failed notification that can be retried against the live receiver.
+func (d *demo) deliver() error {
+	dues, err := d.s.Due(d.ctx, d.now)
+	if err != nil {
+		return err
+	}
+	for _, due := range dues {
+		n, a, claim, err := d.s.ClaimDelivery(d.ctx, due, d.now)
+		if errors.Is(err, store.ErrNotEligible) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		result, status := "delivered", 204
+		if due.MonitorID == d.recoveries.ID && n.Kind == "resolved" {
+			result, status = "rejected", 400
+		}
+		if _, err := d.s.CompleteDelivery(d.ctx, due, n, a, claim, result, &status, 1, d.now, nil); err != nil {
+			return err
+		}
+	}
 	return nil
 }
