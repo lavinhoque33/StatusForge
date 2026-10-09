@@ -59,6 +59,49 @@ for the walkthrough, every configuration variable, and the heartbeat and deploym
 | --- | --- |
 | ![Monitor detail](docs/images/monitor-detail.png) | ![Incident detail](docs/images/incident-detail.png) |
 
+<details>
+<summary><strong>More screenshots</strong> (12): status windows and response times, monitors and heartbeats, incidents and notifications, applications, accessible tables, mobile</summary>
+
+All captures show the built-in demo data (`make demo`).
+
+#### Status windows and response times
+
+![Seven-day status history of a demo HTTP monitor in 6-hour buckets: mostly healthy, with failing checks, a maintenance window and not-observed slots](docs/images/status-history-7d.png)
+
+![24-hour status history of a demo HTTP monitor in 1-hour buckets during an open incident: every bucket failing](docs/images/status-history-24h.png)
+
+![Seven-day response-time chart with maximum and median lines: a 2.2 s spike in maximum response time, below the 3000 ms check deadline](docs/images/response-time-7d.png)
+
+#### Monitors and heartbeats
+
+![Monitors list: an on-time heartbeat, a healthy HTTP monitor, and a failing HTTP monitor linked to its open incident](docs/images/monitors.png)
+
+![Seven-day summary of a demo heartbeat: expected deadlines counted as on time, late or missed, with three late and three missed reports in the status history](docs/images/heartbeat-summary-7d.png)
+
+#### Incidents and notifications
+
+![Incidents page: an open incident, a resolved incident, and a failed notification that needs attention](docs/images/incidents.png)
+
+![Notifications of a resolved incident: the opened notification delivered; the resolved notification rejected with HTTP 400, then delivered by a manual retry](docs/images/notification-retry.png)
+
+#### Applications
+
+![Demo application summary: three member monitors with their current health, one open incident, and the last recorded deployment](docs/images/application-summary.png)
+
+#### Accessible tables
+
+![Status history shown as a table instead of a chart: per-bucket expected, recorded, healthy, failing, checker-problem, not-observed, maintenance, not-counted, paused and receive-outage columns](docs/images/status-history-table.png)
+
+#### Mobile (390 CSS px)
+
+<p>
+<img src="docs/images/overview-mobile.png" alt="Overview on mobile: the Demo data banner, a StatusForge was not receiving gap, an open incident and a failed notification" width="260">
+<img src="docs/images/monitor-summary-mobile.png" alt="Seven-day monitor summary on mobile, with status-history and response-time charts" width="260">
+<img src="docs/images/incidents-mobile.png" alt="Incidents on mobile: open and resolved incidents and a failed notification" width="260">
+</p>
+
+</details>
+
 ## How it works
 
 ```mermaid
