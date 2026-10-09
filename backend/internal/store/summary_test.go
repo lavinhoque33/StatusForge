@@ -15,6 +15,11 @@ import (
 	"github.com/lavinhoque33/statusforge/backend/internal/monitor"
 )
 
+// evidenceAnchor is 12:00 UTC on the current day: deterministic within a run, and
+// never trailing real time by more than the evidence TTL (90 days), because
+// DynamoDB Local deletes expired items by wall clock, not by the store clock.
+var evidenceAnchor = time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
+
 func dailyTestStore(t *testing.T, now time.Time) *Store {
 	t.Helper()
 	conn, e := net.DialTimeout("tcp", "127.0.0.1:8000", 200*time.Millisecond)
@@ -54,7 +59,7 @@ func dailyMonitor(now time.Time) monitor.Monitor {
 }
 
 func TestLifecycleHistoryAtomic(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now)
 	if e := s.Create(t.Context(), m); e != nil {
@@ -110,7 +115,7 @@ func TestLifecycleHistoryAtomic(t *testing.T) {
 }
 
 func TestSummaryWindowBound(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now.Add(-time.Hour))
 	if e := s.Create(t.Context(), m); e != nil {
@@ -157,7 +162,7 @@ func TestSummaryWindowBound(t *testing.T) {
 }
 
 func TestHeartbeatSummaryFailureFromPersistedReason(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now.Add(-time.Hour))
 	m.Kind = "heartbeat"

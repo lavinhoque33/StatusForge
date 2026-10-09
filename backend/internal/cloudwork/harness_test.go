@@ -172,6 +172,11 @@ type drill struct {
 
 const drillOrigin = "https://status.example.com"
 
+// drillAnchor is 10:00 UTC on the current day: deterministic within a run, and
+// never trailing real time by more than the shortest TTL (work, 7 days), because
+// DynamoDB Local deletes expired items by wall clock, not by the drill clock.
+var drillAnchor = time.Now().UTC().Truncate(24 * time.Hour).Add(10 * time.Hour)
+
 // newDrill creates a scratch table with the test prefix on DynamoDB Local.
 func newDrill(t *testing.T) *drill {
 	t.Helper()
@@ -252,8 +257,7 @@ func (d *drill) declare(entries ...string) { d.monitors = "[" + strings.Join(ent
 // a full interval away and every scenario is deterministic.
 func (d *drill) start(key string, interval int) time.Time {
 	id := cloudwork.DeclaredID(key, 0)
-	base := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	at := monitor.GridSlot(id, interval, base).Add(interval2(interval)).Add(time.Second)
+	at := monitor.GridSlot(id, interval, drillAnchor).Add(interval2(interval)).Add(time.Second)
 	d.clock.Set(at)
 	return at
 }

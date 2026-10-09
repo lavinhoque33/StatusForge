@@ -501,7 +501,7 @@ func TestIncidentFlowNoChannel(t *testing.T) {
 // Bad JSON and v:2 are reported; an unknown monitor is missing.
 func TestInvalidMessages(t *testing.T) {
 	d := newDrill(t)
-	stamp := workStampOf(time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC))
+	stamp := workStampOf(drillAnchor)
 	r, counts := d.deliver(
 		d.store(),
 		`{"v":1,"monitorId":`,

@@ -12,7 +12,7 @@ import (
 )
 
 func TestHistoryFilteredCursorSurvivesNewHead(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now.Add(-time.Hour))
 	if err := s.Create(t.Context(), m); err != nil {
@@ -70,7 +70,7 @@ func TestHistoryFilteredCursorSurvivesNewHead(t *testing.T) {
 }
 
 func TestGapHistoryCursorSurvivesNewHead(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now.Add(-time.Hour))
 	if err := s.Create(t.Context(), m); err != nil {
@@ -108,7 +108,7 @@ func TestGapHistoryCursorSurvivesNewHead(t *testing.T) {
 }
 
 func TestSparseHistoryScanBound(t *testing.T) {
-	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	now := evidenceAnchor
 	s := dailyTestStore(t, now)
 	m := dailyMonitor(now.Add(-time.Hour))
 	if err := s.Create(t.Context(), m); err != nil {
